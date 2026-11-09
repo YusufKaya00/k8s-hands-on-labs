@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.rbac.serviceAccountName }}
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/part-of: aegiscloud
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aegis-core-discovery-role
+  namespace: {{ .Values.namespaces.core }}
+rules:
+  - apiGroups: [""]
+    resources:
+{{- range .Values.rbac.allowedResources }}
+      - {{ . | quote }}
+{{- end }}
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aegis-core-discovery-binding
+  namespace: {{ .Values.namespaces.core }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.rbac.serviceAccountName }}
+    namespace: {{ .Values.namespaces.core }}
+roleRef:
+  kind: Role
+  name: aegis-core-discovery-role
+  apiGroup: rbac.authorization.k8s.io
