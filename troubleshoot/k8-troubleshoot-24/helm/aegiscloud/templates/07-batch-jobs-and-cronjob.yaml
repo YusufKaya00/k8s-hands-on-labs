@@ -1,0 +1,79 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: schema-migrator
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: schema-migrator
+    component: core-batch
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        app: schema-migrator
+        component: core-batch
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrator
+          image: {{ .Values.batch.migrator.image }}
+          command:
+            - sh
+            - -c
+            - |
+              HOST="state-store-0.{{ .Values.stateStore.headlessServiceName }}.{{ .Values.namespaces.data }}.svc.cluster.local"
+              PORT="{{ .Values.batch.migrator.targetRedisPort }}"
+              echo "Running schema migration against ${HOST}:${PORT}..."
+              printf "*3\r\n\$3\r\nSET\r\n\$14\r\naegis:schema:v\r\n\$5\r\n7.0.0\r\n" | nc -w 3 "${HOST}" "${PORT}" | grep -q "+OK"
+              echo "Schema migration v7.0.0 applied successfully!"
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: settlement-auditor
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  schedule: {{ .Values.batch.auditor.schedule | quote }}
+  suspend: {{ .Values.batch.auditor.suspend }}
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: settlement-auditor
+            component: core-batch
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: auditor
+              image: {{ .Values.batch.auditor.image }}
+              command:
+                - sh
+                - -c
+                - |
+                  date -u +"%Y-%m-%dT%H:%M:%SZ - audit_ok" >> /mnt/shared-reports/settlement-audit.log
+                  echo "Settlement audit record written to /mnt/shared-reports/settlement-audit.log"
+              volumeMounts:
+                - name: shared-reports
+                  mountPath: /mnt/shared-reports
+              resources:
+                requests:
+                  cpu: "25m"
+                  memory: "32Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "64Mi"
+          volumes:
+            - name: shared-reports
+              persistentVolumeClaim:
+                claimName: {{ .Values.sharedStorage.pvcName }}

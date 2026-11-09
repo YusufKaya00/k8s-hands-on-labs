@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-sentinel
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: node-sentinel
+    tier: security-agent
+spec:
+  selector:
+    matchLabels:
+      app: node-sentinel
+      tier: security-agent
+  template:
+    metadata:
+      labels:
+        app: node-sentinel
+        tier: security-agent
+    spec:
+      {{- if .Values.nodeSentinel.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSentinel.nodeSelector | indent 8 }}
+      {{- end }}
+      containers:
+        - name: sentinel
+          image: {{ .Values.nodeSentinel.image }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Initializing Aegis Node Sentinel Agent..."
+              mkdir -p /var/log/sentinel
+              while true; do
+                date -u +"%Y-%m-%dT%H:%M:%SZ node-integrity=verified" >> /var/log/sentinel/audit.log
+                sleep 15
+              done
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.nodeSentinel.readOnlyRootFilesystem }}
+          {{- if .Values.nodeSentinel.mountLogEmptyDir }}
+          volumeMounts:
+            - name: sentinel-logs
+              mountPath: /var/log/sentinel
+          {{- end }}
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+      {{- if .Values.nodeSentinel.mountLogEmptyDir }}
+      volumes:
+        - name: sentinel-logs
+          emptyDir: {}
+      {{- end }}
