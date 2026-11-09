@@ -9,7 +9,7 @@ All projects and troubleshooting scenarios are fully reproducible on local clust
 ## 🧭 Repository Structure & Curriculum Index
 
 ```text
-k8sfundamentals/
+k8s-hands-on-labs/
 ├── projects/
 │   ├── k8-training/                 # Scratch / training manifests and deep-dive notes
 │   ├── k8-project-1/                # Kubernetes Foundations (Deployments, StatefulSets, DaemonSets, Storage, Ingress)
@@ -20,6 +20,7 @@ k8sfundamentals/
 │   ├── k8-project-6/                # Cloud-Native CI/CD & DevSecOps (GitLab Runner, Rootless Buildah, Trivy, SBOM)
 │   ├── rk2-azure-project-1/         # 5-Node RKE2 High-Isolation Architecture on Azure (Master + Infra + PG + Mongo + App)
 │   ├── rk2-azure-project-2/         # Automated 5-Node RKE2 + Rancher Dashboard (Terraform + Ansible + Multi-DB)
+│   ├── rancher-ui-rke2-project-3/   # Multi-Cluster Rancher UI & RKE2 Operations
 │   ├── terraform-ansible-1/         # IaC Intro: Azure single VM (Terraform) + K3s bootstrap (Ansible), auto-generated inventory
 │   ├── terraform-ansible-2/         # IaC Multi-Node: Azure 1 Master + 1 Worker (Terraform) + K3s cluster join (Ansible) + Helm
 │   ├── devops-capstone-project-4/   # StreamForge: Production GitOps, RKE2, Rancher, Multi-DB & CI/CD Pipeline
@@ -29,6 +30,7 @@ k8sfundamentals/
     ├── chaos-troubleshooting-1/     # SRE Incident & Chaos Engineering Lab 1 (Web UI, 3 Resilient Checks, 3 Break-and-Fix Labs & Workflow)
     ├── chaos-troubleshooting-2/     # SRE Incident & Chaos Engineering Lab 2 (Zero-Spoiler YAML, Live Telemetry Agent, 3 Controls + 4 Multi-Layered Labs)
     ├── chaos-troubleshooting-3/     # SRE Incident & Chaos Engineering Lab 3 (Production-Grade & Zero-Flapping: Pristine Baseline, 3 Controls, 4 Deep SRE Scenarios & Workflow)
+    ├── chaos-troubleshooting-4/     # SRE Incident & Chaos Engineering Lab 4 (Advanced Multi-Fault Chaos & Recovery)
     ├── k8-troubleshoot-1/           # ShopSphere E-Commerce (11 Cascading Multi-Object Failures)
     ├── k8-troubleshoot-2/           # NovaMarket Platform (7 Deep Topology & Stateful Failures)
     ├── k8-troubleshoot-3/           # ApexPay Gateway (7 Linux Security, VFS & Socket Failures)
@@ -51,6 +53,8 @@ k8sfundamentals/
     ├── k8-troubleshoot-20/          # PayNexus v4.2.0 Real-Time Financial Settlement Crisis on AKS (Multi-Workload Helm Outage)
     ├── k8-troubleshoot-21/          # NetCore v5.0 Next-Gen Kubernetes Networking Mesh Crisis (10 Pure K8s Network & DNS Failures)
     ├── k8-troubleshoot-22/          # VaultStream v6.0 Zero-Trust Payment Settlement & PCI-DSS Mesh (10 Multi-Layered K8s & Network Failures)
+    ├── k8-troubleshoot-23/          # Enterprise Multi-Cluster & Workload Triage Lab 23
+    ├── k8-troubleshoot-24/          # Production Kubernetes Deep-Dive Triage Lab 24
     ├── tf-troubleshoot-1/           # Terraform Lab 1 (Azure): State Drift, Import (already exists), prevent_destroy
     ├── tf-troubleshoot-2/           # Terraform Lab 2 (local): State Lock, Lost State recovery, Refactor (moved / state mv)
     ├── tf-troubleshoot-3/           # Terraform Lab 3 (local): Broken code (5 errors incl. Cycle), -replace / secret rotation
