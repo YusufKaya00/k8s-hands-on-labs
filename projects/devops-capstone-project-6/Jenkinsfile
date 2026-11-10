@@ -131,7 +131,8 @@ spec:
                         echo "=========================================================="
                         pip install --no-cache-dir -q -r app/requirements.txt
                         cd app
-                        pytest -v tests/
+                        export PYTHONPATH=.
+                        python3 -m pytest -v tests/
                         bandit -r src/ -ll
                     '''
                 }
