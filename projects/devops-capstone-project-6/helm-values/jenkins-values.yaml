@@ -97,7 +97,6 @@ controller:
       supplyshield-pipeline: |
         jenkins:
           systemMessage: "SupplyShield DevSecOps CI/CD Platformu — Harbor + Trivy + Kaniko + ArgoCD (RKE2)"
-          numExecutors: 0
         jobs:
           - script: >
               pipelineJob('supplyshield-pipeline') {
