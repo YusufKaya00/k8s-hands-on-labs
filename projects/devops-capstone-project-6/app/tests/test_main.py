@@ -83,3 +83,16 @@ def test_artifact_verify_and_orders_endpoints() -> None:
     )
     assert order_res.status_code == 201
     assert "order" in order_res.json()
+
+
+def test_ui_endpoints() -> None:
+    """`/ui` ve tarayıcı isteklerinde `/` HTML dönmelidir."""
+    res_ui = client.get("/ui")
+    assert res_ui.status_code == 200
+    assert "SupplyShield" in res_ui.text
+    assert "<!DOCTYPE html>" in res_ui.text
+
+    res_browser = client.get("/", headers={"accept": "text/html,application/xhtml+xml"})
+    assert res_browser.status_code == 200
+    assert "<!DOCTYPE html>" in res_browser.text
+
