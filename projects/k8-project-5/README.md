@@ -1,5 +1,7 @@
 # 🚀 Lab 5: Enterprise GitOps, Progressive Delivery & Automated Rollbacks (ArgoCD & Argo Rollouts)
 
+> **[🇹🇷 Türkçe](#-türkçe-dokümantasyon--turkish-version) | [🇬🇧 English](#-curriculum-steps-10-steps)**
+
 This lab guides you through the transition from manual YAML deployments (*ClickOps*) to modern **GitOps** workflows, covering **ArgoCD Self-Healing Drift Remediation**, **Declarative Helm Chart Orchestration (Zero-Fork Strategy)**, and **Progressive Delivery with Argo Rollouts and Prometheus Metric-Based Automated Rollbacks**.
 
 > **Solutions / Çözümler:** For step-by-step commands, architectural rationale, and outputs:  

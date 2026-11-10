@@ -1,5 +1,7 @@
 # ☁️ Lab 3: Production Enterprise Platform on Oracle Cloud Infrastructure (OCI OKE)
 
+> **[🇹🇷 Türkçe](#laboratuvar-müfredatı-13-adım) | [🇬🇧 English](#-curriculum-steps-13-steps)**
+
 This lab guides you through the deployment and operational lifecycle of an enterprise-grade platform on a live 3-worker node **Oracle Cloud Infrastructure Container Engine for Kubernetes (OKE)** cluster (`VM.Standard.E5.Flex`, Oracle Linux 9 UEK, Kubernetes v1.37.0).
 
 Key production topics covered: **Dedicated Worker Taints & Labels, Multi-Tenancy Quotas (`ResourceQuota` / `LimitRange`), Workload Scheduling Architecture, OCI Native Block Volume (`oci-bv` CSI) Storage, InitContainers & Multi-Stage Probes, High Availability (`podAntiAffinity`, `topologySpreadConstraints`), Zero-Downtime Graceful Shutdown (`preStop`), Zero-Trust Microsegmentation (`NetworkPolicy`), OCI Flexible Load Balancers (10-40 Mbps dynamic shaping), Redis StatefulSet with Headless Services, HPA & PDB, In-Cluster RBAC Client Pods, and Planned Cloud Node Drain Operations.**

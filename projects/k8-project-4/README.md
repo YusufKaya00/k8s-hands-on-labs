@@ -1,5 +1,7 @@
 # 📊 Lab 4: Enterprise SRE & Observability (Helm 3, Prometheus-Stack, Grafana & Batch Workloads)
 
+> **[🇹🇷 Türkçe](#-türkçe-dokümantasyon--turkish-version) | [🇬🇧 English](#-curriculum-steps-10-steps)**
+
 This lab simulates real-world SRE operations across package management (**Helm 3**), full-stack observability (**kube-prometheus-stack**, **Prometheus Operator**, **Grafana**, **PromQL**, **ServiceMonitors**, **Alertmanager**), and resilient batch workloads (**Kubernetes Jobs & CronJobs** with OCI Block Volume persistence).
 
 > **Solutions / Çözümler:** Step-by-step SRE execution commands and verification steps:  

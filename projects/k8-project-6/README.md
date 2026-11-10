@@ -1,5 +1,7 @@
 # 🔒 Lab 6: Kubernetes-Native CI/CD & DevSecOps Platform (GitLab Runner, Rootless Buildah & Trivy)
 
+> **[🇹🇷 Türkçe](#-türkçe-dokümantasyon--turkish-version) | [🇬🇧 English](#-curriculum-steps-10-steps)**
+
 This lab transitions CI/CD workflows from traditional static VM runners to a cloud-native architecture: **dynamically autoscaling GitLab Runners on Kubernetes**, secure daemonless container compilation with **Rootless Buildah** (no Docker socket or privileged mode), **automated vulnerability scanning (Trivy)** and **CycloneDX Software Bill of Materials (SBOM)** generation, seamlessly integrating into the **ArgoCD GitOps deployment engine** built in Lab 5 for an end-to-end "Commit-to-Production" supply chain.
 
 > **Solutions / Çözümler:** For step-by-step commands, architectural rationale, and outputs:  

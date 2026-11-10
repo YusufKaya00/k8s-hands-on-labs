@@ -1,6 +1,6 @@
 # 🏗️ Lab 1: Core Kubernetes Primitives & Microservice Deployment
 
-This lab covers fundamental Kubernetes primitives and architectural building blocks: multi-node cluster topology, multi-tenancy with Namespaces, Role-Based Access Control (RBAC), Node Taints & Tolerations, Ingress Controllers, StatefulSets with Persistent Volumes, DaemonSets, Deployments with Rolling Updates & Probes, and Node Maintenance (Cordon & Drain).
+> **[🇹🇷 Türkçe](#-türkçe-dokümantasyon--turkish-version) | [🇬🇧 English](#-lab-objectives--architecture)**
 
 > **Solutions / Çözümler:** Detailed solutions are available in [proje/cozum/README.md](./proje/cozum/README.md).
 
