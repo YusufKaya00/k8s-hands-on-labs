@@ -51,7 +51,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.stateStore.secretName }}
-                  key: {{ .Values.stateStore.envSecretKey }}
+                  key: {{ .Values.stateStore.secretDataKey }}
           volumeMounts:
             - name: state-data
               mountPath: /data
