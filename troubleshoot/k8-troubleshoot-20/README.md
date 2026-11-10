@@ -192,6 +192,9 @@ At 08:30 UTC, our enterprise payment gateway, ledger, and instant settlement pla
 
 **Current Situation:** Following deployment, external traffic hits `502 Bad Gateway` or `503 Service Unavailable`. Pods across the namespace are trapped in `CrashLoopBackOff`, `Init:0/1`, or `Pending`, completely stalling financial transaction settlement.
 
+> 📖 **Root Cause Analyses (RCA), diagnostic runbooks, and fixed YAMLs:**  
+> 👉 **[Explore Senior SRE Solution Guide (SOLUTION.md)](./SOLUTION.md)**
+
 ---
 
 ### Quick Start (Lab Environment Setup)
