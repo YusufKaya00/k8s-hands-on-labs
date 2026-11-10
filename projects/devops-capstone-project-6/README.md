@@ -344,7 +344,7 @@ terraform destroy -auto-approve
 
 ---
 
-### 3. Step-by-Step Deployment Guide
+### 4. Step-by-Step Deployment Guide
 
 #### Step 1: Provision Azure Infrastructure with Terraform
 ```bash
@@ -375,7 +375,7 @@ ansible-playbook site.yml
 
 ---
 
-### 4. Cleanup
+### 5. Cleanup
 ```bash
 cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-6/terraform
 terraform destroy -auto-approve
