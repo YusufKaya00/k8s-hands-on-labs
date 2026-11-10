@@ -171,3 +171,82 @@ Sistemde birbiri ardına tetiklenen **12 gerçekçi prodüksiyon hatası** bulun
 > ```
 
 </details>
+
+---
+
+# 🇬🇧 English Documentation
+
+## INCIDENT #7204 — PayNexus v4.2.0 Real-Time Financial Ledger & Reconciliation Platform Outage
+
+### Incident Overview
+At 08:30 UTC, our enterprise payment gateway, ledger, and instant settlement platform **`paynexus`** was upgraded to the `v4.2.0` architecture. The new release consolidates all foundational Kubernetes workload objects into a single production Helm chart:
+
+1. **Transactional Ledger & Persistent Database:** PostgreSQL stateful layer (`paynexus-db`) backed by persistent disk (`StatefulSet` + Headless `Service`).
+2. **Schema Migration & Genesis Block:** Initialization Job (`paynexus-migrator`) initializing database tables and generating the static status dashboard (`index.html`), plus a minute-interval audit controller (`CronJob`: `paynexus-auditor`).
+3. **Shared Report Volume:** Shared `PersistentVolumeClaim` (`paynexus-shared-html`) with `ReadWriteMany` access mode, shared between batch jobs and web pods.
+4. **Node Security & Compliance Probe:** Node-level monitoring agent deployed as a cluster-wide `DaemonSet` (`paynexus-security-agent`).
+5. **Frontend Gateway & Traffic:** Customer payment portal (`paynexus-web`), autoscaled via `HorizontalPodAutoscaler` (`HPA`), protected by `PodDisruptionBudget` (`PDB`), isolated with `NetworkPolicy`, and exposed via `Service` and `Ingress`.
+
+**Current Situation:** Following deployment, external traffic hits `502 Bad Gateway` or `503 Service Unavailable`. Pods across the namespace are trapped in `CrashLoopBackOff`, `Init:0/1`, or `Pending`, completely stalling financial transaction settlement.
+
+---
+
+### Quick Start (Lab Environment Setup)
+```bash
+# 1. Provision AKS Infrastructure & Ingress Controller
+cd terraform
+terraform init
+terraform apply -auto-approve
+
+# 2. Configure Cluster Access
+$(terraform output -raw kubeconfig_command)
+
+# 3. Deploy Broken Release v4.2.0
+cd ../
+kubectl create namespace paynexus-prod
+helm upgrade --install paynexus ./helm/paynexus -n paynexus-prod
+```
+
+---
+
+### Triaging Strategy: 5 Critical Failure Planes
+
+1. **Storage & Database Plane (`StatefulSet` + `PVC`):**
+   - Check `kubectl describe sts paynexus-db -n paynexus-prod`. Validate storage class names and headless service domain resolution (`spec.serviceName`).
+   - Verify shared HTML volume access modes (`ReadWriteMany` / Azure Files vs managed disk).
+
+2. **Schema Migration & Batch Plane (`Job` + `CronJob`):**
+   - Check `kubectl logs -n paynexus-prod job/paynexus-migrator`. Look for hardcoded `127.0.0.1` upstream connection timeouts vs internal cluster DNS.
+   - Check `CronJob` suspension state (`spec.suspend`).
+
+3. **Node Security Agent (`DaemonSet`):**
+   - Inspect `kubectl describe ds paynexus-security-agent -n paynexus-prod`. Resolve scheduling blocks (`nodeSelector`) and read-only hostPath file system errors.
+
+4. **Network & Ingress Routing Plane (`NetworkPolicy` + `Service` + `Ingress`):**
+   - Inspect `NetworkPolicy` ingress rules. Ensure client pods with labels `tier: frontend` and `tier: batch` can reach port `5432`.
+   - Validate Service selector (`tier: frontend`) and `targetPort` (`8080`). Align Ingress `ingressClassName` with installed controller (`nginx`).
+
+5. **Scheduling, Resilience & Probing (`HPA` + `PDB` + `Liveness/Readiness`):**
+   - Resolve `podAntiAffinity` hard topology spreads exceeding available node count. Correct memory limit thresholds to eliminate `OOMKilled (137)`.
+   - Realign probe paths (`/ready` vs `/status`) and fix HPA target deployment references.
+
+---
+
+### Verification & Success Criteria
+
+Once all manifests and values are corrected, perform full end-to-end verification:
+
+```bash
+# 1. Clean slate re-application
+kubectl delete sts,pvc,job --all -n paynexus-prod --ignore-not-found
+helm upgrade --install paynexus ./helm/paynexus -n paynexus-prod
+
+# 2. Check all workloads are healthy
+kubectl get pods,svc,ep,sts,ds,job,cronjob,ingress -n paynexus-prod -o wide
+
+# 3. Verify public Ingress HTTP 200 response
+curl -i http://$(kubectl get ingress paynexus-ingress -n paynexus-prod -o jsonpath='{.status.loadBalancer.ingress[0].ip}')/
+```
+
+Expected result: HTTP 200 OK displaying the live financial transaction ledger dashboard with zero pod crashes.
+
