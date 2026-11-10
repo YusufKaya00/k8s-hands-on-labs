@@ -1,3 +1,11 @@
+# 🔑 K8s Troubleshoot Lab 25: NetPulse v8.0 — Solution Guide
+
+> **[🇹🇷 Türkçe Versiyon](#-türkçe-versiyon) | [🇬🇧 English Version](#-english-version)**
+
+---
+
+# 🇹🇷 Türkçe Versiyon
+
 # 🔑 K8s Troubleshoot Lab 25: NetPulse v8.0 — Tam Çözüm Rehberi (Solution Guide)
 
 Bu doküman, **K8s Troubleshoot Lab 25 (NetPulse v8.0)** içerisindeki 16 görevin kök neden analizini, teşhis komutlarını, ağ mantığını ve `helm/netpulse/values.yaml` üzerindeki tam çözümlerini içerir.
