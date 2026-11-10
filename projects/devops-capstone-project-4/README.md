@@ -1,4 +1,6 @@
-# 🚀 Proje 4: OmniStream — Kurumsal DevSecOps, GitOps (ArgoCD), Event-Driven (Kafka + 3 DB), Rancher UI ve Gözlemlenebilirlik (Prometheus & Grafana) Platformu
+# 🚀 Proje 4 / Project 4: OmniStream — Enterprise DevSecOps, GitOps (ArgoCD), Event-Driven (Kafka + 3 DB), Rancher UI & Observability Platform
+
+[🇹🇷 Türkçe](#️-1-sistem-mimarisi-ve-5-node-donanım-izolasyonu) | [🇬🇧 English](#-english-version)
 
 Bu proje; gerçek dünyadaki kurumsal bir **Platform / DevSecOps Mühendisliği** mimarisinin uçtan uca tüm katmanlarını (**Terraform IaC**, **Ansible Konfigürasyon Yönetimi**, **RKE2 Kubernetes**, **Rancher UI**, **Apache Kafka (KRaft) + PostgreSQL + MongoDB + Redis**, **Self-Hosted GitLab CI + Buildah + Trivy + Docker Hub**, **ArgoCD GitOps** ve **Prometheus + Grafana**) tek bir 5 sunuculu kümede birleştiren kapsamlı bir bitirme (capstone) projesidir.
 
