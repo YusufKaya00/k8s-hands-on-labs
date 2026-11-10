@@ -97,11 +97,11 @@ coreApi:
 batch:
   migrator:
     image: busybox:1.36
-    targetRedisPort: 6380
+    targetRedisPort: 6379
   auditor:
     image: busybox:1.36
     schedule: "*/2 * * * *"
-    suspend: true
+    suspend: false
 
 scaling:
   hpa:
