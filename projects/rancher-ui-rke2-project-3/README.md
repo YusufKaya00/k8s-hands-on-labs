@@ -1,4 +1,6 @@
-# 🚀 Proje 3: Rancher Web Arayüzü (UI) ile RKE2 Kümesi & Multi-Tier Uygulama Kurulumu
+# 🚀 Proje 3 / Project 3: Rancher Web UI & 5-Node RKE2 Multi-Tier Application Operations
+
+[🇹🇷 Türkçe](#-mimari-genel-bakış) | [🇬🇧 English](#-english-version)
 
 Bu projede; Azure for Students (`6 vCPU` ve `3 Public IP`) kotalarına %100 uyumlu olarak **Terraform** ile 5 sunuculu altyapıyı, **Ansible** ile RKE2 + Local-Path Storage + Rancher Dashboard'u otomatik kuruyoruz. Ardından **Rancher Web Arayüzü (v2.9/v2.10)** üzerinden adım adım:
 1. Düğümlere **Label** ve **Taint** basmayı,
@@ -355,6 +357,59 @@ curl -s http://app.<APP_WORKER_PUBLIC_IP>.nip.io/ | jq .
 ## 🧹 ADIM 9: Temizlik
 
 ```bash
-cd ~/k8sfundamentals/Projects/rancher-ui-rke2-project-3/terraform
+cd /home/ysf/k8s-hands-on-labs/projects/rancher-ui-rke2-project-3/terraform
 terraform destroy -auto-approve
 ```
+
+---
+
+<br>
+
+---
+
+## 🇬🇧 English Version
+
+# 🐄 Project 3: Rancher Web UI Operations & 5-Node RKE2 Multi-Tier Application Deployment
+
+In this hands-on project, we provision a 5-node Azure infrastructure with **Terraform** (100% compliant with Azure for Students `6 vCPU` and `3 Public IP` quotas) and automatically bootstrap RKE2 + Local-Path Storage + **Rancher Dashboard** using **Ansible**. Then, we perform full Day-2 Kubernetes operations visually through the **Rancher Web UI (v2.9/v2.10)**:
+1. Assigning **Node Labels** and **Taints** via the Rancher UI,
+2. Managing the **Project / Namespace** hierarchy (`Default` Project -> `data` and `app` namespaces),
+3. Registering **Helm Repositories** (`bitnami`) in Rancher Apps & Marketplace and deploying 3 isolated databases (`Redis`, `PostgreSQL`, `MongoDB`) onto their dedicated worker nodes,
+4. Deploying the multi-tier web application (`Deployment`, `Service`, `Ingress`) and verifying end-to-end connectivity.
+
+---
+
+### 1. 5-Node Cluster Topology
+
+| Node Name | VM SKU | Private IP | Target Role & Taint |
+| :--- | :--- | :--- | :--- |
+| **`vm-master`** | `Standard_B2s_v2` (2 vCPU / 8 GB RAM) | `10.10.1.4` | Control Plane + Rancher UI (`CriticalAddonsOnly=true:NoSchedule`) |
+| **`vm-worker-infra`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.5` | Redis Cache (`dedicated=infra:NoSchedule`, `role=infra`) |
+| **`vm-worker-pg`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.6` | PostgreSQL (`dedicated=db-sql:NoSchedule`, `role=db-sql`) |
+| **`vm-worker-mongo`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.7` | MongoDB (`dedicated=db-nosql:NoSchedule`, `role=db-nosql`) |
+| **`vm-worker-app`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.8` | FastAPI Web App (`role=app`, untainted) |
+
+---
+
+### 2. Quick Start Commands
+
+```bash
+# 1. Provision 5 Azure VMs & auto-generate Ansible inventory:
+cd /home/ysf/k8s-hands-on-labs/projects/rancher-ui-rke2-project-3/terraform
+terraform init && terraform apply -auto-approve
+
+# 2. Bootstrap RKE2, Local-Path CSI & Rancher Server:
+cd ../ansible
+ansible-playbook -i hosts.ini site.yml
+```
+
+Once Ansible finishes, open `https://rancher.<MASTER_PUBLIC_IP>.nip.io` (Bootstrap Password: `AdminPassword123!`) and follow Steps 3–8 above to configure node taints, Helm charts, and Ingress routing through the Rancher UI.
+
+---
+
+### 3. Cleanup
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/rancher-ui-rke2-project-3/terraform
+terraform destroy -auto-approve
+```
+

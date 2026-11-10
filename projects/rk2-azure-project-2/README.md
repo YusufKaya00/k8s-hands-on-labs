@@ -1,5 +1,7 @@
 # 🚀 RKE2 5-Node High-Isolation Enterprise Platform + Rancher Dashboard (Terraform & Ansible)
 
+[🇹🇷 Türkçe](#️-mimari-ve-azure-öğrenci-kotası-planı) | [🇬🇧 English](#-english-version)
+
 Bu proje, Azure üzerinde **5 sanal makineden (VM)** oluşan yüksek izolasyonlu ve üretime hazır (production-grade) bir **RKE2 Kubernetes** kümesini ve görsel yönetim arayüzü olan **Rancher Dashboard**'u **Terraform (IaC)** ve **Ansible (Configuration Management)** ile uçtan uca otomatikleştirir.
 
 ---

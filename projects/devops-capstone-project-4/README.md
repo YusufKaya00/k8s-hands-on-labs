@@ -301,6 +301,76 @@ Bir kişinin kümeye `kubectl` ile girip yetkisiz bir değişiklik (Configuratio
 
 Lab çalışman bittiğinde tüm Azure kaynaklarını tek komutla silmek için:
 ```bash
-cd ~/k8sfundamentals/Projects/devops-capstone-project-4/terraform
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-4/terraform
 terraform destroy -auto-approve
 ```
+
+---
+
+<br>
+
+---
+
+## 🇬🇧 English Version
+
+# 🚀 Project 4: OmniStream — Enterprise GitOps (ArgoCD), Event-Driven Polyglot Data (Kafka + 3 DBs), Rancher UI & Observability Platform
+
+This capstone project unifies every layer of an enterprise **Platform & DevSecOps Engineering** stack (**Terraform IaC**, **Ansible Automation**, **RKE2 Kubernetes**, **Rancher UI**, **Apache Kafka (KRaft) + PostgreSQL + MongoDB + Redis**, **Self-Hosted GitLab CI + Rootless Buildah + Trivy + Docker Hub**, **ArgoCD GitOps**, and **Prometheus + Grafana**) across a high-isolation 5-node cluster on Azure.
+
+---
+
+### 1. 5-Node Hardware Isolation & Azure Quota Design (6 vCPUs, 3 Public IPs)
+
+| Node Name | VM SKU | Private IP | Public IP | Kubernetes Taint & Role | Hosted Workloads |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`vm-master`** | `Standard_B2s_v2` (2 vCPU / **8 GB RAM**) | `10.20.1.4` | Public IP #1 | `CriticalAddonsOnly=true:NoSchedule` | RKE2 Control Plane, Ingress NGINX, Rancher UI, ArgoCD, Prometheus + Grafana |
+| **`vm-worker-stream`** | `Standard_B1ms` (1 vCPU / **2 GB RAM**) | `10.20.1.5` | None (NAT GW Public IP #3) | `dedicated=stream:NoSchedule` | **Apache Kafka (KRaft)** + **Redis Cache** (`namespace: data`) |
+| **`vm-worker-sql`** | `Standard_B1ms` (1 vCPU / **2 GB RAM**) | `10.20.1.6` | None (NAT GW Public IP #3) | `dedicated=db-sql:NoSchedule` | **PostgreSQL 16** (`namespace: data`) |
+| **`vm-worker-nosql`** | `Standard_B1ms` (1 vCPU / **2 GB RAM**) | `10.20.1.7` | None (NAT GW Public IP #3) | `dedicated=db-nosql:NoSchedule` | **MongoDB** (`namespace: data`) |
+| **`vm-worker-app`** | `Standard_B1ms` (1 vCPU / **2 GB RAM**) | `10.20.1.8` | Public IP #2 | Untainted (`role=app`) | **OmniStream FastAPI App** (`namespace: app`) + **GitLab Runner** |
+
+---
+
+### 2. End-to-End Deployment Steps
+
+#### Step 1: Provision 5-Node Azure Infrastructure (Terraform)
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-4/terraform
+terraform init
+terraform validate
+terraform apply -auto-approve
+```
+
+#### Step 2: Bootstrap RKE2, Rancher, ArgoCD, Monitoring & Polyglot Data Layer (Ansible)
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-4/ansible
+ansible all -m ping
+ansible-playbook site.yml
+```
+
+---
+
+### 3. Web Interfaces & Credentials
+
+| Interface | URL Pattern | Username | Password |
+| :--- | :--- | :--- | :--- |
+| **OmniStream Live Dashboard & API** | `http://app.<APP_IP>.nip.io` | — | — |
+| **Grafana Monitoring** | `http://grafana.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+| **ArgoCD GitOps UI** | `http://argocd.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+| **Rancher Multi-Cluster UI** | `https://rancher.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+
+---
+
+### 4. Interactive Verification Scenarios
+1. **Live Kafka Event Streaming & Grafana Telemetry:** Generate 50 events against `POST /api/event` and observe real-time RPS, Kafka event counters, and per-database latency in Grafana.
+2. **Database Failure & Alerting Simulation:** Scale down `statefulset/mongodb` to `0`, trigger an event, and verify Graceful Degradation alongside the `OmniStreamDatabaseDown` (`Firing`) alert in Grafana.
+3. **ArgoCD Self-Healing Drift Remediation:** Manually scale `deployment/omnistream-app` to `3` replicas and watch ArgoCD automatically revert it back to the Git-declared state (`1` replica).
+
+---
+
+### 5. Cleanup
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-4/terraform
+terraform destroy -auto-approve
+```
+
