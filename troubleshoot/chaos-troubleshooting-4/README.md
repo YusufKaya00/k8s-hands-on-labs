@@ -447,3 +447,54 @@ Tüm aktif kaos deneylerini ve test podlarını temizlemek için:
 ./scripts/trigger-scenario.sh --clean-chaos
 ./scripts/check-system.sh --strict
 ```
+
+---
+
+# 🇬🇧 English Documentation
+
+## Kubernetes Chaos Engineering & DevOps Game Day Lab 4 (Advanced Failure Modes & 14 Scenarios)
+
+### Lab Philosophy: "Pristine Baseline, Realistic DevOps Failure Modes, and Zero False Positive Crashes"
+1. **100% Stable Baseline:** At startup, latent defects stay idle. All pods run with `1/1 Running`, `0 Restarts`, 0 Kafka lag, 0 RabbitMQ DLQ messages, and 100% API availability. Defects only manifest when subjected to chaos injection or stress.
+2. **14 Advanced Scenarios:** Goes beyond trivial network partition to test disk I/O latency, NTP clock drift, L7 HTTP abort, liveness cascade collapse, PostgreSQL connection pool exhaustion, PDB drain deadlocks, missing HPA CPU requests, Redis memory saturation, retry storms, and secret rotation desynchronization.
+3. **Google SRE Standards:** Multi-Window Multi-Burn-Rate alerting rules, automated blast-radius containment via Chaos Mesh `StatusCheck` workflows, and blameless postmortem runbooks.
+
+---
+
+### Scenario Overview (14 Experiments)
+
+#### Section A: Control Experiments (System Withstands Chaos)
+* **1 (A1) — IOChaos:** 200ms disk latency on PostgreSQL data volume; query pool handles delay gracefully.
+* **2 (A2) — TimeChaos:** +10m clock skew on `payment-worker` to verify NTP timestamp tolerance.
+* **3 (A3) — PodChaos:** Pod-kill on Kafka KRaft broker; controller election succeeds without message loss.
+* **4 (A4) — HTTPChaos:** 30% abort on `/api/status`; client handles L7 degraded states.
+
+#### Section B: Troubleshooting Experiments (Latent DevOps Defects)
+* **5 (T1) — Liveness Cascade:** 1500ms delay to PostgreSQL triggers liveness timeout and CrashLoop storm.
+* **6 (T2) — PostgreSQL Concurrency:** 40 virtual users exhaust `max_connections` (pool size limited to 20).
+* **7 (T3) — PDB Drain Deadlock:** `minAvailable: 2` with 2 replicas blocks node drain indefinitely.
+* **8 (T4) — Missing HPA CPU Requests:** Missing container resource requests disables CPU-based horizontal autoscaling.
+* **9 (T5) — Redis Noeviction OOM:** Default Redis configuration without eviction policy rejects writes under load.
+* **10 (T6) — Retry Storm:** 3s network delay combined with 5 immediate non-backoff retries amplifies traffic 5x.
+* **11 (T7) — NetworkPolicy Silent Drop:** Flawed network policy accidentally drops Cassandra (9042) and CoreDNS (53).
+* **12 (T8) — Secret Rotation Desync:** Database secret rotated in Secret without triggering pod rollout restart.
+* **13 (T9) — CoreDNS ndots Amplification:** Short-name query flood causes excessive CoreDNS resolution load.
+
+#### Section C: Automated Game Day Pipeline
+* **14 (C2) — Automated Resilience Workflow:** Serial execution of failure modes with automated `StatusCheck` rollback.
+
+---
+
+### Quick Start & Execution
+```bash
+# Provision cluster and deploy pristine baseline
+cd terraform && terraform init && terraform apply -auto-approve
+cd ../ && ./scripts/setup-lab.sh
+
+# Run Scenario 14 (Automated GameDay Pipeline)
+./scripts/trigger-scenario.sh 14 apply
+
+# Clean all chaos experiments
+./scripts/trigger-scenario.sh --clean-chaos
+```
+
