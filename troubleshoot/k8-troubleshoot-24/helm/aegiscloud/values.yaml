@@ -89,7 +89,7 @@ coreApi:
       memory: "2Gi"
   egressPolicy:
     allowDns: true
-    allowedDataPort: 6380
+    allowedDataPort: 6379
 
 batch:
   migrator:
