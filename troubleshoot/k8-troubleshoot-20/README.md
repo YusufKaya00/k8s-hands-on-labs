@@ -1,5 +1,7 @@
 # INCIDENT #7204 — PayNexus v4.2.0 Gerçek Zamanlı Finans & Mutabakat Platformu Yayını Sonrası Tam Kesinti
 
+> **[🇹🇷 Türkçe](#olay-özeti-incident-report) | [🇬🇧 English](#incident-7204--paynexus-v420-real-time-financial-ledger--reconciliation-platform-outage)**
+
 ## Olay Özeti (Incident Report)
 Bu sabah saat 08:30'da kurumsal ödeme ağ geçidi, finansal defter ve anlık mutabakat platformumuz **`paynexus`**, `v4.2.0` mimarisine yükseltildi. Yeni sürümle birlikte mikroservis altyapısındaki tüm temel Kubernetes iş yükü objeleri tek bir kurumsal Helm paketinde birleştirildi:
 
