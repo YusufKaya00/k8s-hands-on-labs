@@ -73,7 +73,7 @@ nodeSentinel:
 coreApi:
   replicas: 2
   image: python:3.11-alpine
-  serviceAccountName: aegis-core-discovery-role
+  serviceAccountName: aegis-core-sa
   port: 8000
   containerPortName: http-core
   serviceTargetPort: http-core
