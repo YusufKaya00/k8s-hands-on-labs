@@ -1,5 +1,7 @@
 # tf-troubleshoot-3 — Bozuk Kod, Cycle ve Replace
 
+> **[🇹🇷 Türkçe](#senaryolar) | [🇬🇧 English](#-english-version)**
+
 **Senaryolar:** Döngüsel bağımlılık · Tip / referans / isim hataları · Tek kaynağı yeniden yaratma (`-replace`)
 **Maliyet:** 0 — tamamen lokal.
 
@@ -29,3 +31,37 @@ Senaryo: `api_key` sızdırıldı, **sadece onu** yenilemen lazım. Başka hiçb
 `terraform validate` → `Success!`, `terraform plan` → `No changes`, `api_key` değişmiş ama uygulama adı aynı.
 
 > Takılırsan: `solution/`
+
+---
+
+# 🇬🇧 English Version
+
+## tf-troubleshoot-3 — Broken Code, Dependency Cycles & Selective Replacement
+
+**Scenarios:** Cyclic Dependency (`Cycle:`) · Type / Reference / Syntax Errors · Targeted Resource Re-creation (`-replace`)  
+**Cost:** $0 — Completely local simulation.
+
+### Part 1 — Triage Broken Code
+`main.tf` contains **5 intentional syntax & type defects**.
+
+```bash
+terraform init
+terraform validate
+terraform fmt
+terraform plan
+```
+
+- [ ] **Task 1:** Inspect `terraform validate` errors and isolate all 5 syntax, type, and reference bugs.
+- [ ] **Task 2:** Resolve the dependency cycle (`Cycle:`). Maintain cross-referencing between frontend and backend configuration files without creating mutual resource wait blocks.
+- [ ] **Task 3:** Ensure `terraform apply` succeeds cleanly and generates all 3 files under `output/`.
+
+### Part 2 — Targeted Credential Rotation (`-replace`)
+Scenario: `api_key` has leaked; you must rotate **only this secret** without affecting server names or restarting unrelated components.
+
+- [ ] **Task 4:** Re-generate only `random_password.api_key` using `terraform apply -replace=random_password.api_key`.
+- [ ] **Task 5:** Manually edit `output/backend.conf` and inspect how `terraform plan` detects configuration drift.
+- [ ] **Bonus:** Compare `terraform taint` (legacy) vs `-replace` (modern, safe, declarative).
+
+### Success Criteria
+`terraform validate` succeeds, `terraform plan` returns `No changes`, and `api_key` is safely rotated while maintaining stable host IDs.
+
