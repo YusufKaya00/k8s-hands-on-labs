@@ -1,5 +1,7 @@
 # tf-troubleshoot-2 — State Felaketleri (Lock, Silinen State, Refactor)
 
+> **[🇹🇷 Türkçe](#senaryolar) | [🇬🇧 English](#-english-version)**
+
 **Senaryolar:** State Lock · State dosyası silindi · Kaynak yeniden adlandırma (state mv)
 **Maliyet:** 0 — tamamen lokal (random / local / time provider). Azure'a gitmez.
 
@@ -55,3 +57,56 @@ terraform plan
 Her senaryo sonunda `terraform plan` → `No changes` ve sunucu adı en baştaki ile aynı.
 
 > Takılırsan: `solution/README.md`
+
+---
+
+# 🇬🇧 English Version
+
+## tf-troubleshoot-2 — State Disasters (Locking, Lost State & Refactoring)
+
+**Scenarios:** State Locking · Deleted State Recovery · Safe Resource Renaming (`moved` / `state mv`)  
+**Cost:** $0 — Completely local simulation (random / local / time providers).
+
+### Prerequisites
+```bash
+terraform init
+terraform apply -auto-approve
+terraform apply -auto-approve -var environment=prod
+cat output/app.conf
+ls -la
+```
+
+---
+
+### Scenario A — State Lock Contention
+Open two terminals in this directory:
+- **Terminal 1:** Run a long operation:
+  ```bash
+  terraform apply -auto-approve -replace=time_sleep.long_operation
+  ```
+- **Terminal 2:** Concurrently run `terraform plan`.
+- [ ] **Task A1:** Analyze the lock error in Terminal 2. Note Lock ID, actor, and lock file mechanisms.
+- [ ] **Task A2:** Force-kill Terminal 1 (`pkill -9 terraform`). Observe why the lock persists.
+- [ ] **Task A3:** Learn when and why `terraform force-unlock` is dangerous, and how to safely release stale locks.
+
+---
+
+### Scenario B — Deleted State (Disaster Recovery)
+```bash
+rm terraform.tfstate
+terraform plan
+```
+- [ ] **Task B1:** Notice that Terraform attempts to recreate everything from scratch (which would destroy production state).
+- [ ] **Task B2:** Recover the state from `.backup` or remote store **without applying**. Verify `terraform plan` returns `No changes`.
+- [ ] **Task B3:** Define preventative safeguards (remote backend with versioning, blob soft-delete, S3 object locks).
+
+---
+
+### Scenario C — Refactor Disaster & Safe Renaming
+Rename `random_pet.server_name` to `random_pet.primary_server` in `main.tf`.
+- [ ] **Task C1:** Observe that Terraform defaults to destroy-and-recreate.
+- [ ] **Task C2:** Refactor safely without destroying resources using both Terraform 1.1+ `moved {}` blocks and `terraform state mv`.
+
+### Success Criteria
+`terraform plan` outputs: `No changes. Your infrastructure matches the configuration.` with persistent resource IDs.
+
