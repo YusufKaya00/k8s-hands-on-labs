@@ -355,3 +355,48 @@ Grafana panellerinden tüm deneyler boyunca:
   ```
 
 </details>
+
+---
+
+# 🇬🇧 English Documentation
+
+## Kubernetes Chaos Engineering & Distributed Systems Troubleshooting Lab 2 (Advanced Zero-Spoiler)
+
+This laboratory is engineered around **ResilienceStream**, a multi-tier distributed e-commerce architecture combining FastAPI, PostgreSQL, Redis, RabbitMQ, Apache Kafka, and Apache Cassandra. It uses **Chaos Mesh**, **Prometheus**, and **Grafana** to simulate real-world production incidents with strict zero-spoiler manifest integrity.
+
+---
+
+### Architecture & Key Technologies
+
+| Component / Layer | Production Role & Expected Behavior | Chaos Experiment Type | Telemetry & Observability |
+| :--- | :--- | :--- | :--- |
+| **`order-api`** *(FastAPI, 2+ Pods)* | Receives `POST /api/orders`, updates cache, emits queue tasks. Protected with PDB (`minAvailable: 1`) and scales dynamically via HPA. | **Network Packet Loss (`NetworkChaos`):** Simulates faulty switches & TCP drops.<br>**CPU Stress (`StressChaos`):** Simulates Black Friday traffic surges and CFS throttling. | **Grafana:** HTTP p50/p95/p99 latency, HTTP status code rates, CPU Throttling (%).<br>**CLI:** `kubectl get hpa -n app`, `kubectl top pods -n app` |
+| **PostgreSQL** *(StatefulSet, `data` ns)* | Primary ACID transactional storage. Latency should never trigger API restarts; probe timeouts must accommodate transient delays. | **Network Delay (`NetworkChaos`):** Simulates I/O saturation and locking during vacuum or cloud latency spikes. | **Grafana:** Dependency health (`postgres`), pod restarts (15m), HTTP 5xx rate.<br>**CLI:** `kubectl describe pod -n app -l app=order-api` |
+| **Redis** *(StatefulSet, `messaging` ns)* | Non-blocking in-memory cache. System must practice graceful degradation (circuit breaker) returning `HTTP 200` even if Redis fails. | **Network Partition (`NetworkChaos`):** Simulates complete network partition / split-brain. | **Grafana:** `redis -> DOWN` status, yet 100% `HTTP 200` availability.<br>**CLI:** `curl -s http://app.<IP>.nip.io/api/status \| jq` |
+| **RabbitMQ & Worker** *(AMQP, `messaging` & `app`)* | Asynchronous payment processing. Failed messages must be routed to Dead Letter Queue (`payments.dlq`) without infinite loops. | **Pod Failure (`PodChaos`):** Simulates container crashes and node evictions. | **Grafana:** Active consumers, queue depth (`payments` vs `payments.dlq`).<br>**CLI:** `rabbitmqctl list_queues` |
+| **Kafka & Analytics & Cassandra** *(Stream & Storage)* | Order events ingested into Cassandra via `analytics-consumer`. Must maintain near-zero lag under memory load. | **Cassandra Delay & Memory Stress:** Verifies Kafka buffering and validates consumer memory limits. | **Grafana:** Kafka Consumer Lag, end vs committed offsets.<br>**CLI:** `./scripts/check-system.sh` |
+
+---
+
+### Quick Start
+```bash
+# Initialize infrastructure & cluster
+cd terraform && terraform init && terraform apply -auto-approve
+cd ../ && ./scripts/setup-lab.sh
+
+# Trigger scenarios via helper script
+./scripts/trigger-scenario.sh 1 apply
+./scripts/check-system.sh
+```
+
+---
+
+### Verification & Success Criteria
+
+Refer to the automated Chaos Mesh workflow validation:
+```bash
+kubectl apply -f chaos-workflows/final-verification-workflow.yaml -n chaos-mesh
+kubectl get workflow -n chaos-mesh -w
+```
+All Grafana SLO dashboards should remain green, consumer lag stays at 0, DLQ receives poisoned messages cleanly, and no pods crash during network latency or CPU stress.
+
