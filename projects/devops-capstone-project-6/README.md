@@ -178,7 +178,88 @@ curl -s "http://app.${APP_IP}.nip.io/api/artifacts" | jq .
 
 ---
 
-## 6. 5 Uygulamalı DevSecOps Laboratuvar Senaryosu
+## 6. Uçtan Uca DevSecOps & GitOps Yaşam Döngüsü ve Kritik Mimari Notlar (Soru - Cevap Rehberi)
+
+Bu bölümde, projenin canlıya alma hattında çalışan **Uçtan Uca DevSecOps & GitOps** yaşam döngüsü ve sıkça karşılaşılan mimari soruların derinlemesine yanıtları yer almaktadır.
+
+### 6.1. Yaşam Döngüsü Akışı (Geliştiriciden Canlı Kümeye)
+
+```mermaid
+flowchart TD
+    subgraph DEV["1. Geliştirici Katmanı"]
+        A["💻 Kod Değişikliği (app/src/...)"] --> B["Birim Testleri (pytest)"]
+        B --> C["git commit & git push origin main"]
+    end
+
+    subgraph CI["2. Jenkins CI/CD Motoru (Orkestrasyon)"]
+        C --> D["Jenkins Pipeline Tetiklenir"]
+        D --> E["Geçici (Ephemeral) Pod Başlar<br/>(vm-worker-secops)"]
+        E --> P1["1. Checkout & Prep (Workspace)"]
+        P1 --> P2["2. SAST & Unit Tests (Pytest + Bandit)"]
+        P2 --> P3["3. Kaniko Rootless Build (Image Derleme)"]
+        P3 --> P4["4. Harbor'a Push & Trivy CVE Gate"]
+        P4 --> P5["5. Helm Chart OCI Paketleme & Push"]
+        P5 --> P6["6. GitOps Continuous Delivery (ArgoCD Sync)"]
+        P6 --> P7["7. Post-Deploy Smoke Test & Audit"]
+    end
+
+    subgraph SEC["3. Güvenlik & Kayıt Defteri"]
+        P3 -->|"Push"| H["🛡️ Harbor OCI Registry"]
+        H -->|"Otomatik Tarama"| T["🔍 Aqua Security Trivy"]
+        T -->|"CVE Raporu"| P4
+    end
+
+    subgraph CD["4. GitOps & Kubernetes Canlı Ortam"]
+        P6 -->|"Target Tag Update"| ARGO["🐙 ArgoCD Controller"]
+        ARGO -->|"Self-Heal & Sync"| K8S["☸️ RKE2 Cluster (app namespace)"]
+        K8S --> PODS["🚀 SupplyShield Pods (Replicas=2)<br/>FastAPI + Dashboard UI"]
+        PODS <--> DB[("🐘 PostgreSQL + ⚡ Redis")]
+    end
+```
+
+### 6.2. Jenkinsfile 7 Aşamalı Boru Hattı Detayı
+
+1. **Aşama 1 — Checkout & Workspace Prep:** Kaynak kod hazırlanır, `pytest.ini` ve bağımlılıklar doğrulanır.
+2. **Aşama 2 — Unit Tests (`pytest`) & SAST (`bandit`):** Kod daha imaj haline getirilmeden önce birim testleri ve statik güvenlik analizi (hardcoded secret, SQLi tespiti) koşulur (**Shift-Left Testing**). Bozuk kodun derlenmesi engellenir.
+3. **Aşama 3 — Kaniko Rootless Build & Push:** Kubernetes içinde Docker daemon (`docker.sock`) olmadan, kullanıcı alanında (userspace) UID 10001 yetkisiz konteyner imajı derlenir ve Harbor'a pushlanır.
+4. **Aşama 4 — Harbor Trivy Vulnerability Gate:** Harbor REST API'sinden Trivy taramasının tamamlanması beklenir. Kritik (CRITICAL) zafiyet varsa pipeline kırılır; ilk 10 zafiyet konsola detaylı dökülür.
+5. **Aşama 5 — OCI Helm Chart Package & Push:** Helm grafiği Harbor OCI deposuna bir OCI paketi olarak gönderilir (`oci://harbor.../charts`).
+6. **Aşama 6 — GitOps Continuous Delivery (ArgoCD Sync):** Jenkins doğrudan kümeye `helm upgrade` yapmaz; ArgoCD Application manifestosunu günceller (`kubectl patch application supplyshield --patch-file ...`). ArgoCD sıfır kesintiyle Rolling Update başlatır.
+7. **Aşama 7 — Post-Deploy Smoke Test & Artifact Audit:** Canlı servisin `/healthz` uç noktası doğrulanır; imaj digest bilgisi PostgreSQL ve Redis'e kaydedilir.
+
+---
+
+### 6.3. Sıkça Sorulan Sorular ve Kritik DevSecOps Mühendislik Notları
+
+#### ❓ Soru 1: Neden doğrudan Jenkins `helm upgrade` yapmıyor da ArgoCD üzerinden GitOps ile dağıtıyoruz?
+* **Tek Gerçek Kaynak (Single Source of Truth):** CI sunucusunun doğrudan kümeye yazması bir **Anti-Pattern'dir**. Kümeyi kimin güncellediği belirsizleşir ve denetim (audit) zorlaşır.
+* **ArgoCD Self-Heal Çakışması:** ArgoCD'nin `selfHeal: true` özelliği etkindir. Eğer Jenkins kümede doğrudan değişiklik yaparsa, ArgoCD bunu bir konfigürasyon sapması (Configuration Drift) olarak görür ve eski haline döndürmeye çalışır.
+* **Ayrılmış Sorumluluklar:** Jenkins'in görevi **Sürekli Entegrasyon (CI)**; ArgoCD'nin görevi ise **Sürekli Teslimat (CD)**'tır.
+
+#### ❓ Soru 2: Jenkins neden GitHub'daki `values.yaml` dosyasını `git push` ile güncellemedi de ArgoCD'yi patch'ledi?
+* **İdeal GitOps (Pure GitOps):** Kurumsal ortamlarda Jenkins, Harbor build'i bittikten sonra Git reposundaki `values.yaml` dosyasını `git commit && git push` yapar ve cluster'a HİÇ dokunmaz.
+* **Bu Laboratuvardaki Pratik Tercih:** 
+  1. *Kimlik Doğrulama:* Jenkins podunun GitHub'a yazabilmesi için kullanıcının kişisel GitHub Access Token'ının (PAT) sunucuya tanımlanması gerekir. Lab ortamının sıfır bağımlılıkla herkes tarafından tek tuşla çalışabilmesi için token zorunluluğu kaldırılmıştır.
+  2. *3 Dakikalık Polling Gecikmesi:* GitHub'dan iç ağdaki ArgoCD'ye webhook kurulu değilse, ArgoCD Git'i 3 dakikada bir kontrol eder. Pipeline'ın 3 dakika boyunca beklemesini engellemek için küme içi ArgoCD API'si patch'lenerek anında senkronizasyon tetiklenmiştir.
+* **Alternatif (ArgoCD Image Updater):** Üçüncü bir yol olarak `argocd-image-updater` eklentisi kurulur; bu eklenti Harbor'da yeni semver imaj gördüğünde GitHub'daki manifestoyu kendisi günceller.
+
+#### ❓ Soru 3: GitLab CI varken neden Jenkins kullanılıyor? GitLab'da her şey daha mı kolay?
+* **Evet!** GitLab; Git Reposu, Container Registry ve CI Runner bileşenlerini tek çatı altında sunar. `$CI_JOB_TOKEN` yerleşik olarak geldiği için token üretmeden doğrudan imaj basabilir ve Git manifestolarını güncelleyebilirsiniz.
+* **Jenkins'in Tercih Sebebi:** Özellikle regülasyona tabi kurumlar (bankalar, savunma) kod deposundan bağımsız (vendor-neutral), tamamen şirket içi Kubernetes kümelerine dağılmış dinamik ajan pod'ları çalıştırmak için Jenkins Cloud mimarisini tercih eder.
+
+#### ❓ Soru 4: Harbor'da zaten Trivy varken neden CI içinde de güvenlik taraması yapılır?
+* **Shift-Left Security (CI İçinde):** İmajı registry'ye HİÇ GÖNDERMEDEN kapıda durdurmak içindir. İçinde sızdırılmış bir secret veya kritik açık varsa Harbor'a yüklenip disk kaplamadan CI aşamasında engellenir.
+* **Continuous Security (Harbor İçinde):** Zaman faktörünü yönetmek içindir. Bugün temiz çıkan bir imajda 1 ay sonra yeni bir sıfır gün (0-day) açığı çıkabilir. CI çalışmasa bile Harbor depodaki imajları her gece tekrar tarar ve canlıya çekilmesini kilitler.
+
+#### ❓ Soru 5: Harbor Trivy raporunda "High" zafiyetler görünüyor ve "Fixed In Version" neden boş?
+* **Zafiyetin Kaynağı:** Bu açıklar yazdığımız Python kodundan değil, taban işletim sisteminden (`python:3.11-slim` -> Debian `bsdutils`, `libmount1`, `libacl1`) gelir.
+* **Fixed In Version Boşluğu:** Debian topluluğu bu açıkları tespit etmiş ancak henüz resmi bir güvenlik yaması (fix) yayınlamamıştır (`Vendor Pending / Unpatched`). İmajda toplam 201 açık varken sadece 15'inin yaması mevcuttur (`fixable: 15`).
+* **Listed in CVE Allowlist:** SecOps ekipleri web servisinde kullanılmayan OS kütüphanelerini risk analizinden geçirerek Harbor'da **CVE Allowlist (Beyaz Liste)**'e ekler ve deployment engelini kaldırır.
+* **CVE Sayısını Sıfırlama Yöntemi:** Bankalar ve savunma sanayii, Debian yerine içinde kabuk (`bash`) ve gereksiz OS paketi bulunmayan **Alpine Linux (`python:3.11-alpine`)** veya **Google Distroless (`gcr.io/distroless/python3`)** kullanarak CVE sayısını 0'a indirir.
+
+---
+
+## 7. 5 Uygulamalı DevSecOps Laboratuvar Senaryosu
 
 Kurulum tamamlandıktan sonra Harbor, Trivy ve Jenkins'in nasıl çalıştığını bizzat deneyimlemek için [`docs/03-devsecops-hands-on-labs.md`](docs/03-devsecops-hands-on-labs.md) içindeki 5 deneyi sırasıyla uygulayın:
 
@@ -190,7 +271,7 @@ Kurulum tamamlandıktan sonra Harbor, Trivy ve Jenkins'in nasıl çalıştığı
 
 ---
 
-## 7. Derinlemesine Mühendislik Dokümanları ve Sorun Çözme Rehberi
+## 8. Derinlemesine Mühendislik Dokümanları ve Sorun Çözme Rehberi
 
 - 📘 [`docs/01-harbor-deep-dive.md`](docs/01-harbor-deep-dive.md): Harbor iç mimarisi (7 mikroservis), Trivy tarayıcı nasıl çalışır, Proxy Cache, Robot Account ve RKE2 `registries.yaml` entegrasyonu.
 - 📙 [`docs/02-jenkins-ci-deep-dive.md`](docs/02-jenkins-ci-deep-dive.md): Jenkins Controller vs Agent mimarisi, Kubernetes Cloud Plugin, JCasC, neden Docker-in-Docker yerine Kaniko kullanılır ve 7 aşamalı `Jenkinsfile` analizi.
@@ -199,7 +280,7 @@ Kurulum tamamlandıktan sonra Harbor, Trivy ve Jenkins'in nasıl çalıştığı
 
 ---
 
-## 8. Altyapıyı Güvenle Silme (Cleanup)
+## 9. Altyapıyı Güvenle Silme (Cleanup)
 
 ```bash
 cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-6/terraform
