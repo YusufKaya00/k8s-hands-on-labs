@@ -468,3 +468,82 @@ kubectl get pods -l app.kubernetes.io/name=routing-engine -n nexus-prod -o wide
 5. **Soft vs Hard Topology Constraints:**
    - On small node pools ($N \le 3$), avoid `requiredDuringScheduling` anti-affinity when replica count $R \ge N$.
    - Always prefer `preferredDuringScheduling` with high weights (`weight: 100`) to guarantee high availability without risking un-schedulable pods during node drains or scaling events.
+
+---
+
+# 🇹🇷 Türkçe Versiyon
+
+# 🛠️ SRE Olay Müdahale ve Post-Mortem Kılavuzu: Lab 7 (NexusLogistics)
+
+Bu belge, **Lab 7 (`k8-troubleshoot-7` — NexusLogistics Dağıtık Sevkiyat Ağı Kesintisi)** içerisindeki 8 üretim seviyesi arızanın kök neden analizlerini (RCA), mimari düzeltme adımlarını ve doğrulama prosedürlerini içerir.
+
+---
+
+## 📑 Yönetici Özeti & Kök Neden Matrisi
+
+| Bilet ID | Etkilenen Bileşen | Kök Neden (RCA) | Çözüm Stratejisi | Önem |
+| :--- | :--- | :--- | :--- | :--- |
+| **[INC-701]** | `queue-data-pvc` / `event-queue` | Kümede bulunmayan `fast-nvme-storage` StorageClass'ı ve OCI blok depolama tarafından desteklenmeyen `ReadWriteMany` modu. | StorageClass `oci-bv` ve accessMode `ReadWriteOnce` olarak güncellenmelidir. | `P1 - Blocker` |
+| **[INC-702]** | `order-worker` (Deployment) | `nexus-secrets` içinde olmayan `QUEUE_AUTH_KEY` anahtarının aranması (gerçek anahtar `QUEUE_AUTH_TOKEN`). | Secret anahtar referansı `QUEUE_AUTH_TOKEN` yapılmalıdır. | `P1 - Blocker` |
+| **[INC-703]** | `order-worker` (InitContainer) | InitContainer hatalı `dispatch-database:5432` adresini sorguluyor (gerçek servis `dispatch-db`). | Hostname `dispatch-db:5432` olarak düzeltilmelidir. | `P1 - Blocker` |
+| **[INC-704]** | `order-worker` (Deployment) | Python başlangıcı ve bellek tamponu 28MB harcarken container sınırının `24Mi` olması (`OOMKilled` Exit Code 137). | Bellek request `64Mi`, limit `128Mi` yapılmalıdır. | `P1 - Blocker` |
+| **[INC-705]** | `order-worker` (RBAC) | `default` ServiceAccount API Server üzerinde endpoint okuma yetkisine sahip değil (`HTTP 403 Forbidden`). | `endpoints` okuma iznine sahip özel `ServiceAccount`, `Role` ve `RoleBinding` tanımlanmalıdır. | `P2 - High` |
+| **[INC-706]** | `dispatch-gateway` (Service) | LoadBalancer Service seçicisi `app.kubernetes.io/name: dispatch-gw` arıyor (pod etiketi `dispatch-gateway`). | Service seçicisi `dispatch-gateway` olarak güncellenmelidir. | `P1 - Blocker` |
+| **[INC-707]** | `gateway-config` (ConfigMap) | NGINX upstream bloğu `routing-api:8080` arıyor (gerçek servis `routing-engine:8080`). | NGINX upstream host adı `routing-engine:8080` yapılmalı ve podlar yeniden başlatılmalıdır. | `P1 - Blocker` |
+| **[INC-708]** | `routing-engine` (Deployment) | 2 node'lu web havuzunda 3 replika için katı anti-affinity (`requiredDuringScheduling...`) verilmesi 3. podu `Pending` bırakıyor. | Katı kural esnek anti-affinity'ye (`preferredDuringScheduling...`) çevrilmelidir. | `P2 - High` |
+
+---
+
+## 🔧 Adım Adım Bilet Çözümleri
+
+### [INC-701] Olay Kuyruğu Disk Bağlantı Hatası (`queue-data-pvc`)
+* **Kök Neden:** `manifests/30-queue.yaml` içinde `storageClassName: "fast-nvme-storage"` ve `accessModes: [ReadWriteMany]` tanımlanmıştır. Kümede bu StorageClass yoktur ve blok depolama sürücüleri çoklu node mount (`RWX`) desteklemez.
+* **Çözüm:** `manifests/30-queue.yaml` dosyasında `storageClassName: "oci-bv"` ve `accessModes: [ReadWriteOnce]` yapın:
+  ```bash
+  kubectl apply -f manifests/30-queue.yaml
+  ```
+
+### [INC-702] Secret Anahtarı Uyuşmazlığı (`order-worker`)
+* **Kök Neden:** `manifests/50-worker.yaml` içinde `QUEUE_AUTH_KEY` anahtarı aranmaktadır; ancak `manifests/01-secrets.yaml` içinde bu anahtar `QUEUE_AUTH_TOKEN` olarak saklanmıştır.
+* **Çözüm:** `manifests/50-worker.yaml` içinde `secretKeyRef.key` alanını `QUEUE_AUTH_TOKEN` yapın.
+
+### [INC-703] InitContainer Veritabanı Servis Adı Hatası
+* **Kök Neden:** `order-worker` içindeki initContainer `dispatch-database:5432` portunu beklemektedir. Ancak `manifests/20-database.yaml` içindeki Servis adı `dispatch-db`'dir.
+* **Çözüm:** `manifests/50-worker.yaml` içindeki `nc -z -w 3 dispatch-database 5432` komutunu `dispatch-db 5432` olarak düzeltin.
+
+### [INC-704] Yetersiz Bellek Limiti (`24Mi` OOMKilled)
+* **Kök Neden:** Worker container'ı başlangıçta 28MB bellek tahsis etmekte ve `24Mi` cgroup sınırını aştığı için Linux Kernel tarafından `OOMKilled` (`Exit Code 137`) ile vurulmaktadır.
+* **Çözüm:** `manifests/50-worker.yaml` içinde `resources.requests.memory: "64Mi"` ve `resources.limits.memory: "128Mi"` olarak artırın.
+
+### [INC-705] Küme İçi API İzni Eksikliği (RBAC 403 Forbidden)
+* **Kök Neden:** Worker podu küme içi endpoint'leri sorgulamakta ancak pod spec'te bir ServiceAccount belirtilmediği için yetkisiz `default` SA kullanılmaktadır.
+* **Çözüm:** `manifests/02-rbac.yaml` (veya `manifests/50-worker.yaml`) içine `nexus-worker-sa` adında ServiceAccount, Role (`endpoints` için `get, list`) ve RoleBinding ekleyin; worker pod şablonuna `serviceAccountName: nexus-worker-sa` atayın.
+
+### [INC-706] Ingress Gateway Seçici Hatası (`Endpoints: <none>`)
+* **Kök Neden:** `manifests/10-gateway.yaml` içindeki Service `app.kubernetes.io/name: dispatch-gw` seçerken pod etiketi `dispatch-gateway`'dir.
+* **Çözüm:** Service seçicisini `app.kubernetes.io/name: dispatch-gateway` yapın.
+
+### [INC-707] NGINX Upstream DNS Hatası (502 Bad Gateway)
+* **Kök Neden:** `manifests/03-configmaps.yaml` içindeki NGINX yapılandırması `proxy_pass http://routing-api:8080` yapmaktadır. Kümede `routing-api` adında bir servis yoktur; servis adı `routing-engine`'dir.
+* **Çözüm:** ConfigMap içindeki upstream tanımını `server routing-engine:8080;` yapın ve gateway podlarını yeniden başlatın:
+  ```bash
+  kubectl rollout restart deployment/dispatch-gateway -n nexus-prod
+  ```
+
+### [INC-708] Katı Anti-Affinity Takılması (`Pending` Pod)
+* **Kök Neden:** 2 node'lu kümede 3 replika için `requiredDuringScheduling...` (Hard Anti-Affinity) kullanılmıştır. 3. pod için uygun boş node bulunamaz.
+* **Çözüm:** `manifests/40-engine.yaml` içinde anti-affinity kuralını `preferredDuringSchedulingIgnoredDuringExecution` (Soft Anti-Affinity) olarak değiştirin.
+
+---
+
+## ✅ Tam Doğrulama
+
+```bash
+kubectl apply -f manifests/
+kubectl get pods,pvc,svc,ep -n nexus-prod
+
+# Tüm podlar 1/1 Running olduktan sonra Gateway IP'sini test edin:
+export GATEWAY_IP=$(kubectl get svc dispatch-gateway -n nexus-prod -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+curl -i http://$GATEWAY_IP/api/dispatch/health
+```
+
