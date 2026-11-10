@@ -543,3 +543,57 @@ kubectl exec -n messaging redis-master-0 -- redis-cli -a 'AdminPassword2026!' --
 | **Sistem Röntgeni (Tüm Katmanları Sorgulama):** | `./scripts/check-system.sh` |
 | **Aktif Kaos Deneylerini Anında Durdurma:** | `ssh ysf@<MASTER_IP> "kubectl delete podchaos,networkchaos,dnschaos,stresschaos,iochaos,workflow --all -n chaos-mesh"` |
 | **Lab Sonu Azure Kaynaklarını Tamamen Silme:** | `cd terraform && terraform destroy -auto-approve` |
+
+---
+
+# 🇬🇧 English Documentation
+
+## SRE Incident & Chaos Engineering Lab 1: Distributed Resilience & Root Cause Analysis (RCA)
+
+### Incident Scenario
+Our enterprise e-commerce ordering platform (FastAPI + PostgreSQL + Redis + Apache Kafka + RabbitMQ) experiences intermittent `502 Bad Gateway` errors, ballooning payment queues, and cyclic worker restarts (`CrashLoopBackOff / OOMKilled`). Software engineering claims: *"All unit and integration tests pass."*
+
+As Senior SRE and Chaos Engineer, your mission is to use **Chaos Mesh** to inject controlled real-world failure modes, identify which architectural layers withstand chaos (Control Experiments), uncover hidden configuration defects (Troubleshooting Experiments), perform Root Cause Analysis (RCA), and implement permanent Helm chart fixes.
+
+---
+
+### Quick Start & Architecture
+```bash
+# Initialize infrastructure & cluster
+cd terraform && terraform init && terraform apply -auto-approve
+cd ../ && ./scripts/setup-lab.sh
+
+# Run end-to-end system health check
+./scripts/check-system.sh
+```
+
+---
+
+### Experiment Matrix
+
+#### Section A: 🟢 Control Experiments (System Withstands Chaos)
+1. **Task 1: Kubernetes `order-api` Pod Kill:** Randomly terminating an API pod to verify that multiple replicas and Ingress routing maintain 100% availability with zero 5xx errors.
+2. **Task 2: Redis DNS Failure & Cache Bypass:** Injecting DNS chaos to simulate Redis unavailability, verifying graceful cache bypass to PostgreSQL without application failure.
+3. **Task 3: Kafka Network Latency (300ms):** Injecting 300ms network delay between payment worker and Kafka to ensure message consumption resilience without broker disconnection.
+
+#### Section B: 🔴 Troubleshooting Experiments (Failure Modes to Diagnose & Fix)
+4. **Task 4 (Defect #1) — PostgreSQL Latency Triggers API CrashLoop:**
+   - *Problem:* API `/healthz` liveness probe runs `SELECT 1` on PostgreSQL. When DB latency spikes, Kubelet kills healthy API pods!
+   - *Fix:* Decouple liveness probe (check only internal HTTP process) from readiness probe (check database connectivity).
+5. **Task 5 (Defect #2) — Single Worker Failure Stalls RabbitMQ:**
+   - *Problem:* `email-worker` runs as a single replica (`replicas: 1`). Pod failure causes queue saturation (`consumers: 0`).
+   - *Fix:* Scale deployment to multiple replicas (`replicas: 2+`) with rolling update strategy and PDB.
+6. **Task 6 (Defect #3) — Low Memory Limit (`OOMKilled`) & Kafka Consumer Lag:**
+   - *Problem:* `payment-worker` has an overly restrictive `50Mi` memory limit. Processing message batches triggers OOMKills.
+   - *Fix:* Rightsize memory requests (`128Mi`) and limits (`256Mi`) in Helm values.
+
+---
+
+### Automated Verification: Final Chaos Mesh Workflow
+```bash
+# Run the automated Chaos Mesh validation workflow
+kubectl apply -f chaos-workflows/final-verification-workflow.yaml -n chaos-mesh
+kubectl get workflow -n chaos-mesh -w
+```
+All stages will transition to `Finished / Succeeded` once Helm configurations are hardened.
+
