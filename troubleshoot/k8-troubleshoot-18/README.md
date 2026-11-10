@@ -10,6 +10,9 @@ This morning at 09:15 UTC, the `storefront` Helm chart was upgraded to release `
 
 **Current Impact:** Ingress and external LoadBalancer traffic receives `503 Service Temporarily Unavailable`, completely blocking customer checkout and storefront operations.
 
+> 📖 **Root Cause Analyses (RCA), diagnostic runbooks, and fixed YAMLs:**  
+> 👉 **[Explore Senior SRE Solution Guide (SOLUTION.md)](./SOLUTION.md)**
+
 ---
 
 ## Environment Setup (Provisioning)
@@ -111,6 +114,9 @@ Bu sabah saat 09:15'te `storefront` Helm paketi `v2.4.0` sürümüne güncellend
 3. Önyüz (`storefront-web`) imajı root olmayan (`nginx-unprivileged`) yeni bir sürüme yükseltildi ve başlangıçta önbellek bağlantısını doğrulayan bir `initContainer` eklendi.
 
 **Mevcut Durum:** Dış dünyadan LoadBalancer IP'sine girildiğinde `503 Service Temporarily Unavailable` dönüyor ve müşteriler siteye erişemiyor.
+
+> 📖 **Kök Neden Analizleri (RCA), teşhis adımları ve düzeltilmiş YAML dosyaları:**  
+> 👉 **[Kıdemli SRE Çözüm Kılavuzunu İnceleyin (SOLUTION.md)](./SOLUTION.md)**
 
 ---
 
