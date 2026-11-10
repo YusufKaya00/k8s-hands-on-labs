@@ -28,7 +28,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div>
           <div class="flex items-center space-x-2">
             <h1 class="text-xl font-bold text-white tracking-tight">SupplyShield</h1>
-            <span class="bg-emerald-500/10 text-emerald-400 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-emerald-500/20">DevSecOps v1.0</span>
+            <span id="app-version-badge" class="bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-emerald-300 text-xs font-bold px-3 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1.5 shadow-sm">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span id="version-text">DevSecOps Live v1.0.4</span>
+            </span>
           </div>
           <p class="text-xs text-slate-400">Zero-Trust Software Supply Chain & Artifact Security (RKE2 Cluster)</p>
         </div>
@@ -48,6 +51,36 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <!-- ANA İÇERİK -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- GITOPS & DEVSECOPS STATÜ BARI -->
+    <div class="glass-card rounded-xl p-4 border border-cyan-500/20 bg-gradient-to-r from-slate-900/90 via-slate-900/80 to-slate-950/90 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-lg bg-cyan-950 border border-cyan-700/50 flex items-center justify-center text-xl">
+          ⚡
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            GitOps & Continuous Delivery Pipeline
+            <span class="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">ArgoCD Driven</span>
+          </h3>
+          <p class="text-xs text-slate-400">Shift-Left SAST (Bandit) &bull; Rootless Kaniko &bull; Harbor Trivy Gate &bull; ArgoCD Self-Heal</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <div class="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>CD: <b>ArgoCD Synced</b></span>
+        </div>
+        <div class="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+          <span>CI: <b>Jenkins Ephemeral</b></span>
+        </div>
+        <div class="px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-orange-400"></span>
+          <span>Gate: <b>Harbor Trivy</b></span>
+        </div>
+      </div>
+    </div>
 
     <!-- SİSTEM DURUM KARTLARI -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -120,13 +153,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <div>
             <label class="block text-slate-400 mb-1">Harbor İmajı & Etiketi (Image FQDN):</label>
             <input type="text" id="art-image" required
-              value="harbor.MASTER_IP.nip.io/supplyshield/supplyshield-api:1.0.0"
+              value="harbor.9.205.89.163.nip.io/supplyshield/supplyshield-api:latest"
               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:border-cyan-500 focus:outline-none">
           </div>
           <div>
             <label class="block text-slate-400 mb-1">OCI SHA256 Digest:</label>
             <input type="text" id="art-digest" required
-              value="sha256:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"
+              value="sha256:21564b5b6720c56b3c47fc35de61b2fc795f588ee2bbdb3112111d09fc016044"
               class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono text-[11px] focus:border-cyan-500 focus:outline-none">
           </div>
           <div class="grid grid-cols-3 gap-2">
@@ -144,7 +177,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             </div>
             <div>
               <label class="block text-slate-400 mb-1">Jenkins Build #:</label>
-              <input type="text" id="art-build" value="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
+              <input type="text" id="art-build" value="4" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:border-cyan-500 focus:outline-none">
             </div>
           </div>
 
@@ -259,7 +292,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
   <!-- ALT BİLGİ -->
   <footer class="border-t border-slate-800 bg-slate-900/60 py-4 mt-8 text-center text-xs text-slate-500">
-    <p>SupplyShield v1.0.0 — RKE2 High-Isolation Architecture (Master 8GB / App 4GB / SecOps 4GB)</p>
+    <p>SupplyShield DevSecOps Platformu &bull; RKE2 High-Isolation Architecture (Master 8GB / App 4GB / SecOps 4GB)</p>
   </footer>
 
   <script>
@@ -283,6 +316,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         if (!res.ok) return;
         const data = await res.json();
         document.getElementById('pod-hostname').innerText = data.pod || "unknown";
+
+        if (data.version) {
+          const vText = document.getElementById('version-text');
+          if (vText) vText.innerText = `DevSecOps Live v${data.version}`;
+        }
 
         const deps = data.dependencies || {};
         updateBadge('postgres', deps.postgres);
@@ -314,7 +352,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       try {
         const res = await fetch('/api/artifacts');
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const list = await res.json();
+        const resData = await res.json();
+        const list = Array.isArray(resData) ? resData : (resData.artifacts || []);
         if (!list || list.length === 0) {
           tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500">Henüz doğrulanmış artefakt yok.</td></tr>';
           return;
@@ -345,7 +384,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       try {
         const res = await fetch('/api/orders');
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const list = await res.json();
+        const resData = await res.json();
+        const list = Array.isArray(resData) ? resData : (resData.orders || []);
         if (!list || list.length === 0) {
           tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-slate-500">Henüz kayıtlı sipariş yok.</td></tr>';
           return;
@@ -438,6 +478,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     loadArtifacts();
     loadOrders();
     setInterval(fetchSystemStatus, 4000);
+    setInterval(loadArtifacts, 8000);
+    setInterval(loadOrders, 8000);
   </script>
 </body>
 </html>
