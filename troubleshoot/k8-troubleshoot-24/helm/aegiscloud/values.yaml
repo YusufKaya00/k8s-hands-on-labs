@@ -76,7 +76,7 @@ coreApi:
   serviceTargetPort: core-port
   serviceSelectorComponent: core-api
   configVaultAddr: "http://crypto-vault.aegis-data.svc.cluster.local:8443"
-  overrideVaultAddr: "http://127.0.0.1:8443"
+  overrideVaultAddr: ""
   livenessProbe:
     path: /healthz
     port: 8000
