@@ -119,5 +119,5 @@ edgeProxy:
   upstreamUrl: "http://core-api.aegis-core.svc.cluster.local:8000"
 
 ingress:
-  className: k8s.io/ingress-nginx 
+  className: nginx 
   backendPath: /
