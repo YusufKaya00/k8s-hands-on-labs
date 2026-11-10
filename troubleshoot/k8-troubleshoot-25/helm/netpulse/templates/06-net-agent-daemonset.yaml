@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: net-agent
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: net-agent
+spec:
+  selector:
+    matchLabels:
+      app: net-agent
+  template:
+    metadata:
+      labels:
+        app: net-agent
+    spec:
+{{- if .Values.netAgent.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.netAgent.nodeSelector | indent 8 }}
+{{- end }}
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: agent
+          image: {{ .Values.netAgent.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "[net-agent] Initializing node packet telemetry agent..."
+              echo "$$" > /var/run/net-agent/agent.pid
+              echo "[net-agent] Agent PID recorded in /var/run/net-agent/agent.pid. Monitoring active."
+              while true; do sleep 30; done
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.netAgent.readOnlyRootFilesystem }}
+{{- if .Values.netAgent.mountRunEmptyDir }}
+          volumeMounts:
+            - name: run-dir
+              mountPath: /var/run/net-agent
+{{- end }}
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+{{- if .Values.netAgent.mountRunEmptyDir }}
+      volumes:
+        - name: run-dir
+          emptyDir: {}
+{{- end }}

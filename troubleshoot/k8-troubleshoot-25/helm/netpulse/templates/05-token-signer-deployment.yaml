@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: token-signer
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: token-signer
+    role: crypto-signer
+spec:
+  selector:
+    app: token-signer
+    role: crypto-signer
+  ports:
+    - name: http-signer
+      port: {{ .Values.tokenSigner.port }}
+      targetPort: {{ .Values.tokenSigner.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: token-signer
+  namespace: {{ .Values.namespaces.data }}
+spec:
+  replicas: {{ .Values.tokenSigner.replicas }}
+  selector:
+    matchLabels:
+      app: token-signer
+      role: crypto-signer
+  template:
+    metadata:
+      labels:
+        app: token-signer
+        role: crypto-signer
+    spec:
+      containers:
+        - name: signer
+          image: {{ .Values.tokenSigner.image }}
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              import http.server, json, os
+
+              BIND_ADDR = os.environ.get("BIND_ADDR", "127.0.0.1")
+              PORT = int(os.environ.get("SIGNER_PORT", "9000"))
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ("/healthz", "/v1/sign"):
+                          body = json.dumps({
+                              "service": "token-signer",
+                              "signature": "ed25519-verified",
+                              "bind": BIND_ADDR
+                          }).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              print(f"[token-signer] Listening on {BIND_ADDR}:{PORT} ...")
+              if BIND_ADDR == "127.0.0.1":
+                  print("[WARNING] Bound to 127.0.0.1 (loopback only)! External Pod IP connections & Kubelet probes will get Connection Refused!")
+              http.server.HTTPServer((BIND_ADDR, PORT), Handler).serve_forever()
+          env:
+            - name: BIND_ADDR
+              value: {{ .Values.tokenSigner.bindAddress | quote }}
+            - name: SIGNER_PORT
+              value: {{ .Values.tokenSigner.port | quote }}
+          ports:
+            - name: http-signer
+              containerPort: {{ .Values.tokenSigner.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.tokenSigner.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
