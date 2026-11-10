@@ -91,7 +91,7 @@ spec:
     }
 
     environment {
-        HARBOR_HOST    = "harbor.MASTER_IP.nip.io"
+        HARBOR_HOST    = "harbor.9.205.89.163.nip.io"
         HARBOR_PROJECT = "supplyshield"
         IMAGE_NAME     = "supplyshield-api"
         IMAGE_TAG      = "1.0.${BUILD_NUMBER}"
