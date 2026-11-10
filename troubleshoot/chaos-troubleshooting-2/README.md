@@ -1,5 +1,7 @@
 # 🔥 Kubernetes Chaos Engineering & Distributed Systems Troubleshooting Lab 2 (İleri Seviye / Zero-Spoiler)
 
+> **[🇹🇷 Türkçe](#-1-mimaride-neyi-neden-kullanıyoruz-ve-hangi-durumda-hangi-kaos-testini-yaparız) | [🇬🇧 English](#-english-documentation)**
+
 Bu laboratuvar, **ResilienceStream** çok katmanlı dağıtık sipariş ve ödeme mimarisi üzerinde **Chaos Mesh**, **Prometheus** ve **Grafana** kullanarak gerçek dünya üretim (Production) arızalarını simüle etmek, gözlemlemek ve **YAML dosyalarında hiçbir kopya/yorum olmadan** kök neden analizi (Root Cause Analysis - RCA) yapmak için tasarlanmıştır.
 
 > [!IMPORTANT]
