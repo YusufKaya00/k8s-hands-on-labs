@@ -326,8 +326,21 @@ terraform destroy -auto-approve
    - **Stage 3:** Rootless Container Image Build & Push to Harbor (`kaniko`)
    - **Stage 4:** Harbor + Trivy Vulnerability Scan Gate (REST API polling)
    - **Stage 5:** OCI Helm Chart Packaging & Push (`helm push oci://harbor.../supplyshield/charts`)
-   - **Stage 6:** Kubernetes Rolling Update (`helm upgrade --install` in `namespace: app`)
+   - **Stage 6:** GitOps Continuous Delivery via ArgoCD (`kubectl patch application supplyshield --patch-file ...`)
    - **Stage 7:** Post-Deploy Smoke Test & PostgreSQL Artifact Audit Recording
+
+---
+
+### 3. DevSecOps & GitOps Architecture FAQ (Senior Engineering Notes)
+
+- **Why ArgoCD GitOps instead of CI `helm upgrade` directly?**  
+  Direct CI deployments create configuration drift and fight ArgoCD's `selfHeal` controller. Separating CI (build/test) from CD (declarative reconciliation by ArgoCD) preserves Git as the Single Source of Truth.
+- **Why is GitLab CI so popular?**  
+  GitLab combines repository, runner, and OCI registry in one roof with built-in `$CI_JOB_TOKEN`, eliminating the need to manage external PATs or SSH keys for GitOps promotion.
+- **Why scan in both CI and Harbor?**  
+  CI scanning (**Shift-Left**) stops vulnerable images before they ever enter the registry. Harbor periodic scanning (**Continuous Security**) catches zero-day vulnerabilities discovered weeks after an image is pushed.
+- **Why are there OS CVEs with empty "Fixed In Version"?**  
+  These stem from upstream base OS packages (`debian:trixie-slim`, `bsdutils`, `libmount1`) where patches are pending vendor release. In production, teams whitelist known unexploitable CVEs via **Harbor CVE Allowlist** or switch to minimal distros like **Alpine Linux** or **Google Distroless** to achieve zero CVEs.
 
 ---
 
