@@ -96,18 +96,15 @@
           --set crds.enabled=true \
           --set nodeSelector.tier=platform \
           --set "tolerations[0].key=CriticalAddonsOnly" \
-          --set "tolerations[0].operator=Equal" \
-          --set "tolerations[0].value=true" \
+          --set "tolerations[0].operator=Exists" \
           --set "tolerations[0].effect=NoSchedule" \
           --set webhook.nodeSelector.tier=platform \
           --set "webhook.tolerations[0].key=CriticalAddonsOnly" \
-          --set "webhook.tolerations[0].operator=Equal" \
-          --set "webhook.tolerations[0].value=true" \
+          --set "webhook.tolerations[0].operator=Exists" \
           --set "webhook.tolerations[0].effect=NoSchedule" \
           --set cainjector.nodeSelector.tier=platform \
           --set "cainjector.tolerations[0].key=CriticalAddonsOnly" \
-          --set "cainjector.tolerations[0].operator=Equal" \
-          --set "cainjector.tolerations[0].value=true" \
+          --set "cainjector.tolerations[0].operator=Exists" \
           --set "cainjector.tolerations[0].effect=NoSchedule" \
           --wait --timeout 5m
       changed_when: true
