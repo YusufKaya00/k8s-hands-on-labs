@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.rbac.serviceAccountName }}
+  namespace: {{ .Values.namespaces.core }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: core-endpoint-reader
+  namespace: {{ .Values.namespaces.core }}
+rules:
+  - apiGroups: [""]
+    resources:
+{{- range .Values.rbac.allowedResources }}
+      - {{ . | quote }}
+{{- end }}
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: core-endpoint-reader-binding
+  namespace: {{ .Values.namespaces.core }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.rbac.serviceAccountName }}
+    namespace: {{ .Values.namespaces.core }}
+roleRef:
+  kind: Role
+  name: core-endpoint-reader
+  apiGroup: rbac.authorization.k8s.io

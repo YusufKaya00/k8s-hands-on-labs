@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespaces.data }}
+  labels:
+    netpulse.io/tier: data
+    app.kubernetes.io/part-of: netpulse
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespaces.core }}
+  labels:
+    netpulse.io/tier: core
+    app.kubernetes.io/part-of: netpulse
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespaces.edge }}
+  labels:
+    netpulse.io/tier: edge
+    app.kubernetes.io/part-of: netpulse
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: core-quota
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: "2Gi"
+    limits.cpu: "4"
+    limits.memory: "4Gi"
+    pods: "15"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: core-limits
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "300m"
+        memory: "256Mi"
+      defaultRequest:
+        cpu: "50m"
+        memory: "64Mi"
