@@ -41,7 +41,7 @@ sharedStorage:
 stateStore:
   replicas: 1
   image: redis:7.2-alpine
-  priorityClassName: aegis-critical-tier
+  priorityClassName: aegis-high-priority
   serviceName: state-store-headless
   headlessServiceName: state-store-db
   port: 6379
