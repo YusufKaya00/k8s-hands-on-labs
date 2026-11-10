@@ -33,7 +33,7 @@ provider "helm" {
 variable "location" {
   description = "Azure region for AKS cluster"
   type        = string
-  default     = "swedencentral"
+  default     = "denmarkeast"
 }
 
 variable "resource_group_name" {
