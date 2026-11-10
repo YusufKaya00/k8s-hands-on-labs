@@ -1,5 +1,7 @@
 # 🔥 Kubernetes Chaos Engineering & DevOps Game Day Lab 4 (Advanced Failure Modes & 14 Scenarios)
 
+> **[🇹🇷 Türkçe](#-1-mimari-ve-sre-karar-matrisi) | [🇬🇧 English](#-english-documentation)**
+
 Bu laboratuvar, **ResilienceStream** kurumsal dağıtık mikroservis mimarisi üzerinde **Chaos Mesh**, **Prometheus**, **Grafana** ve **Argo CD** kullanarak modern DevOps ve SRE ekiplerinin üretimde (Production) karşılaştığı en sinsi, zincirleme ve gizli arıza modlarını simüle etmek, teşhis etmek ve kalıcı olarak iyileştirmek için tasarlanmıştır.
 
 > [!IMPORTANT]
