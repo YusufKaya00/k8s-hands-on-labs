@@ -15,8 +15,8 @@ quotas:
   core:
     requestsCpu: "2"
     requestsMemory: "1Gi"
-    limitsCpu: "4"
-    limitsMemory: "1Gi"
+    limitsCpu: "6"
+    limitsMemory: "4Gi"
     pods: "15"
 
 limitRange:
