@@ -1,3 +1,11 @@
+# 🛠️ SRE Incident Remediation Guide & Post-Mortem: Lab 8 (Helix Ledger)
+
+> **[🇹🇷 Türkçe Versiyon](#-türkçe-versiyon) | [🇬🇧 English Version](#-english-version)**
+
+---
+
+# 🇹🇷 Türkçe Versiyon
+
 # 🛠️ SRE Olay Müdahale Rehberi ve Post-Mortem: Lab 8 (Helix Ledger)
 
 Bu belge **Lab 8 (Helix Ledger — `helix-prod` namespace)** kesintisinin kök neden analizlerini (RCA), teşhis komutlarını, düzeltme adımlarını ve sektörden edge-case deneyimlerini içerir.
