@@ -65,7 +65,7 @@ nodeSentinel:
   nodeSelector:
     accelerator: nvidia-h100
   readOnlyRootFilesystem: true
-  mountLogEmptyDir: false
+  mountLogEmptyDir: true
 
 coreApi:
   replicas: 2
