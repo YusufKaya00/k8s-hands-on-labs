@@ -88,7 +88,7 @@ coreApi:
       cpu: "500m"
       memory: "2Gi"
   egressPolicy:
-    allowDns: false
+    allowDns: true
     allowedDataPort: 6380
 
 batch:
