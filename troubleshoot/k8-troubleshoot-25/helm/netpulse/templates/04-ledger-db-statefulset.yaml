@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.ledgerDb.headlessServiceName }}
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: ledger-db
+    role: stateful-ledger
+spec:
+  clusterIP: None
+  selector:
+    app: ledger-db
+    role: stateful-ledger
+  ports:
+    - name: tcp-redis
+      port: {{ .Values.ledgerDb.port }}
+      targetPort: {{ .Values.ledgerDb.port }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ledger-db
+  namespace: {{ .Values.namespaces.data }}
+spec:
+  serviceName: {{ .Values.ledgerDb.serviceName }}
+  replicas: {{ .Values.ledgerDb.replicas }}
+  selector:
+    matchLabels:
+      app: ledger-db
+      role: stateful-ledger
+  template:
+    metadata:
+      labels:
+        app: ledger-db
+        role: stateful-ledger
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.ledgerDb.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              exec redis-server --port {{ .Values.ledgerDb.port }} --requirepass "${REDIS_PASSWORD}" --appendonly yes
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ledgerDb.secretName }}
+                  key: {{ .Values.ledgerDb.secretKey }}
+          ports:
+            - name: tcp-redis
+              containerPort: {{ .Values.ledgerDb.port }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.ledgerDb.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: ledger-storage
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+  volumeClaimTemplates:
+    - metadata:
+        name: ledger-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.ledgerDb.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.ledgerDb.storageSize }}
