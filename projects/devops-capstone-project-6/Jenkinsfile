@@ -212,21 +212,21 @@ spec:
         }
 
         // ----------------------------------------------------------------------
-        // AŞAMA 6: KUBERNETES ROLLING UPDATE (CANLI DAĞITIM)
         // ----------------------------------------------------------------------
-        stage('6. Deploy to Kubernetes (app namespace)') {
+        // AŞAMA 6: GITOPS DAĞITIMI (ARGOCD PROMOTION & SYNC)
+        // ----------------------------------------------------------------------
+        stage('6. GitOps Continuous Delivery (ArgoCD Sync)') {
             steps {
                 container('k8s-tools') {
                     sh '''
                         echo "=========================================================="
-                        echo " [AŞAMA 6] Yeni İmaj (${IMAGE_TAG}) Canlı Ortama Dağıtılıyor..."
+                        echo " [AŞAMA 6] GitOps ile ArgoCD Üzerinden Dağıtım Tetikleniyor..."
+                        echo " Hedef İmaj Sürümü: ${IMAGE_TAG}"
                         echo "=========================================================="
-                        helm upgrade --install supplyshield ./app/chart \
-                          --namespace app \
-                          --set image.repository="${HARBOR_HOST}/${HARBOR_PROJECT}/${IMAGE_NAME}" \
-                          --set image.tag="${IMAGE_TAG}" \
-                          --set env.APP_VERSION="${IMAGE_TAG}" \
-                          --wait --timeout 3m
+                        # ArgoCD Application hedef sürümünü güncelle (GitOps Promotion)
+                        kubectl patch application supplyshield -n argocd --type=merge -p "{\\"spec\\":{\\"source\\":{\\"helm\\":{\\"values\\":\\"image:\\\\n  repository: ${HARBOR_HOST}/${HARBOR_PROJECT}/${IMAGE_NAME}\\\\n  tag: \\\\\\"${IMAGE_TAG}\\\\\\"\\\\ningress:\\\\n  host: app.9.205.90.218.nip.io\\\\nenv:\\\\n  APP_VERSION: \\\\\\"${IMAGE_TAG}\\\\\\"\\\\n  HARBOR_EXTERNAL_URL: \\\\\\"http://${HARBOR_HOST}\\\\\\"\\\\n\\"}}}"
+
+                        # ArgoCD senkronizasyonunu ve Kubernetes podlarının hazır olmasını bekle
                         kubectl rollout status deployment/supplyshield -n app --timeout=120s
                     '''
                 }
