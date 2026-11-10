@@ -18,8 +18,8 @@ spec:
         tier: security-agent
     spec:
       {{- if .Values.nodeSentinel.nodeSelector }}
-      nodeSelector:
-{{ toYaml .Values.nodeSentinel.nodeSelector | indent 8 }}
+
+
       {{- end }}
       containers:
         - name: sentinel
