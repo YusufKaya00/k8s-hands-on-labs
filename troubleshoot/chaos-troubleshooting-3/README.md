@@ -294,3 +294,57 @@ kubectl apply -f chaos-workflows/08-final-game-day-workflow.yaml
 ```
 
 Chaos Mesh Dashboard (`http://chaos-mesh.<MASTER_IP>.nip.io`) üzerinden **Workflows** menüsüne gidin ve adım adım tüm kaos testlerinin başarıyla geçtiğini, Grafana'da ise sistemin 100% SLO ile ayakta kaldığını canlı olarak izleyin!
+
+---
+
+# 🇬🇧 English Documentation
+
+## Kubernetes Chaos Engineering & Distributed Systems Troubleshooting Lab 3 (Production-Grade & Zero-Flapping)
+
+### Core Philosophy: "Pristine Stability in Peacetime, Educational Resilience Under Chaos"
+1. **100% Clean Baseline:** In peacetime, all workloads (`order-api`, `analytics-consumer`, `payment-worker`, `telemetry-agent`) run with `1/1 Running`, 0 Restarts, healthy probes, 0 Kafka lag, and 0 DLQ messages. Helm deploys cleanly without timeout failures.
+2. **Zero-Spoiler Real SRE Experience:** No `# BUG` hints in `values.yaml` or templates. Diagnoses must be derived from Grafana dashboards, metrics, and `kubectl` logs.
+3. **Continuous Synthetic Telemetry:** The built-in telemetry agent submits real transactions (`POST /api/orders`) every 2.5s and polls brokers directly so charts never drop to `No Data`.
+
+---
+
+### Architecture SRE Decision Matrix
+```mermaid
+flowchart LR
+  U["Client & Telemetry Agent\nHTTP POST /api/orders"] --> ING[Ingress NGINX]
+  ING --> API["order-api (x2 Pods)\nNamespace: app"]
+  API -->|"1. ACID Orders (Hard Dep)"| PG[("PostgreSQL\nNamespace: data")]
+  API -->|"2. Domain Events (Shock Absorber)"| K[("Apache Kafka KRaft\norders.events\nNamespace: data")]
+  API -->|"3. Async Payments (Task Queue)"| RMQ[("RabbitMQ\npayments & dlq\nNamespace: messaging")]
+  API -->|"4. Soft Cache (Cache-Aside)"| RD[("Redis Cache\nNamespace: messaging")]
+  K -->|"Stream Consume"| AC["analytics-consumer\nNamespace: app"]
+  AC -->|"Persist Analytics"| CASS[("Cassandra\nNamespace: data")]
+  RMQ -->|"Process Payment"| PW["payment-worker (x2 Pods)\nNamespace: app"]
+```
+
+---
+
+### Key Failure Scenarios & Resilience Tests
+
+1. **Control Scenarios (Validating Built-in Hardening):**
+   - **Pod Kill on `order-api`:** Multi-replica deployment & ingress load balancer maintain 0 error rate.
+   - **Redis Network Partition:** Soft dependency degrades gracefully via circuit-breaker bypass to PostgreSQL.
+   - **Kafka Network Latency:** Producer buffering absorbs network jitter without dropping client requests.
+
+2. **Troubleshooting Scenarios (Defects to Triage):**
+   - **Postgres Delay & Liveness Cascade:** Over-coupled liveness probes causing cascading container restarts.
+   - **PDB Node Drain Lock:** `minAvailable: 2` with 2 replicas deadlock node maintenance.
+   - **Memory Saturation & Out-of-Memory (`OOMKilled`):** Restrictive memory limits failing under bursty payload batches.
+
+---
+
+### Fast Hardening & Game Day Verification
+```bash
+# Apply fully hardened configuration:
+./scripts/setup-lab.sh --hardened
+
+# Run automated end-to-end resilience validation:
+kubectl apply -f chaos-workflows/08-final-game-day-workflow.yaml
+```
+Verify via Chaos Mesh dashboard and Grafana that all 6 consecutive faults are absorbed with zero SLO breach.
+
