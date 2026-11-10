@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-router
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: edge-router
+    tier: edge-gateway
+spec:
+  selector:
+    app: edge-router
+    tier: edge-gateway
+  ports:
+    - name: http-edge
+      port: {{ .Values.edgeRouter.port }}
+      targetPort: {{ .Values.edgeRouter.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-router
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  replicas: {{ .Values.edgeRouter.replicas }}
+  selector:
+    matchLabels:
+      app: edge-router
+      tier: edge-gateway
+  template:
+    metadata:
+      labels:
+        app: edge-router
+        tier: edge-gateway
+    spec:
+      containers:
+        - name: nginx
+          image: {{ .Values.edgeRouter.image }}
+          ports:
+            - name: http-edge
+              containerPort: {{ .Values.edgeRouter.port }}
+          readinessProbe:
+            httpGet:
+              path: /edge-health
+              port: {{ .Values.edgeRouter.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: edge-router-conf
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: netpulse-ingress
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-router
+                port:
+                  number: {{ .Values.edgeRouter.port }}

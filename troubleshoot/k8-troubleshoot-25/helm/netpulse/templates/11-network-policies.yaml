@@ -1,0 +1,86 @@
+# 1. Data Katmanı Zero-Trust NetworkPolicy (netpulse-data)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-zero-trust
+  namespace: {{ .Values.namespaces.data }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              netpulse.io/tier: {{ .Values.dataNetworkPolicy.allowedNamespaceTier }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.dataNetworkPolicy.allowedRedisPort }}
+        - protocol: TCP
+          port: {{ .Values.dataNetworkPolicy.allowedSignerPort }}
+---
+# 2. Core Katmanı Ingress & Egress NetworkPolicy (netpulse-core)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: core-netpol
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              netpulse.io/tier: {{ .Values.coreNetworkPolicy.allowedIngressTier }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.paymentEngine.port }}
+  egress:
+{{- if .Values.coreNetworkPolicy.allowDnsEgress }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              netpulse.io/tier: data
+      ports:
+        - protocol: TCP
+          port: {{ .Values.coreNetworkPolicy.allowedDataRedisPort }}
+        - protocol: TCP
+          port: {{ .Values.coreNetworkPolicy.allowedDataSignerPort }}
+    # Kubernetes API Server erişimi (init-verify-endpoints için)
+    - ports:
+        - protocol: TCP
+          port: 443
+---
+# 3. Edge Katmanı Ingress NetworkPolicy (netpulse-edge)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-netpol
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  podSelector:
+    matchLabels:
+      app: edge-router
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.edgeNetworkPolicy.allowedIngressControllerNamespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.edgeRouter.port }}
