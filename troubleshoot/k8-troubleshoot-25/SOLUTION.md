@@ -386,3 +386,131 @@ kubectl rollout restart deploy edge-router -n netpulse-edge
 # 4. Doğrulama scriptini çalıştır
 ./check.sh
 ```
+
+---
+
+# 🇬🇧 English Version
+
+# 🔑 K8s Troubleshoot Lab 25: NetPulse v8.0 — Full Solution & RCA Guide
+
+This document provides in-depth Root Cause Analysis (RCA), diagnostic CLI commands, and permanent Helm remediations across all **16 tasks** in `k8-troubleshoot-25`.
+
+---
+
+## 📑 Executive Incident Resolution Matrix (16 Cascading Defect Tasks)
+
+| Task | Layer | Impacted Object | Root Cause (RCA) | Remediation in `values.yaml` |
+| :--- | :--- | :--- | :--- | :--- |
+| **Task 1** | Data | `ledger-db-0` (`StatefulSet`) | `storageClassName: azure-ultra-nvme` does not exist in standard cluster. | Set `ledgerDb.storageClassName: managed-csi`. |
+| **Task 2** | Data | `ledger-db` (`DNS`) | `serviceName: ledger-internal-svc` does not match headless service `ledger-headless`. | Set `ledgerDb.serviceName: ledger-headless`. |
+| **Task 3** | Data | `token-signer` (`Deployment`) | Bound to `127.0.0.1` (loopback), refusing external traffic from pod IP. | Set `tokenSigner.bindAddress: "0.0.0.0"`. |
+| **Task 4** | Data | `data-zero-trust` (`NetPol`) | Namespace selector looks for `tier=backend-v1` (actual is `tier=core`) & port `9090` (actual is `9000`). | Set `allowedClientNamespaceSelectorLabelValue: core` & port `9000`. |
+| **Task 5** | Core | `payment-engine` (`InitContainer`) | InitContainer polls port 6380 (Redis listens on 6379). | Set `paymentEngine.initTargetPort: 6379`. |
+| **Task 6** | Core | `payment-engine` (`Secret`) | Searches for `hsm_token` instead of `ledger_auth_token` (`CreateContainerConfigError`). | Set `paymentEngine.secretKeyName: ledger_auth_token`. |
+| **Task 7** | Core | `payment-engine` (`OOMKilled`) | 24Mi memory limit too low for Node.js runtime (`Exit Code 137`). | Increase `paymentEngine.memoryLimit: 128Mi`. |
+| **Task 8** | Core | `payment-engine` (`Service`) | Service forwards to targetPort 80 (app listens on 8080). | Set `paymentEngine.serviceTargetPort: 8080`. |
+| **Task 9** | Core | `core-zero-trust` (`NetPol`) | Egress rules omit CoreDNS UDP/TCP port 53. | Add port 53 to egress policy in `values.yaml`. |
+| **Task 10** | Core | `ledger-seed` (`Job`) | Overrides `REDIS_HOST: 127.0.0.1` instead of cluster DNS (`Connection refused`). | Set `seedJob.targetRedisPort: 6379` & reference cluster DNS. |
+| **Task 11** | Core | `reconcile-cron` (`CronJob`) | `suspend: true` prevents scheduled reconciliation. | Set `reconcileCron.suspend: false`. |
+| **Task 12** | Edge | `edge-router` (`ConfigMap`) | Upstream points to short name instead of cross-namespace FQDN. | Use full FQDN: `http://payment-engine.netpulse-core.svc.cluster.local:8080`. |
+| **Task 13** | Edge | `edge-router` (`Service`) | Selector has `tier: gateway` (actual is `edge-router`) & port 80 (actual 8080). | Set `edgeRouter.port: 8080` & selector `edge-router`. |
+| **Task 14** | Edge | `edge-zero-trust` (`NetPol`) | Allows `ingress-controller` namespace instead of `ingress-nginx`. | Set `edgeNetworkPolicy.allowedIngressControllerNamespace: ingress-nginx`. |
+| **Task 15** | Ingress | `netpulse-ingress` | `className: traefik` (actual controller is `nginx`) & path `/edge` instead of `/`. | Set `ingress.className: nginx` & `ingress.path: /`. |
+| **Task 16** | Scaling | `HPA & PDB` | HPA targets `payment-api` instead of `payment-engine`; PDB `minAvailable: 2` on 2 replicas. | Set HPA target `payment-engine` & PDB `minAvailable: 1`. |
+
+---
+
+## 🛠️ Step-by-Step Resolution Runbook
+
+### Section 1: Data Layer (`netpulse-data`)
+```yaml
+ledgerDb:
+  storageClassName: managed-csi
+  serviceName: ledger-headless
+  headlessServiceName: ledger-headless
+
+tokenSigner:
+  bindAddress: "0.0.0.0"
+  port: 9000
+
+dataNetworkPolicy:
+  allowedClientNamespaceSelectorLabelValue: core
+  allowedPorts:
+    - 6379
+    - 9000
+```
+*Note:* Delete immutable StatefulSet and PVC before applying:
+```bash
+kubectl delete sts ledger-db -n netpulse-data --ignore-not-found
+kubectl delete pvc ledger-storage-ledger-db-0 -n netpulse-data --ignore-not-found
+```
+
+### Section 2: Core Layer (`netpulse-core`)
+```yaml
+paymentEngine:
+  initTargetPort: 6379
+  secretKeyName: ledger_auth_token
+  memoryLimit: 128Mi
+  serviceTargetPort: 8080
+
+coreNetworkPolicy:
+  allowDnsEgress: true
+
+seedJob:
+  targetRedisPort: 6379
+
+reconcileCron:
+  suspend: false
+```
+*Note:* Delete old immutable seed job:
+```bash
+kubectl delete job ledger-seed -n netpulse-core --ignore-not-found
+```
+
+### Section 3: Edge & Ingress Layer (`netpulse-edge`)
+```yaml
+edgeRouter:
+  port: 8080
+  upstreamUrl: "http://payment-engine.netpulse-core.svc.cluster.local:8080"
+
+edgeNetworkPolicy:
+  allowedIngressControllerNamespace: ingress-nginx
+
+ingress:
+  className: nginx
+  path: /
+```
+
+### Section 4: Autoscaling & Disruption Budget
+```yaml
+scaling:
+  hpa:
+    targetDeploymentName: payment-engine
+  pdb:
+    minAvailable: 1
+```
+
+---
+
+## 🚀 Rollout & Verification Checklist
+
+```bash
+# 1. Clean up immutable resources
+kubectl delete sts ledger-db -n netpulse-data --ignore-not-found
+kubectl delete pvc ledger-storage-ledger-db-0 -n netpulse-data --ignore-not-found
+kubectl delete job ledger-seed -n netpulse-core --ignore-not-found
+
+# 2. Upgrade release
+INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+helm upgrade --install netpulse ./helm/netpulse \
+  --namespace netpulse-core \
+  --set global.ingressHost="netpulse.${INGRESS_IP}.nip.io"
+
+# 3. Restart edge router to reload Nginx configuration
+kubectl rollout restart deploy edge-router -n netpulse-edge
+
+# 4. Run automated test suite
+./check.sh
+```
+All 16 checks will pass cleanly with `[PASS]`!
+
