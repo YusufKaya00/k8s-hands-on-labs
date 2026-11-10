@@ -163,6 +163,50 @@ az vm deallocate --ids $(az vm list -g rg-rke2-prod --query "[].id" -o tsv)
 az vm start --ids $(az vm list -g rg-rke2-prod --query "[].id" -o tsv)
 
 # 3. Lab tamamen bittiğinde tüm ortamı kalıcı olarak silmek için:
-cd ~/k8sfundamentals/Projects/rk2-azure-project-2/terraform
+cd /home/ysf/k8s-hands-on-labs/projects/rk2-azure-project-2/terraform
 terraform destroy -auto-approve
 ```
+
+---
+
+<br>
+
+---
+
+## 🇬🇧 English Version
+
+# 🚀 Automated 5-Node RKE2 High-Isolation Enterprise Platform + Rancher Dashboard (Terraform & Ansible)
+
+This project automates a production-grade, 5-node **RKE2 Kubernetes** cluster and the **Rancher Management Dashboard** on Microsoft Azure from end to end using **Terraform (IaC)** and **Ansible (Configuration Management)**.
+
+---
+
+### 1. Architecture & Azure Quota Plan (6 vCPUs, 3 Public IPs)
+
+| Server Name | VM SKU | Private IP | Public IP | Taint & Role | Hosted Workloads |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`vm-master`** | `Standard_B2s_v2` (2 vCPU / 8 GB RAM) | `10.10.1.4` | Public IP #1 | `CriticalAddonsOnly=true:NoSchedule` | RKE2 Control Plane + Cert-Manager + Rancher UI |
+| **`vm-worker-infra`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.5` | None (NAT GW Public IP #3) | `dedicated=infra:NoSchedule` | **Redis Cache** (`namespace: data`) |
+| **`vm-worker-pg`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.6` | None (NAT GW Public IP #3) | `dedicated=db-sql:NoSchedule` | **PostgreSQL** (`namespace: data`) |
+| **`vm-worker-mongo`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.7` | None (NAT GW Public IP #3) | `dedicated=db-nosql:NoSchedule` | **MongoDB** (`namespace: data`) |
+| **`vm-worker-app`** | `Standard_B1ms` (1 vCPU / 2 GB RAM) | `10.10.1.8` | Public IP #2 | Untainted (`role=app`) | **FastAPI Microservice** (`namespace: app`) |
+
+---
+
+### 2. Step-by-Step Deployment
+
+```bash
+# Step 1: Provision 5 Azure VMs, NAT Gateway & dynamic Ansible inventory:
+cd /home/ysf/k8s-hands-on-labs/projects/rk2-azure-project-2/terraform
+terraform init
+terraform apply -auto-approve
+
+# Step 2: Bootstrap RKE2, Rancher UI, 3 Databases & FastAPI App:
+cd ../ansible
+ansible-playbook -i hosts.ini site.yml
+```
+
+### 3. Verification
+- **Rancher Dashboard:** `https://rancher.<MASTER_PUBLIC_IP>.nip.io` (`admin` / `AdminPassword123!`)
+- **Live Multi-DB App:** `curl http://app.<APP_WORKER_PUBLIC_IP>.nip.io/`
+
