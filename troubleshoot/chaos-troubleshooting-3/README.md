@@ -1,5 +1,7 @@
 # 🔥 Kubernetes Chaos Engineering & Distributed Systems Troubleshooting Lab 3 (Production-Grade & Zero-Flapping)
 
+> **[🇹🇷 Türkçe](#-1-mimaride-neyi-neden-kullanıyoruz-sre-karar-matrisi) | [🇬🇧 English](#-english-documentation)**
+
 Bu laboratuvar, **ResilienceStream** çok katmanlı dağıtık sipariş ve ödeme mimarisi üzerinde **Chaos Mesh**, **Prometheus** ve **Grafana** kullanarak gerçek dünya üretim (Production) arızalarını simüle etmek, gözlemlemek ve kök neden analizi (Root Cause Analysis - RCA) yaparak sistemi dayanıklı hale getirmek için tasarlanmıştır.
 
 > [!IMPORTANT]
