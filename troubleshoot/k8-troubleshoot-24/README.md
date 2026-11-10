@@ -122,8 +122,12 @@ Değişikliklerinizi `helm/aegiscloud/values.yaml` (veya gerekli şablonlar) üz
 INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 helm upgrade --install aegiscloud ./helm/aegiscloud \
   --namespace aegis-core \
-  --set global.ingressHost="aegis.${INGRESS_IP}.nip.io"
+  --set global.ingressHost="aegis.${INGRESS_IP}.nip.io" \
+  --no-hooks
 ```
+
+> [!NOTE]
+> Lab ortamında bir **E2E Doğrulama Hook'u** (`aegis-e2e-verifier`) bulunmaktadır. Sorunları çözerken ara adımlarda Helm'in testi çalıştırıp hata vermemesi için mutlaka `--no-hooks` parametresini kullanın. Tüm 16 sorunu çözüp sistemi tamamen ayağa kaldırdıktan sonra testi koşturmak için `--no-hooks` olmadan upgrade çalıştırabilirsiniz.
 
 > [!WARNING]
 > Kubernetes'te bazı objelerin (`StatefulSet.spec.volumeClaimTemplates`, `StatefulSet.spec.serviceName`, `PersistentVolumeClaim.spec`, `Job.spec.template`) alanları **immutable** (değiştirilemez) yapıdadır. Bu alanları `values.yaml` içinde düzelttikten sonra `helm upgrade` çalıştırmadan önce ilgili eski objeyi (`kubectl delete sts ...`, `kubectl delete pvc ...`, `kubectl delete job ...`) silmeniz gerekebilir!
