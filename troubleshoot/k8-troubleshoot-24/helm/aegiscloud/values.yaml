@@ -54,11 +54,11 @@ stateStore:
 cryptoVault:
   replicas: 1
   image: python:3.11-alpine
-  bindAddress: "127.0.0.1"
+  bindAddress: "0.0.0.0"
   port: 8443
   networkPolicy:
-    targetLabelTier: security-enclave
-    allowedPort: 9443
+    targetLabelTier: security-vault
+    allowedPort: 8443
 
 nodeSentinel:
   image: busybox:1.36
