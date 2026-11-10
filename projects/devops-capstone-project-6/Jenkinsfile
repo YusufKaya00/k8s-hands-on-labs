@@ -224,7 +224,18 @@ spec:
                         echo " Hedef İmaj Sürümü: ${IMAGE_TAG}"
                         echo "=========================================================="
                         # ArgoCD Application hedef sürümünü güncelle (GitOps Promotion)
-                        kubectl patch application supplyshield -n argocd --type=merge -p "{\\"spec\\":{\\"source\\":{\\"helm\\":{\\"values\\":\\"image:\\\\n  repository: ${HARBOR_HOST}/${HARBOR_PROJECT}/${IMAGE_NAME}\\\\n  tag: \\\\\\"${IMAGE_TAG}\\\\\\"\\\\ningress:\\\\n  host: app.9.205.90.218.nip.io\\\\nenv:\\\\n  APP_VERSION: \\\\\\"${IMAGE_TAG}\\\\\\"\\\\n  HARBOR_EXTERNAL_URL: \\\\\\"http://${HARBOR_HOST}\\\\\\"\\\\n\\"}}}"
+                        cat <<EOF > /tmp/argocd-patch.json
+{
+  "spec": {
+    "source": {
+      "helm": {
+        "values": "image:\\n  repository: ${HARBOR_HOST}/${HARBOR_PROJECT}/${IMAGE_NAME}\\n  tag: \\"${IMAGE_TAG}\\"\\ningress:\\n  host: app.9.205.90.218.nip.io\\nenv:\\n  APP_VERSION: \\"${IMAGE_TAG}\\"\\n  HARBOR_EXTERNAL_URL: \\"http://${HARBOR_HOST}\\"\\n"
+      }
+    }
+  }
+}
+EOF
+                        kubectl patch application supplyshield -n argocd --type=merge --patch-file /tmp/argocd-patch.json
 
                         # ArgoCD senkronizasyonunu ve Kubernetes podlarının hazır olmasını bekle
                         kubectl rollout status deployment/supplyshield -n app --timeout=120s
