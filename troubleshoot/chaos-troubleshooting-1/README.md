@@ -1,5 +1,7 @@
 # 🚨 SRE Incident & Chaos Engineering Lab 1: Dağıtık Sistem Dayanıklılık & Kök Neden Analizi (RCA)
 
+> **[🇹🇷 Türkçe](#-içindekiler) | [🇬🇧 English](#-english-documentation)**
+
 > 📟 **SRE VAKA BİLDİRİMİ (INCIDENT SCENARIO):**  
 > *"Şirketimizin mikroservis tabanlı sipariş platformu (FastAPI + PostgreSQL + Redis + Apache Kafka + RabbitMQ) üzerinde rastgele anlarda kullanıcılar `502 Bad Gateway` alıyor, ödeme kuyrukları şişiyor ve bazı worker pod'ları döngüsel çöküşe (`CrashLoopBackOff / OOMKilled`) giriyor. Yazılım ekibi 'Birim testlerimiz yeşil, kodda hata yok' diyor.*  
 > *Kıdemli SRE ve Kaos Mühendisi (Chaos Engineer) olarak göreviniz: **Chaos Mesh** kullanarak sisteme kontrollü arızalar enjekte etmek, sistemin hangi durumlarda dayandığını (Kontrol Testleri) ve hangi gizli yapılandırma hatalarında patladığını (Troubleshooting Testleri) ortaya çıkarmak, kök neden analizi (RCA) yapmak ve Helm ile kalıcı olarak onarmaktır."*
