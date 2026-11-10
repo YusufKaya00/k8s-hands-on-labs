@@ -1,6 +1,6 @@
 global:
   environment: production
-  ingressHost: "aegis.127.0.0.1.nip.io"
+  ingressHost: "aegis.9.205.150.194.nip.io"
 
 namespaces:
   edge: aegis-edge
