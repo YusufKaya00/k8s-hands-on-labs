@@ -12,6 +12,9 @@ This morning at 08:30 UTC, our enterprise telemetry and status showcase platform
 
 **Current Impact:** Following release deployment, the Ingress IP is unreachable, most workload pods fail to start or crash repeatedly, and the entire platform suffers a total outage.
 
+> 📖 **Root Cause Analyses (RCA), diagnostic runbooks, and fixed YAMLs:**  
+> 👉 **[Explore Senior SRE Solution Guide (SOLUTION.md)](./SOLUTION.md)**
+
 ---
 
 ## Environment Setup (Provisioning)
@@ -177,6 +180,9 @@ Bu sabah saat 08:30'da kurumsal telemetri ve durum vitrini platformumuz **`omnip
 5. Önyüz katmanı (`omnipulse-web`), `HorizontalPodAutoscaler` (`HPA`), `PodDisruptionBudget` (`PDB`), `NetworkPolicy`, `Service` ve `Ingress` ile dış dünyaya açıldı.
 
 **Mevcut Durum:** Dağıtım sonrasında dış dünyadan Ingress IP'sine erişilemiyor, iş yüklerinin büyük kısmı başlamıyor ve sistem tamamen hizmet dışı.
+
+> 📖 **Kök Neden Analizleri (RCA), teşhis adımları ve düzeltilmiş YAML dosyaları:**  
+> 👉 **[Kıdemli SRE Çözüm Kılavuzunu İnceleyin (SOLUTION.md)](./SOLUTION.md)**
 
 ---
 
