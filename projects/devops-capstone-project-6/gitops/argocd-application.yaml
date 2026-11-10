@@ -22,12 +22,12 @@ spec:
     helm:
       values: |
         image:
-          repository: harbor.MASTER_IP.nip.io/supplyshield/supplyshield-api
+          repository: harbor.9.205.89.163.nip.io/supplyshield/supplyshield-api
           tag: "1.0.0"
         ingress:
-          host: app.APP_IP.nip.io
+          host: app.9.205.90.218.nip.io
         env:
-          HARBOR_EXTERNAL_URL: "http://harbor.MASTER_IP.nip.io"
+          HARBOR_EXTERNAL_URL: "http://harbor.9.205.89.163.nip.io"
   destination:
     server: https://kubernetes.default.svc
     namespace: app
