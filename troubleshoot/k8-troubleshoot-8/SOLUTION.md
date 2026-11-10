@@ -572,3 +572,159 @@ kubectl -n helix-prod get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\
 | Dış erişim | Her node IP:30880 → `/` 200 ve `/api/status` 200 |
 | Güvenlik | `can-i` matrisi beklenen gibi; etiketsiz pod DB'ye **ulaşamıyor** |
 | Gözlem | Warning event yok, restart sayısı artmıyor, CPU/bellek limitlerin altında |
+
+---
+
+# 🇬🇧 English Version
+
+# 🛠️ SRE Incident Remediation Guide & Post-Mortem: Lab 8 (Helix Ledger)
+
+This document serves as the authoritative **Senior Site Reliability Engineering (SRE) Post-Mortem and Root Cause Analysis (RCA)** guide for the multi-tier cascading outage in **Lab 8 (`k8-troubleshoot-8` — Helix Ledger in the `helix-prod` namespace)**.
+
+---
+
+## 📑 Executive Incident Resolution Matrix
+
+| Ticket ID | Impacted Component | Root Cause (RCA) | Remediation Strategy | Control Plane Subsystem | Severity |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **INC-801** | `helix-db` (StatefulSet) | Toleration `effect: NoExecute` does not match node taint `workload=database:NoSchedule`. | Update toleration effect to `NoSchedule`. | kube-scheduler (`TaintToleration` plugin) | `P1 - Blocker` |
+| **INC-802** | `helix-db` (StatefulSet) | `lost+found` directory at ext4 mount root causes Postgres `initdb` to abort. | Set `PGDATA=/var/lib/postgresql/data/pgdata` subpath. | kubelet & container runtime mount | `P1 - Blocker` |
+| **INC-803** | `helix-api` (Deployment) | Secret key `password` does not exist; masked by `optional: true` leading to auth failure. | Change to `key: POSTGRES_PASSWORD` and remove `optional: true`. | kubelet env resolution | `P1 - Blocker` |
+| **INC-804** | `helix-api` (Deployment) | Startup probe budget of $4 \times 5\text{s} = 20\text{s}$ is insufficient for 30s boot. | Increase `failureThreshold: 12` ($12 \times 5\text{s} = 60\text{s}$). | kubelet prober | `P1 - Blocker` |
+| **INC-805** | `helix-db-ingress` (NetPol) | `namespaceSelector` and `podSelector` under same list item implies logical AND; namespace lacks `team` label. | Remove redundant `namespaceSelector`. | CNI NetworkPolicy engine | `P1 - Blocker` |
+| **INC-806** | `helix-api` (ServiceAccount)| `automountServiceAccountToken: false` denies sidecar discovery token. | Set `automountServiceAccountToken: true`. | kubelet projected volume / admission | `P1 - Blocker` |
+| **INC-807** | `RoleBinding` | Subject namespace incorrectly bound to `default` instead of `helix-prod`. | Set `namespace: helix-prod` in Subject. | kube-apiserver RBAC authorizer | `P1 - Blocker` |
+| **INC-808** | `Role` | `apiGroups: ["apps"]` specified for endpoints (core group `[""]` required). | Set `apiGroups: [""]`. | kube-apiserver RBAC authorizer | `P1 - Blocker` |
+| **INC-809** | `helix-gateway` (Deployment)| `nodeSelector` requires non-existent label `tier: frontend` (nodes carry `tier: web`). | Set `nodeSelector: tier: web`. | kube-scheduler (`NodeAffinity` plugin) | `P1 - Blocker` |
+| **INC-810** | `helix-api` (Service) | Service selector has `tier: api`, but pods have `tier: backend` (`Endpoints: <none>`). | Remove `tier` from Service selector. | EndpointSlice controller / kube-proxy | `P1 - Blocker` |
+
+---
+
+## 🔧 Step-by-Step Incident Remediations
+
+### [INC-801] Database Pod Stuck in `Pending`
+* **Root Cause (RCA):** The dedicated database node has taint `workload=database:NoSchedule`. The StatefulSet specifies `effect: NoExecute`. Because kube-scheduler's `TaintToleration` filter requires matching keys, values, and effects, the pod cannot be scheduled and remains in `Pending`.
+* **Fix (`manifests/30-database.yaml`):**
+  ```yaml
+  tolerations:
+    - key: workload
+      operator: Equal
+      value: database
+      effect: NoSchedule
+  ```
+
+---
+
+### [INC-802] Database Pod CrashLoopBackOff (`lost+found`)
+* **Root Cause (RCA):** An ext4-formatted block volume includes a root-level `lost+found` directory. PostgreSQL's `initdb` command fails if the target data directory contains any files or folders.
+* **Fix (`manifests/30-database.yaml`):**
+  ```yaml
+  env:
+    - name: PGDATA
+      value: /var/lib/postgresql/data/pgdata
+  ```
+
+---
+
+### [INC-803] API Missing Secret Key (`optional: true` Silent Trap)
+* **Root Cause (RCA):** The container spec references `key: password` with `optional: true`. The secret actually contains `POSTGRES_PASSWORD`. Because `optional: true` suppresses startup failure, the container boots with an empty password and fails database authentication.
+* **Fix (`manifests/40-api.yaml`):**
+  ```yaml
+  - name: DB_PASS
+    valueFrom:
+      secretKeyRef:
+        name: helix-secrets
+        key: POSTGRES_PASSWORD
+  ```
+
+---
+
+### [INC-804] API Premature Kubelet Termination (StartupProbe Budget)
+* **Root Cause (RCA):** The application requires ~30s to initialize DB pools, but startupProbe has `periodSeconds: 5` and `failureThreshold: 4` (20s maximum). The kubelet kills the container before it finishes initializing.
+* **Fix (`manifests/40-api.yaml`):**
+  ```yaml
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: 8080
+    periodSeconds: 5
+    failureThreshold: 12
+  ```
+
+---
+
+### [INC-805] Database NetworkPolicy Drops Ingress Packets
+* **Root Cause (RCA):** In `manifests/20-networkpolicy.yaml`, `namespaceSelector` and `podSelector` are written under the same list element, creating a logical AND. The target namespace lacks the requested label, causing all packets to be dropped.
+* **Fix (`manifests/20-networkpolicy.yaml`):** Remove the `namespaceSelector` block to allow intra-namespace traffic matching the podSelector:
+  ```yaml
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: helix-api
+      ports:
+        - protocol: TCP
+          port: 5432
+  ```
+
+---
+
+### [INC-806], [INC-807], [INC-808] Discovery Sidecar RBAC & Token Failures
+* **Root Causes (RCA):**
+  1. `helix-api` ServiceAccount has `automountServiceAccountToken: false`, preventing token injection.
+  2. `RoleBinding` binds to subject in `default` namespace instead of `helix-prod`.
+  3. `Role` declares `apiGroups: ["apps"]` for `endpoints` resource (which belongs to core group `[""]`).
+* **Fixes (`manifests/02-rbac.yaml`):**
+  ```yaml
+  # 1. Enable token mounting on ServiceAccount:
+  automountServiceAccountToken: true
+
+  # 2. Fix Role API group:
+  rules:
+    - apiGroups: [""]
+      resources: ["endpoints"]
+      verbs: ["get", "list", "watch"]
+
+  # 3. Fix RoleBinding subject namespace:
+  subjects:
+    - kind: ServiceAccount
+      name: helix-api
+      namespace: helix-prod
+  ```
+
+---
+
+### [INC-809] Gateway Pods Trapped in `Pending`
+* **Root Cause (RCA):** In `manifests/50-gateway.yaml`, `nodeSelector` requires `tier: frontend`, but worker nodes carry `tier: web`.
+* **Fix (`manifests/50-gateway.yaml`):**
+  ```yaml
+  nodeSelector:
+    tier: web
+  ```
+
+---
+
+### [INC-810] API Service Selector Mismatch (`502 Bad Gateway`)
+* **Root Cause (RCA):** `Service/helix-api` selects `tier: api`. Target pods carry `tier: backend`. The endpoints list is empty (`<none>`), causing Nginx to return `502 Bad Gateway`.
+* **Fix (`manifests/10-services.yaml`):** Remove `tier: api` from the Service selector:
+  ```yaml
+  spec:
+    selector:
+      app.kubernetes.io/name: helix-api
+  ```
+
+---
+
+## 🚀 Complete Rollout & Verification Checklist
+
+```bash
+# 1. Apply all remediated manifests
+kubectl apply -f manifests/
+
+# 2. Verify all workloads reach Ready state
+kubectl get pods,pvc,svc,ep -n helix-prod
+
+# 3. Test external NodePort ingress
+curl -i http://<NODE_IP>:30880/api/status
+```
+
