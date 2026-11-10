@@ -328,9 +328,13 @@ async def prometheus_http_middleware(request: Request, call_next):
 # ==============================================================================
 # 1. PLATFORM ÖZETİ (`GET /`), LIVENESS (`/healthz`), READINESS (`/readyz`), METRICS (`/metrics`)
 # ==============================================================================
-@app.get("/")
-def root_summary() -> JSONResponse:
-    """Platform özetini, imaj kayıt defterini (`harbor.MASTER_IP.nip.io`) ve bağımlılık durumlarını döndürür."""
+@app.get("/", response_model=None)
+def root_summary(request: Request) -> Response:
+    """Platform özetini döndürür. Tarayıcıdan açıldığında UI, API istemcilerinde JSON döner."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept and "application/json" not in accept:
+        return HTMLResponse(content=DASHBOARD_HTML)
+
     start_health_prober()
     with _STATUS_LOCK:
         deps_copy = dict(_CACHED_DEP_STATUS)
@@ -345,6 +349,12 @@ def root_summary() -> JSONResponse:
             "dependencies": deps_copy,
         },
     )
+
+
+@app.get("/ui", response_class=HTMLResponse)
+def serve_ui() -> HTMLResponse:
+    """SupplyShield interaktif frontend kontrol panelini sunar."""
+    return HTMLResponse(content=DASHBOARD_HTML)
 
 
 @app.get("/healthz")
