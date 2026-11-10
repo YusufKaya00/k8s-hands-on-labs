@@ -45,7 +45,7 @@ stateStore:
   serviceName: state-store-headless
   headlessServiceName: state-store-headless
   port: 6379
-  storageClassName: managed-csi-ultra-ssd
+  storageClassName: managed-csi
   storageSize: 1Gi
   secretName: aegis-data-secrets
   secretDataKey: REDIS_AUTH_TOKEN
