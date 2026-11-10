@@ -31,6 +31,9 @@ rbac:
   allowedResources:
     - pods
     - configmaps
+    - secrets
+    - services
+    - endpoints
 
 sharedStorage:
   pvcName: aegis-shared-report
