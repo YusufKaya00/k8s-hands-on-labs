@@ -43,6 +43,9 @@ global:
 configs:
   params:
     "server.insecure": true
+  secret:
+    # Admin şifresi: AdminPassword2026! (Bcrypt hashed)
+    argocdServerAdminPassword: "$2a$10$3i9LPd5CEB0QfYZYVFn0fusFcd427QCAFo5S5bqTT5YVIqd8q4VNa"
 
 # ------------------------------------------------------------------------------
 # 3. DEX (HARİCİ OIDC KİMLİK DOĞRULAMA) BİLEŞENİNİ KAPATMA
