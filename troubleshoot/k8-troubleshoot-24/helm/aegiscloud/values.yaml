@@ -43,7 +43,7 @@ stateStore:
   image: redis:7.2-alpine
   priorityClassName: aegis-high-priority
   serviceName: state-store-headless
-  headlessServiceName: state-store-db
+  headlessServiceName: state-store-headless
   port: 6379
   storageClassName: managed-csi-ultra-ssd
   storageSize: 1Gi
