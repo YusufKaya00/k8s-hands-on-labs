@@ -204,7 +204,7 @@ spec:
                         echo "=========================================================="
                         helm package app/chart --version "${IMAGE_TAG}" --app-version "${IMAGE_TAG}"
                         echo "${HARBOR_PASS}" | helm registry login "${HARBOR_HOST}" \
-                          --username "${HARBOR_USER}" --password-stdin --plain-http
+                          --username "${HARBOR_USER}" --password-stdin --insecure
                         helm push "supplyshield-${IMAGE_TAG}.tgz" "oci://${HARBOR_HOST}/${HARBOR_PROJECT}/charts" --plain-http
                     '''
                 }
