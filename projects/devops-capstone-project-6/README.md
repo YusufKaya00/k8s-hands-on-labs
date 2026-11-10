@@ -15,9 +15,10 @@
 3. [Proje Dizin Yapısı](#3-proje-dizin-yapısı)
 4. [Sıfır Hatalı Kurulum Rehberi (Adım Adım + Ön-Kontrol & Doğrulama)](#4-sıfır-hatalı-kurulum-rehberi-adım-adım--ön-kontrol--doğrulama)
 5. [Web Arayüzleri, Erişim Bilgileri ve Servis DNS Haritası](#5-web-arayüzleri-erişim-bilgileri-ve-servis-dns-haritası)
-6. [5 Uygulamalı DevSecOps Laboratuvar Senaryosu](#6-5-uygulamalı-devsecops-laboratuvar-senaryosu)
-7. [Derinlemesine Mühendislik Dokümanları ve Sorun Çözme Rehberi](#7-derinlemesine-mühendislik-dokümanları-ve-sorun-çözme-rehberi)
-8. [Altyapıyı Güvenle Silme (Cleanup)](#8-altyapıyı-güvenle-silme-cleanup)
+6. [Uçtan Uca DevSecOps & GitOps Yaşam Döngüsü ve Kritik Mimari Notlar (Soru - Cevap Rehberi)](#6-uçtan-uca-devsecops--gitops-yaşam-döngüsü-ve-kritik-mimari-notlar-soru---cevap-rehberi)
+7. [5 Uygulamalı DevSecOps Laboratuvar Senaryosu](#7-5-uygulamalı-devsecops-laboratuvar-senaryosu)
+8. [Derinlemesine Mühendislik Dokümanları ve Sorun Çözme Rehberi](#8-derinlemesine-mühendislik-dokümanları-ve-sorun-çözme-rehberi)
+9. [Altyapıyı Güvenle Silme (Cleanup)](#9-altyapıyı-güvenle-silme-cleanup)
 
 ---
 
