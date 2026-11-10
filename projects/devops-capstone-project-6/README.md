@@ -1,4 +1,6 @@
-# Proje 6: SupplyShield — Harbor + Trivy + Jenkins CI/CD + Kaniko + ArgoCD GitOps ile Kurumsal DevSecOps Platformu
+# Proje 6 / Project 6: SupplyShield — Harbor + Trivy + Jenkins CI/CD + Kaniko + ArgoCD GitOps Enterprise DevSecOps Platform
+
+[🇹🇷 Türkçe](#-içindekiler) | [🇬🇧 English](#-english-version)
 
 > [!IMPORTANT]
 > **Bu Projenin Felsefesi:** Önceki projelerimizde (Proje 4 ve 5) dağıtık veri katmanı (Kafka, RabbitMQ, Cassandra) ve kaos mühendisliğini (Chaos Mesh) kurduk. Ancak gerçek dünyadaki kurumsal şirketlerde (bankalar, savunma sanayii, finans, büyük ölçekli SaaS) bir kodun canlıya çıkabilmesi için **Docker Hub gibi dış servislere güvenilmez!**  
@@ -202,3 +204,85 @@ Kurulum tamamlandıktan sonra Harbor, Trivy ve Jenkins'in nasıl çalıştığı
 cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-6/terraform
 terraform destroy -auto-approve
 ```
+
+---
+
+<br>
+
+---
+
+## 🇬🇧 English Version
+
+# 🛡️ Project 6: SupplyShield — Enterprise DevSecOps & Software Supply Chain Platform (Harbor + Trivy + Jenkins CI/CD + Kaniko + ArgoCD GitOps)
+
+> [!IMPORTANT]
+> **Engineering Philosophy:** Enterprise organizations (banking, defense, sovereign cloud, large-scale SaaS) never rely on public registries without strict controls. They run a **Self-Hosted OCI Container & Helm Registry (Harbor)**, scan every pushed image for CVEs with **Trivy**, block vulnerable images from running in Kubernetes (**Deployment Security Gate**), cache upstream images via **Proxy Cache** to eliminate Docker Hub `429 TooManyRequests` limits, and execute rootless builds using **Jenkins + Kubernetes Ephemeral Agent Pods + Kaniko** with **ArgoCD GitOps** delivery.
+
+---
+
+### 1. Architecture & 3-Node Azure Quota-Optimized Topology (6 vCPUs, 3 Public IPs)
+
+| Node Name | VM SKU (vCPU / RAM) | Private IP | Public IP | Kubernetes Taint & Label | Hosted Workloads |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`vm-master`** | `Standard_B2s_v2` (2 vCPU / **8 GB RAM**) | `10.40.1.4` | Public IP #1 | `CriticalAddonsOnly=true:NoSchedule` `tier=platform` | RKE2 Control Plane + etcd, Ingress NGINX, Rancher UI, ArgoCD, Prometheus, Grafana, Alertmanager |
+| **`vm-worker-secops`** | `Standard_B2s` (2 vCPU / **4 GB RAM**) | `10.40.1.5` | None (Outbound via NAT GW Public IP #3) | `dedicated=secops:NoSchedule` `tier=secops` | **Harbor OCI Registry** (Core, Portal, Registry, Jobservice, **Trivy**, DB, Redis — `ns: harbor`) + **Jenkins Controller & Ephemeral K8s Build Pods** (`ns: jenkins`) |
+| **`vm-worker-app`** | `Standard_B2s` (2 vCPU / **4 GB RAM**) | `10.40.1.6` | Public IP #2 | Untainted, `tier=app` | **SupplyShield FastAPI API (×2)** (`ns: app`), **PostgreSQL 16**, **Redis** (`ns: data`) |
+
+---
+
+### 2. Core DevSecOps Capabilities
+
+1. **Zero-Touch Harbor + Trivy Bootstrap:**
+   - Ansible automatically configures `/etc/rancher/rke2/registries.yaml` across all RKE2 nodes so `containerd` trusts the self-hosted Harbor registry without `x509` or `HTTP response to HTTPS client` errors.
+   - Via Harbor REST API (`/api/v2.0/projects`), Ansible creates the `supplyshield` project (`auto_scan: "true"`) and the `dockerhub-proxy` **Proxy Cache** project, injects `harbor-regcred` pull secrets, and seeds `supplyshield-api:1.0.0` using a one-shot Kaniko Job.
+2. **Zero-Touch Jenkins + JCasC + Kubernetes Dynamic Agent Pods:**
+   - Configured via **JCasC (Jenkins Configuration as Code)** in `helm-values/jenkins-values.yaml`, the `supplyshield-pipeline` job is pre-created on startup (`numExecutors: 0` on controller).
+   - Triggering a build dynamically spawns a multi-container Kubernetes Pod (`python`, `kaniko`, `k8s-tools`) on `vm-worker-secops` and terminates it immediately after completion.
+3. **7-Stage Declarative `Jenkinsfile`:**
+   - **Stage 1:** Workspace & Source Checkout
+   - **Stage 2:** Unit Testing (`pytest`) & Static Application Security Testing (`bandit` SAST)
+   - **Stage 3:** Rootless Container Image Build & Push to Harbor (`kaniko`)
+   - **Stage 4:** Harbor + Trivy Vulnerability Scan Gate (REST API polling)
+   - **Stage 5:** OCI Helm Chart Packaging & Push (`helm push oci://harbor.../supplyshield/charts`)
+   - **Stage 6:** Kubernetes Rolling Update (`helm upgrade --install` in `namespace: app`)
+   - **Stage 7:** Post-Deploy Smoke Test & PostgreSQL Artifact Audit Recording
+
+---
+
+### 3. Step-by-Step Deployment Guide
+
+#### Step 1: Provision Azure Infrastructure with Terraform
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-6/terraform
+terraform init
+terraform validate
+terraform apply -auto-approve
+```
+
+#### Step 2: Bootstrap RKE2, Harbor, Trivy, Jenkins & GitOps with Ansible
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-6/ansible
+ansible all -m ping
+ansible-playbook site.yml
+```
+
+#### Step 3: Verify Endpoints & Credentials
+
+| Web Interface | URL Pattern | Username | Password |
+| :--- | :--- | :--- | :--- |
+| **Harbor OCI Registry & Trivy UI** | `http://harbor.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+| **Jenkins CI/CD Dashboard** | `http://jenkins.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+| **SupplyShield Live API** | `http://app.<APP_IP>.nip.io` | — | — |
+| **Swagger / OpenAPI Docs** | `http://app.<APP_IP>.nip.io/docs` | — | — |
+| **Grafana Dashboards** | `http://grafana.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+| **ArgoCD UI** | `https://argocd.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+| **Rancher UI** | `https://rancher.<MASTER_IP>.nip.io` | `admin` | `AdminPassword2026!` |
+
+---
+
+### 4. Cleanup
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-6/terraform
+terraform destroy -auto-approve
+```
+

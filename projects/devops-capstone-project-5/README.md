@@ -1,4 +1,6 @@
-# Proje 5: ResilienceStream — Kafka + RabbitMQ + Cassandra ile Prod Seviyesi Kaos Mühendisliği ve SRE Platformu
+# Proje 5 / Project 5: ResilienceStream — Kafka + RabbitMQ + Cassandra Production SRE & Chaos Engineering Platform
+
+[🇹🇷 Türkçe](#-içindekiler) | [🇬🇧 English](#-english-version)
 
 > [!IMPORTANT]
 > **Bu Projenin Felsefesi:** Bir sistemi sadece "çalışır halde" ayağa kaldırmak (`Hello World`) kolaydır; gerçek DevOps ve Site Reliability Engineering (SRE) mühendisliği ise **veritabanı yavaşladığında, mesaj kuyruğu ağdan koptuğunda, pod'lar aniden öldürüldüğünde veya disk darboğaza girdiğinde sistemin nasıl davrandığını kanıtlamaktır**.  
@@ -295,6 +297,99 @@ Bu depodaki `docs/` klasörü, mülakatlarda ve gerçek üretim ortamlarında ka
 Çalışmanız ve Game Day deneyleriniz bittiğinde Azure kredinizi korumak için tüm bulut kaynaklarını tek komutla temizleyebilirsiniz:
 
 ```bash
-cd /home/ysf/k8sfundamentals/Projects/devops-capstone-project-5/terraform
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-5/terraform
 terraform destroy -auto-approve
 ```
+
+---
+
+<br>
+
+---
+
+## 🇬🇧 English Version
+
+# 🔥 Project 5: ResilienceStream — Polyglot SRE & Production Chaos Engineering Platform (Kafka KRaft + RabbitMQ + Cassandra + PostgreSQL + Redis + Chaos Mesh)
+
+> [!IMPORTANT]
+> **Engineering Philosophy:** Standing up a `Hello World` cluster is easy; real Site Reliability Engineering (SRE) means **proving how your system behaves when databases slow down, message brokers partition, pods get killed (`SIGKILL`), or disk I/O saturates**.  
+> `ResilienceStream` bakes in 12 real-world infrastructure lessons for a zero-error single-command deployment and validates production resilience through **9 Chaos Mesh Game Days + Prometheus 5s SLO Burn-Rate Alerts + k6 Load Testing**.
+
+---
+
+### 1. Architecture & 3-Node Azure Topology (6 vCPUs, 3 Public IPs)
+
+| Server Name | VM SKU (vCPU / RAM) | Private IP | Public IP | Kubernetes Taint & Label | Hosted Workloads |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`vm-master`** | `Standard_B2s_v2` (2 vCPU / **8 GB RAM**) | `10.30.1.4` | Public IP #1 | `CriticalAddonsOnly=true:NoSchedule` `tier=platform` | RKE2 Control Plane + etcd, Ingress NGINX, Rancher, ArgoCD, Prometheus, Grafana, Alertmanager, Chaos Mesh |
+| **`vm-worker-data`** | `Standard_B2s` (2 vCPU / **4 GB RAM**) | `10.30.1.5` | None (Outbound via NAT GW Public IP #3) | `dedicated=data:NoSchedule` `tier=data` | **Apache Kafka (KRaft)**, **Apache Cassandra** (`768M` Heap), **PostgreSQL 16** (`namespace: data`) |
+| **`vm-worker-app`** | `Standard_B2s` (2 vCPU / **4 GB RAM**) | `10.30.1.6` | Public IP #2 | Untainted, `tier=app` | `order-api` (×2), `analytics-consumer`, `payment-worker` (`ns: app`), **RabbitMQ**, **Redis** (`ns: messaging`), **GitLab Runner** |
+
+---
+
+### 2. Why Polyglot Persistence & Messaging?
+
+| Technology | Role in Architecture | Production Rationale |
+| :--- | :--- | :--- |
+| **Apache Kafka (KRaft)** | Streams `orders.events` from `order-api` to `analytics-consumer`. | **Append-Only Event Log & Backpressure Buffer:** Absorbs traffic spikes and allows **Event Replay** when downstream Cassandra slows down (Game Day 02). |
+| **RabbitMQ + DLQ** | Distributes payment jobs to `payment-worker` and routes failed messages after 3 retries to `payments.dlq`. | **Per-Message Ack/Nack & Dead-Letter Exchange (DLX):** Isolates poison-pill messages without blocking healthy customer payments (Game Day 03). |
+| **Apache Cassandra** | Stores customer order event timelines in `resilience.order_events`. | **Masterless LSM-Tree Write Throughput:** Appends directly to `CommitLog` + `Memtable` without read-before-write overhead. |
+| **PostgreSQL 16** | Stores `orders` and `payments` tables. | **ACID System of Record & Idempotency:** Guarantees financial integrity using `ON CONFLICT (order_id) DO NOTHING`. |
+| **Redis** | Cache-aside layer for order lookups. | **Sub-millisecond Reads & Graceful Degradation:** Falls back seamlessly to PostgreSQL if Redis fails (Game Day 07). |
+| **Chaos Mesh** | Injects Pod, Network, Disk I/O, CPU/RAM Stress, and DNS faults via CRDs. | **Declarative Chaos Engineering:** Proves fault tolerance under controlled Game Day experiments. |
+
+---
+
+### 3. Application Resilience Patterns
+
+1. **Readiness ≠ Liveness Separation (`/readyz` vs `/healthz`):**
+   - `/healthz` checks only the local Python/Uvicorn process so downstream outages never trigger cascading pod restarts.
+   - `/readyz` verifies critical PostgreSQL connectivity.
+2. **Asynchronous `BackgroundHealthProber` Thread:**
+   - Probes all 5 dependencies (`postgres`, `kafka`, `rabbitmq`, `cassandra`, `redis`) every 5 seconds in the background and updates `rs_dependency_up` and `rs_dependency_latency_seconds` in memory so `/metrics` always responds in `<2ms`.
+3. **State-Machine Circuit Breaker (`CLOSED (0)` → `OPEN (2)` → `HALF-OPEN (1)`):**
+   - Fails fast (`rs_circuit_breaker_state == 2`) when a dependency repeatedly errors out.
+
+---
+
+### 4. Zero-Error Setup Guide
+
+#### Step 1: Provision Azure Infrastructure (Terraform)
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-5/terraform
+terraform init
+terraform validate
+terraform apply -auto-approve
+```
+
+#### Step 2: Deploy RKE2, Data Layer, GitOps & Chaos Mesh (Ansible)
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-5/ansible
+ansible all -m ping
+ansible-playbook site.yml
+```
+
+---
+
+### 5. The 9 Chaos Engineering Game Days
+
+| # | Game Day Guide | Command | Validated Production Capability |
+| :--- | :--- | :--- | :--- |
+| **01** | [`01-pod-kill-order-api.md`](chaos/game-days/01-pod-kill-order-api.md) | `kubectl apply -f chaos/experiments/01-pod-kill-order-api.yaml` | Zero downtime under `SIGKILL` with 2 Replicas + Readiness Probe |
+| **02** | [`02-network-latency-cassandra.md`](chaos/game-days/02-network-latency-cassandra.md) | `kubectl apply -f chaos/experiments/02-network-latency-cassandra.yaml` | Kafka decoupling protects API p99 when Cassandra has 300ms latency |
+| **03** | [`03-network-partition-rabbitmq.md`](chaos/game-days/03-network-partition-rabbitmq.md) | `kubectl apply -f chaos/experiments/03-network-partition-rabbitmq.yaml` | Circuit Breaker (`OPEN`) & DLQ (`payments.dlq`) protection during partition |
+| **04** | [`04-kafka-broker-kill.md`](chaos/game-days/04-kafka-broker-kill.md) | `kubectl apply -f chaos/experiments/04-kafka-broker-kill.yaml` | StatefulSet PVC persistence & automated consumer lag recovery |
+| **05** | [`05-stress-payment-worker.md`](chaos/game-days/05-stress-payment-worker.md) | `kubectl apply -f chaos/experiments/05-stress-payment-worker.yaml` | Noisy Neighbor cgroup isolation, HPA scaling & manual `basic_ack` |
+| **06** | [`06-io-latency-postgres.md`](chaos/game-days/06-io-latency-postgres.md) | `kubectl apply -f chaos/experiments/06-io-latency-postgres.yaml` | Detecting gray disk `write`/`fsync` stalls via `RSHighLatencyP99` alert |
+| **07** | [`07-dns-chaos.md`](chaos/game-days/07-dns-chaos.md) | `kubectl apply -f chaos/experiments/07-dns-chaos.yaml` | Graceful Degradation to PostgreSQL during Redis DNS failure |
+| **08** | [`08-node-drain.md`](chaos/game-days/08-node-drain.md) | `kubectl drain vm-worker-app --ignore-daemonsets ...` | `PodDisruptionBudget (minAvailable: 1)` eviction protection |
+| **09** | [`09-black-friday-gameday.md`](chaos/game-days/09-black-friday-gameday.md) | `k6 run ...` + `kubectl apply -f chaos/experiments/09-black-friday-workflow.yaml` | Multi-stage Chaos Workflow under Black Friday `k6` load |
+
+---
+
+### 6. Cleanup
+```bash
+cd /home/ysf/k8s-hands-on-labs/projects/devops-capstone-project-5/terraform
+terraform destroy -auto-approve
+```
+
