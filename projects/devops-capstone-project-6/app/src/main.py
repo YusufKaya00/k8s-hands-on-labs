@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 import uuid
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 import redis
 
 from . import config
+from .dashboard_html import DASHBOARD_HTML
 from .metrics import (
     ARTIFACTS_VERIFIED,
     DEP_LATENCY,
