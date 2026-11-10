@@ -13,6 +13,9 @@ Bu sabah saat 08:30'da kurumsal ödeme ağ geçidi, finansal defter ve anlık mu
 
 **Mevcut Durum:** Dağıtımın hemen ardından Ingress Gateway IP adresine gidildiğinde müşteriler `502 Bad Gateway` veya `503 Service Temporarily Unavailable` hatası alıyor, podların çoğu `CrashLoopBackOff`, `Init:0/1` veya `Pending` durumunda takılmış durumda ve finansal mutabakat tamamen durmuş vaziyette.
 
+> 📖 **Kök Neden Analizleri (RCA), teşhis adımları ve düzeltilmiş YAML dosyaları:**  
+> 👉 **[Kıdemli SRE Çözüm Kılavuzunu İnceleyin (SOLUTION.md)](./SOLUTION.md)**
+
 ---
 
 ## Kurulum (Lab Ortamını Başlatma)
