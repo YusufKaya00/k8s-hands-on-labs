@@ -73,7 +73,7 @@ coreApi:
   serviceAccountName: aegis-core-sa
   port: 8000
   containerPortName: http-core
-  serviceTargetPort: core-port
+  serviceTargetPort: http-core
   serviceSelectorComponent: core-api
   configVaultAddr: "http://crypto-vault.aegis-data.svc.cluster.local:8443"
   overrideVaultAddr: ""
