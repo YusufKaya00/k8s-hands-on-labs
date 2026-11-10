@@ -21,8 +21,8 @@ quotas:
 
 limitRange:
   core:
-    defaultCpuLimit: "200m"
-    defaultMemoryLimit: "256Mi"
+    defaultCpuLimit: "600m"
+    defaultMemoryLimit: "512Mi"
     defaultCpuRequest: "50m"
     defaultMemoryRequest: "64Mi"
 
