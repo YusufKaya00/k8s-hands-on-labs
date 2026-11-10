@@ -1,0 +1,299 @@
+# ==============================================================================
+# HARBOR + TRIVY (harbor/harbor) — KURUMSAL KONTEYNER KAYIT DEFTERİ VE GÜVENLİK TARAYICISI
+# ==============================================================================
+# MİMARİ AMAÇ:
+# Harbor; SupplyShield DevSecOps platformumuzun merkezi OCI Konteyner İmaj ve Helm
+# Chart Kayıt Defteridir (Artifact Registry). Jenkins CI boru hattında Kaniko
+# tarafından derlenen uygulama imajları buraya yüklenir (push), Trivy güvenlik
+# motoru tarafından işletim sistemi paketleri (apk/apt/rpm) ve dil bağımlılıkları
+# (pip/npm/go) seviyesinde CVE (Common Vulnerabilities and Exposures) taramasından
+# geçirilir ve yalnızca güvenlik kapısını (Security Gate) geçen imajlar ArgoCD
+# tarafından RKE2 kümesine dağıtılır.
+#
+# NEDEN PROD ORTAMINDA BÖYLEDİR VS LAB ORTAMI?
+# - Prod'da: Harbor; harici Cloud SQL (PostgreSQL HA), Redis Sentinel ve S3/Azure
+#   Blob Storage arka ucu ile çoklu kopya (HA) olarak çalışır; Cosign/Notation ile
+#   imaj imzalama ve Let's Encrypt/Kurumsal PKI TLS sertifikası kullanır.
+# - Lab'da: Tüm Harbor + Trivy bileşenleri 4 GB RAM'li `vm-worker-secops`
+#   (`tier: secops`, taint `dedicated=secops:NoSchedule`) düğümünde Jenkins ile
+#   yan yana (co-located) çalışacak şekilde hafifletilmiştir (her bileşen için
+#   50m CPU / 128Mi RAM başlangıç isteği). Ayrıca Jenkins/Kaniko/Kubelet içinden
+#   x509 self-signed sertifika hatası (`x509: certificate signed by unknown authority`)
+#   yaşanmaması için HTTP Ingress (`expose.tls.enabled: false`) üzerinden yayınlanır.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. DIŞ ERİŞİM (INGRESS) VE PROTOKOL YAPILANDIRMASI
+# ------------------------------------------------------------------------------
+# Jenkins Kaniko pod'larının, RKE2 containerd çalışma zamanının ve geliştiricilerin
+# `harbor.MASTER_IP.nip.io` adresinden sertifika uyuşmazlığı olmadan imaj çekip
+# gönderebilmesi (pull/push) için HTTP Ingress (`tls.enabled: false`) kullanılır.
+# MASTER_IP yer tutucusu Ansible tarafından dinamik olarak değiştirilir.
+expose:
+  type: ingress
+  tls:
+    enabled: false
+  ingress:
+    hosts:
+      core: harbor.MASTER_IP.nip.io
+    className: nginx
+    controller: default
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+
+externalURL: http://harbor.MASTER_IP.nip.io
+
+# ------------------------------------------------------------------------------
+# 2. YÖNETİCİ KİMLİK BİLGİLERİ VE GÜVENLİK ANAHTARI
+# ------------------------------------------------------------------------------
+# Harbor Web UI / REST API varsayılan yönetici hesabı: `admin` / `AdminPassword2026!`
+harborAdminPassword: "AdminPassword2026!"
+secretKey: "SupplyShieldHarborSecret2026Key!"
+
+# ------------------------------------------------------------------------------
+# 3. KALICI DEPOLAMA (PERSISTENCE — LOCAL-PATH STORAGECLASS)
+# ------------------------------------------------------------------------------
+# İmaj katmanlarının, CVE veritabanının ve proje meta verilerinin pod yeniden
+# başladığında silinmemesi için RKE2 `local-path` StorageClass ile PVC bağlanır.
+persistence:
+  enabled: true
+  resourcePolicy: "keep"
+  persistentVolumeClaim:
+    registry:
+      storageClass: "local-path"
+      accessMode: ReadWriteOnce
+      size: 5Gi
+    jobservice:
+      jobLog:
+        storageClass: "local-path"
+        accessMode: ReadWriteOnce
+        size: 1Gi
+    database:
+      storageClass: "local-path"
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    redis:
+      storageClass: "local-path"
+      accessMode: ReadWriteOnce
+      size: 1Gi
+    trivy:
+      storageClass: "local-path"
+      accessMode: ReadWriteOnce
+      size: 2Gi
+
+# ------------------------------------------------------------------------------
+# 4. ESKİ BİLEŞENLERİN KAPATILMASI (CHARTMUSEUM & NOTARY DEPRECATION)
+# ------------------------------------------------------------------------------
+# ÇOK ÖNEMLİ MODERN MİMARİ DETAY:
+# Harbor v2.8+ sürümünden itibaren Helm Chart'ları standart OCI (Open Container
+# Initiative) artefaktı olarak doğrudan ana `registry` içinde (`oci://harbor.../chart`)
+# saklanır. Bu nedenle eski `chartmuseum` bileşeni tamamen kullanımdan kaldırılmıştır
+# (deprecated). Aynı şekilde eski Docker Content Trust (`notary`) yerine modern
+# Sigstore Cosign kullanıldığı için Notary kapatılarak ~500 MB RAM tasarruf edilir.
+notary:
+  enabled: false
+
+chartmuseum:
+  enabled: false
+
+# ------------------------------------------------------------------------------
+# 5. TRIVY KONTEYNER GÜVENLİK VE CVE TARAMA MOTORU
+# ------------------------------------------------------------------------------
+# Trivy Neden ve Nasıl Çalışır?
+# Harbor'a bir konteyner imajı pushlandığında veya Jenkins CI boru hattı tarama
+# tetiklediğinde, Trivy imajın tüm dosya sistemi katmanlarını (layers) açar;
+# işletim sistemi paketlerini (Alpine apk, Debian dpkg, RHEL rpm) ve uygulama
+# kütüphanelerini (`requirements.txt`, `package-lock.json`) NVD, GitHub Advisory
+# ve RedHat/Debian güvenlik veritabanlarıyla karşılaştırarak CRITICAL/HIGH/MEDIUM
+# seviyesindeki CVE zafiyetlerini raporlar.
+trivy:
+  enabled: true
+  replicas: 1
+  automountServiceAccountToken: true
+  nodeSelector:
+    tier: secops
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "secops"
+      effect: "NoSchedule"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ------------------------------------------------------------------------------
+# 6. HARBOR PORTAL (WEB KULLANICI ARAYÜZÜ — NGINX + ANGULAR)
+# ------------------------------------------------------------------------------
+portal:
+  replicas: 1
+  nodeSelector:
+    tier: secops
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "secops"
+      effect: "NoSchedule"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ------------------------------------------------------------------------------
+# 7. HARBOR CORE (MERKEZİ API, KİMLİK DOĞRULAMA VE WEBHOOK YÖNETİCİSİ)
+# ------------------------------------------------------------------------------
+core:
+  replicas: 1
+  nodeSelector:
+    tier: secops
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "secops"
+      effect: "NoSchedule"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 400m
+      memory: 384Mi
+
+# ------------------------------------------------------------------------------
+# 8. HARBOR JOBSERVICE (ASENKRON GÖREV, REPLİKASYON VE TARAMA İŞLEYİCİSİ)
+# ------------------------------------------------------------------------------
+jobservice:
+  replicas: 1
+  nodeSelector:
+    tier: secops
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "secops"
+      effect: "NoSchedule"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 384Mi
+
+# ------------------------------------------------------------------------------
+# 9. HARBOR REGISTRY (OCI KONTEYNER İMAJ VE HELM CHART DEPOLAMA MOTORU)
+# ------------------------------------------------------------------------------
+registry:
+  replicas: 1
+  nodeSelector:
+    tier: secops
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "secops"
+      effect: "NoSchedule"
+  registry:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 400m
+        memory: 512Mi
+  controller:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# ------------------------------------------------------------------------------
+# 10. DAHİLİ POSTGRESQL VERİTABANI (HARBOR METADATA & TRIVY RAPORLARI)
+# ------------------------------------------------------------------------------
+database:
+  type: internal
+  internal:
+    nodeSelector:
+      tier: secops
+    tolerations:
+      - key: "dedicated"
+        operator: "Equal"
+        value: "secops"
+        effect: "NoSchedule"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 400m
+        memory: 512Mi
+
+# ------------------------------------------------------------------------------
+# 11. DAHİLİ REDIS (HARBOR OTURUM VE JOBSERVICE KUYRUK ÖNBELLEĞİ)
+# ------------------------------------------------------------------------------
+redis:
+  type: internal
+  internal:
+    nodeSelector:
+      tier: secops
+    tolerations:
+      - key: "dedicated"
+        operator: "Equal"
+        value: "secops"
+        effect: "NoSchedule"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# ------------------------------------------------------------------------------
+# 12. PROMETHEUS METRİKLERİ VE HARBOR EXPORTER (GÖZLEMLENEBİLİRLİK)
+# ------------------------------------------------------------------------------
+# Harbor proje kotalarını, imaj pull/push sayılarını ve görev kuyruğu durumlarını
+# `/metrics` uç noktasından yayınlar ve `ServiceMonitor` ile Prometheus'a tanıtır.
+metrics:
+  enabled: true
+  core:
+    path: /metrics
+    port: 8001
+  registry:
+    path: /metrics
+    port: 8001
+  jobservice:
+    path: /metrics
+    port: 8001
+  exporter:
+    path: /metrics
+    port: 8001
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: monitoring
+
+exporter:
+  replicas: 1
+  nodeSelector:
+    tier: secops
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "secops"
+      effect: "NoSchedule"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

@@ -1,0 +1,88 @@
+---
+# ==============================================================================
+# FAZ 1: İŞLETİM SİSTEMİ SERTLEŞTİRME, KERNEL TUNING VE HARBOR DNS EŞLEMESİ
+# Dosya: playbooks/01-os-hardening.yml
+# Hedef: Tüm Sunucular (vm-master, vm-worker-secops, vm-worker-app)
+# ==============================================================================
+# MİMARİ AMAÇ:
+# 1. Kubernetes (Kubelet) bellek kararlılığı için Swap alanını tamamen kapatır.
+# 2. Container ağ katmanı (Canal/Calico CNI) için `overlay` ve `br_netfilter`
+#    çekirdek modüllerini yükler.
+# 3. Harbor Trivy, PostgreSQL ve Jenkins için `vm.max_map_count` ve `inotify`
+#    çekirdek sınırlarını yükseltir.
+# 4. KRİTİK DEVSECOPS DERSİ (Hairpin NAT Önleme):
+#    Küme içerisindeki `containerd`, `Kaniko` ve `Jenkins` pod'ları
+#    `harbor.<MASTER_IP>.nip.io` adresine bağlanırken Azure dış Public IP'sine
+#    çıkıp geri dönmeye (Hairpin NAT) çalışırsa bağlantı zaman aşımına uğrayabilir.
+#    Bu yüzden tüm düğümlerde `/etc/hosts` içerisine `10.40.1.4` (vm-master özel IP)
+#    eşlemesi yapılarak Harbor ve Jenkins trafiğinin doğrudan yerel VNet üzerinden
+#    milisaniyeler içinde akması sağlanır!
+# ==============================================================================
+
+- name: "Faz 1: Tüm Düğümlerde OS Sertleştirme, Kernel Parametreleri ve Harbor/Jenkins Host Eşlemesi"
+  hosts: all
+  become: true
+  tasks:
+    - name: "Swap alanını anında devre dışı bırak"
+      command: swapoff -a
+      changed_when: false
+
+    - name: "/etc/fstab dosyasından swap satırlarını kalıcı olarak kaldır"
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+
+    - name: "Gerekli sistem ve depolama paketlerini kur"
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - jq
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+          - open-iscsi
+          - nfs-common
+          - apache2-utils
+        state: present
+        update_cache: true
+
+    - name: "Kubernetes CNI için çekirdek modüllerini (/etc/modules-load.d/k8s.conf) tanımla"
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+        mode: '0644'
+
+    - name: "overlay ve br_netfilter modüllerini çekirdeğe yükle"
+      shell: |
+        modprobe overlay
+        modprobe br_netfilter
+      changed_when: false
+
+    - name: "Kubernetes, Harbor ve Jenkins için sysctl çekirdek parametrelerini uygula"
+      copy:
+        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        content: |
+          net.bridge.bridge-nf-call-iptables  = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward                 = 1
+          fs.inotify.max_user_watches         = 524288
+          fs.inotify.max_user_instances       = 512
+          vm.max_map_count                    = 262144
+        mode: '0644'
+
+    - name: "sysctl ayarlarını yeniden yükle"
+      command: sysctl --system
+      changed_when: false
+
+    - name: "Hairpin NAT sorununu önlemek için /etc/hosts içerisine Harbor, Jenkins ve ArgoCD iç IP eşlemesini ekle"
+      blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} SUPPLYSHIELD INTERNAL INGRESS DNS"
+        block: |
+          10.40.1.4 harbor.{{ hostvars['vm-master']['master_public_ip'] }}.nip.io jenkins.{{ hostvars['vm-master']['master_public_ip'] }}.nip.io argocd.{{ hostvars['vm-master']['master_public_ip'] }}.nip.io grafana.{{ hostvars['vm-master']['master_public_ip'] }}.nip.io rancher.{{ hostvars['vm-master']['master_public_ip'] }}.nip.io
+          10.40.1.6 app.{{ hostvars['vm-master']['app_worker_public_ip'] }}.nip.io

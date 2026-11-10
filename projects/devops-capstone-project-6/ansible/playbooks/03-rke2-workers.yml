@@ -1,0 +1,99 @@
+---
+# ==============================================================================
+# FAZ 3: RKE2 WORKER DÜĞÜMLERİ VE HARBOR REGISTRIES.YAML ENTEGRASYONU
+# Dosya: playbooks/03-rke2-workers.yml
+# Hedef: vm-worker-secops (10.40.1.5) & vm-worker-app (10.40.1.6)
+# ==============================================================================
+# MİMARİ AMAÇ:
+# Her iki worker düğümünde de `/etc/rancher/rke2/registries.yaml` dosyasını
+# oluşturarak `vm-worker-app` üzerindeki uygulama pod'larının ve `vm-worker-secops`
+# üzerindeki Jenkins/Harbor pod'larının `harbor.<MASTER_IP>.nip.io` adresinden
+# doğrudan imaj çekebilmesini sağlar.
+# ==============================================================================
+
+- name: "Faz 3A: vm-master Üzerinden RKE2 Node Token Değerini Al"
+  hosts: master
+  become: true
+  tasks:
+    - name: "/var/lib/rancher/rke2/server/node-token dosyasını oku"
+      slurp:
+        src: /var/lib/rancher/rke2/server/node-token
+      register: rke2_node_token_b64
+
+    - name: "Token değerini fact olarak kaydet"
+      set_fact:
+        rke2_token: "{{ rke2_node_token_b64.content | b64decode | trim }}"
+
+- name: "Faz 3B: Worker Düğümlerinde Harbor registries.yaml ve RKE2 Agent Kurulumu"
+  hosts: workers
+  become: true
+  vars:
+    rke2_version: "v1.31.2+rke2r1"
+    master_priv_ip: "10.40.1.4"
+    master_pub_ip: "{{ hostvars['vm-master']['master_public_ip'] }}"
+
+  tasks:
+    - name: "RKE2 konfigürasyon dizinini (/etc/rancher/rke2) oluştur"
+      file:
+        path: /etc/rancher/rke2
+        state: directory
+        mode: '0755'
+
+    - name: "RKE2 Agent yapılandırma dosyasını (/etc/rancher/rke2/config.yaml) oluştur"
+      copy:
+        dest: /etc/rancher/rke2/config.yaml
+        content: |
+          server: https://{{ master_priv_ip }}:9345
+          token: "{{ hostvars['vm-master']['rke2_token'] }}"
+        mode: '0600'
+
+    - name: "Worker düğümlerinde Self-Hosted Harbor için /etc/rancher/rke2/registries.yaml oluştur"
+      copy:
+        dest: /etc/rancher/rke2/registries.yaml
+        content: |
+          mirrors:
+            "harbor.{{ master_pub_ip }}.nip.io":
+              endpoint:
+                - "http://harbor.{{ master_pub_ip }}.nip.io"
+            "harbor-core.harbor.svc.cluster.local":
+              endpoint:
+                - "http://harbor-core.harbor.svc.cluster.local"
+          configs:
+            "harbor.{{ master_pub_ip }}.nip.io":
+              tls:
+                insecure_skip_verify: true
+              auth:
+                username: admin
+                password: "AdminPassword2026!"
+            "harbor-core.harbor.svc.cluster.local":
+              tls:
+                insecure_skip_verify: true
+              auth:
+                username: admin
+                password: "AdminPassword2026!"
+        mode: '0600'
+
+    - name: "RKE2 Agent ({{ rke2_version }}) ikili dosyalarını indir ve kur"
+      shell: "curl -sfL https://get.rke2.io | INSTALL_RKE2_VERSION={{ rke2_version }} INSTALL_RKE2_TYPE='agent' sh -"
+      args:
+        creates: /usr/local/bin/rke2
+
+    - name: "rke2-agent systemd servisini etkinleştir ve başlat"
+      systemd:
+        name: rke2-agent
+        state: started
+        enabled: true
+
+- name: "Faz 3C: Tüm 3 Düğümün Ready Durumuna Geçmesini Doğrula"
+  hosts: master
+  become: true
+  vars:
+    kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+  tasks:
+    - name: "3 düğümün tamamı Ready olana kadar bekle"
+      shell: "{{ kubectl_cmd }} get nodes --no-headers | grep -w 'Ready' | wc -l"
+      register: ready_nodes
+      until: ready_nodes.stdout | int == 3
+      retries: 36
+      delay: 10
+      changed_when: false

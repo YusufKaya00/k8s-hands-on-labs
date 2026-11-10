@@ -1,0 +1,70 @@
+# ==============================================================================
+# SUPPLYSHIELD DEVSECOPS & APPLICATION SLO ALERTS (prometheus-rules.yaml)
+# ==============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: supplyshield-devsecops-rules
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: supplyshield.devsecops.rules
+      interval: 15s
+      rules:
+        - alert: HarborCoreDown
+          expr: absent(up{namespace="harbor"} == 1) or sum(kube_pod_status_ready{namespace="harbor", condition="true"}) < 5
+          for: 1m
+          labels:
+            severity: critical
+            layer: secops
+          annotations:
+            summary: "Harbor OCI Registry bileşenlerinden biri veya birkaçı çalışmıyor"
+            description: "harbor namespace'indeki hazır pod sayısı 5'in altına düştü. CI/CD imaj çekme ve Trivy taramaları etkilenebilir."
+
+        - alert: JenkinsControllerDown
+          expr: sum(kube_pod_status_ready{namespace="jenkins", pod=~"jenkins-.*", condition="true"}) == 0
+          for: 1m
+          labels:
+            severity: critical
+            layer: cicd
+          annotations:
+            summary: "Jenkins CI Controller yanıt vermiyor"
+            description: "jenkins namespace'indeki Jenkins Controller podu Ready durumunda değil."
+
+        - alert: SupplyShieldDependencyDown
+          expr: ss_dependency_up == 0
+          for: 30s
+          labels:
+            severity: critical
+            layer: app
+          annotations:
+            summary: "SupplyShield bağımlılığı ({{ $labels.dependency }}) erişilemez durumda"
+            description: "{{ $labels.dependency }} servisi 30 saniyeden uzun süredir sağlık kontrolünden geçemiyor."
+
+        - alert: SupplyShieldHighErrorRate
+          expr: |
+            (
+              sum(rate(ss_http_requests_total{status=~"5.."}[2m]))
+              /
+              clamp_min(sum(rate(ss_http_requests_total[2m])), 0.001)
+            ) > 0.05
+          for: 1m
+          labels:
+            severity: warning
+            layer: app
+          annotations:
+            summary: "SupplyShield API HTTP 5xx hata oranı %5'i aştı"
+            description: "Son 2 dakikadaki HTTP 5xx oranı SLO sınırının üzerinde."
+
+        - alert: SupplyShieldHighLatencyP99
+          expr: |
+            histogram_quantile(0.99, sum(rate(ss_http_request_duration_seconds_bucket[2m])) by (le)) > 0.5
+          for: 1m
+          labels:
+            severity: warning
+            layer: app
+          annotations:
+            summary: "SupplyShield API p99 yanıt süresi 500ms sınırını aştı"
+            description: "Uygulama p99 gecikmesi 500ms üzerinde seyrediyor."

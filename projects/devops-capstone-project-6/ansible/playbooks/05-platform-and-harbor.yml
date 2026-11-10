@@ -1,0 +1,257 @@
+---
+# ==============================================================================
+# FAZ 5: PLATFORM KATMANI, HARBOR + TRIVY KURULUMU VE REST API BOOTSTRAP
+# Dosya: playbooks/05-platform-and-harbor.yml
+# Hedef: vm-master
+# ==============================================================================
+# MİMARİ AMAÇ:
+# 1. Resmi Helm depolarını (`jetstack`, `rancher-latest`, `argo`, `prometheus-community`,
+#    `harbor`, `jenkinsci`, `bitnami`) ekler.
+# 2. Proje dosyalarını `vm-master:/home/ysf/` dizinine kopyalar ve `MASTER_IP` ile
+#    `APP_IP` yer tutucularını gerçek Azure Public IP adresleriyle değiştirir.
+# 3. `vm-master` (8 GB RAM) üzerine `cert-manager`, `Rancher`, `ArgoCD` ve
+#    `kube-prometheus-stack` (+ Grafana Dashboard'ları & PrometheusRule) kurar.
+# 4. `vm-worker-secops` (4 GB RAM) üzerine **Harbor + Trivy** (`namespace: harbor`) kurar.
+# 5. SIFIR DOKUNUŞLU HARBOR REST API OTOMASYONU:
+#    - Harbor API'sini (`/api/v2.0/projects`) çağırarak `supplyshield` projesini
+#      (`auto_scan: "true"` — her push edilen imaj otomatik Trivy ile taranır!) oluşturur.
+#    - Docker Hub Proxy Cache endpoint'ini (`/api/v2.0/registries`) ve `dockerhub-proxy`
+#      projesini otomatik oluşturur.
+#    - `jenkins` ve `app` namespace'lerinde `harbor-regcred` (`docker-registry` Secret)
+#      oluşturur.
+#    - İlk başlangıçta `supplyshield-api:1.0.0` imajını Kaniko Job (`initial-image-seed`)
+#      ile derleyip Harbor'a yükler ki uygulama ilk kurulumda hemen çalışsın!
+# ==============================================================================
+
+- name: "Faz 5: Platform Servisleri, Harbor + Trivy Kurulumu ve Zero-Touch API Bootstrap"
+  hosts: master
+  become: true
+  vars:
+    kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+    helm_cmd: "KUBECONFIG=/etc/rancher/rke2/rke2.yaml /usr/local/bin/helm"
+    target_user: "{{ ansible_user | default('ysf') }}"
+    target_home: "/home/{{ ansible_user | default('ysf') }}"
+
+  tasks:
+    - name: "Resmi Helm Chart depolarını ekle ve güncelle"
+      shell: |
+        {{ helm_cmd }} repo add jetstack https://charts.jetstack.io --force-update
+        {{ helm_cmd }} repo add rancher-latest https://releases.rancher.com/server-charts/latest --force-update
+        {{ helm_cmd }} repo add argo https://argoproj.github.io/argo-helm --force-update
+        {{ helm_cmd }} repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+        {{ helm_cmd }} repo add harbor https://helm.goharbor.io --force-update
+        {{ helm_cmd }} repo add jenkinsci https://charts.jenkins.io --force-update
+        {{ helm_cmd }} repo add bitnami https://charts.bitnami.com/bitnami --force-update
+        {{ helm_cmd }} repo update
+      changed_when: true
+
+    - name: "vm-master üzerinde hedef dizinleri oluştur"
+      file:
+        path: "{{ target_home }}/{{ item }}"
+        state: directory
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0755'
+      loop:
+        - helm-values
+        - app
+        - gitops
+        - observability
+
+    - name: "Proje dizinlerini ve Jenkinsfile dosyasını vm-master sunucusuna kopyala"
+      copy:
+        src: "{{ playbook_dir }}/../../{{ item.src }}"
+        dest: "{{ target_home }}/{{ item.dest }}"
+        owner: "{{ target_user }}"
+        group: "{{ target_user }}"
+        mode: '0644'
+      loop:
+        - { src: "helm-values/", dest: "helm-values/" }
+        - { src: "app/", dest: "app/" }
+        - { src: "gitops/", dest: "gitops/" }
+        - { src: "observability/", dest: "observability/" }
+        - { src: "Jenkinsfile", dest: "Jenkinsfile" }
+
+    - name: "Kopyalanan dosyalarda MASTER_IP ve APP_IP yer tutucularını gerçek IP adresleriyle değiştir"
+      shell: |
+        find {{ target_home }}/helm-values {{ target_home }}/app {{ target_home }}/gitops {{ target_home }}/observability {{ target_home }}/Jenkinsfile \
+          -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.json" -o -name "*.py" -o -name "Jenkinsfile" \) \
+          -exec sed -i "s/MASTER_IP/{{ master_public_ip }}/g" {} +
+        find {{ target_home }}/helm-values {{ target_home }}/app {{ target_home }}/gitops {{ target_home }}/observability {{ target_home }}/Jenkinsfile \
+          -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.json" -o -name "*.py" -o -name "Jenkinsfile" \) \
+          -exec sed -i "s/APP_IP/{{ app_worker_public_ip }}/g" {} +
+      changed_when: true
+
+    - name: "Tüm platform ve uygulama Namespace'lerini oluştur"
+      shell: |
+        for ns in cert-manager cattle-system argocd monitoring harbor jenkins data app; do
+          {{ kubectl_cmd }} create namespace $ns --dry-run=client -o yaml | {{ kubectl_cmd }} apply -f -
+        done
+      changed_when: true
+
+    - name: "Cert-Manager kurulumunu gerçekleştir"
+      shell: |
+        {{ helm_cmd }} upgrade --install cert-manager jetstack/cert-manager \
+          --namespace cert-manager \
+          --set crds.enabled=true \
+          --set nodeSelector.tier=platform \
+          --set "tolerations[0].key=CriticalAddonsOnly" \
+          --set "tolerations[0].operator=Equal" \
+          --set "tolerations[0].value=true" \
+          --set "tolerations[0].effect=NoSchedule" \
+          --set webhook.nodeSelector.tier=platform \
+          --set "webhook.tolerations[0].key=CriticalAddonsOnly" \
+          --set "webhook.tolerations[0].operator=Equal" \
+          --set "webhook.tolerations[0].value=true" \
+          --set "webhook.tolerations[0].effect=NoSchedule" \
+          --set cainjector.nodeSelector.tier=platform \
+          --set "cainjector.tolerations[0].key=CriticalAddonsOnly" \
+          --set "cainjector.tolerations[0].operator=Equal" \
+          --set "cainjector.tolerations[0].value=true" \
+          --set "cainjector.tolerations[0].effect=NoSchedule" \
+          --wait --timeout 5m
+      changed_when: true
+
+    - name: "Rancher, ArgoCD ve kube-prometheus-stack kurulumlarını gerçekleştir"
+      shell: |
+        {{ helm_cmd }} upgrade --install rancher rancher-latest/rancher \
+          --namespace cattle-system \
+          -f {{ target_home }}/helm-values/rancher-values.yaml \
+          --wait --timeout 8m
+
+        {{ helm_cmd }} upgrade --install argocd argo/argo-cd \
+          --namespace argocd \
+          -f {{ target_home }}/helm-values/argocd-values.yaml \
+          --wait --timeout 6m
+
+        {{ helm_cmd }} upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+          --namespace monitoring \
+          -f {{ target_home }}/helm-values/monitoring-values.yaml \
+          --wait --timeout 8m
+      changed_when: true
+
+    - name: "PrometheusRule alarmlarını ve Grafana Dashboard ConfigMap'lerini uygula"
+      shell: |
+        {{ kubectl_cmd }} apply -f {{ target_home }}/observability/prometheus-rules.yaml
+        {{ kubectl_cmd }} create configmap supplyshield-dashboards -n monitoring \
+          --from-file={{ target_home }}/observability/dashboards/ \
+          --dry-run=client -o yaml | \
+          {{ kubectl_cmd }} label --local -f - grafana_dashboard="1" -o yaml | \
+          {{ kubectl_cmd }} apply -f -
+      changed_when: true
+
+    - name: "vm-worker-secops üzerine Harbor OCI Registry + Trivy Scanner kur"
+      shell: |
+        {{ helm_cmd }} upgrade --install harbor harbor/harbor \
+          --namespace harbor \
+          -f {{ target_home }}/helm-values/harbor-values.yaml \
+          --wait --timeout 10m
+      changed_when: true
+
+    - name: "Harbor v2.0 REST API yanıt verene kadar bekle"
+      shell: |
+        curl -sf -u 'admin:AdminPassword2026!' "http://harbor.{{ master_public_ip }}.nip.io/api/v2.0/systeminfo"
+      register: harbor_api
+      until: harbor_api.rc == 0
+      retries: 30
+      delay: 10
+      changed_when: false
+
+    - name: "Harbor REST API ile 'supplyshield' projesini (auto_scan: true) ve 'dockerhub-proxy' Proxy Cache projesini oluştur"
+      shell: |
+        # 1. Ana uygulama projesi (Otomatik Trivy taraması açık)
+        curl -s -u 'admin:AdminPassword2026!' -X POST "http://harbor.{{ master_public_ip }}.nip.io/api/v2.0/projects" \
+          -H "Content-Type: application/json" \
+          -d '{"project_name": "supplyshield", "public": true, "metadata": {"public": "true", "auto_scan": "true"}}' || true
+
+        # 2. Docker Hub Proxy Cache Endpoint ve Projesi
+        curl -s -u 'admin:AdminPassword2026!' -X POST "http://harbor.{{ master_public_ip }}.nip.io/api/v2.0/registries" \
+          -H "Content-Type: application/json" \
+          -d '{"name": "dockerhub-upstream", "type": "docker-hub", "url": "https://hub.docker.com", "insecure": false}' || true
+
+        REG_ID=$(curl -s -u 'admin:AdminPassword2026!' "http://harbor.{{ master_public_ip }}.nip.io/api/v2.0/registries" | jq -r '.[] | select(.name=="dockerhub-upstream") | .id')
+        if [ -n "$REG_ID" ] && [ "$REG_ID" != "null" ]; then
+          curl -s -u 'admin:AdminPassword2026!' -X POST "http://harbor.{{ master_public_ip }}.nip.io/api/v2.0/projects" \
+            -H "Content-Type: application/json" \
+            -d "{\"project_name\": \"dockerhub-proxy\", \"public\": true, \"registry_id\": ${REG_ID}}" || true
+        fi
+      changed_when: true
+
+    - name: "jenkins ve app namespace'lerinde harbor-regcred (docker-registry) Secret oluştur"
+      shell: |
+        for ns in jenkins app; do
+          {{ kubectl_cmd }} create secret docker-registry harbor-regcred \
+            --namespace $ns \
+            --docker-server="harbor.{{ master_public_ip }}.nip.io" \
+            --docker-username="admin" \
+            --docker-password="AdminPassword2026!" \
+            --docker-email="secops@supplyshield.local" \
+            --dry-run=client -o yaml | {{ kubectl_cmd }} apply -f -
+        done
+      changed_when: true
+
+    - name: "Uygulama kaynak kodunu ConfigMap olarak paketle ve ilk Kaniko derlemesini (supplyshield-api:1.0.0) Harbor'a gönder"
+      shell: |
+        tar -czf /tmp/supplyshield-src.tar.gz -C {{ target_home }}/app .
+        {{ kubectl_cmd }} create configmap supplyshield-source-archive -n jenkins \
+          --from-file=src.tar.gz=/tmp/supplyshield-src.tar.gz \
+          --dry-run=client -o yaml | {{ kubectl_cmd }} apply -f -
+
+        {{ kubectl_cmd }} delete job initial-image-seed -n jenkins --ignore-not-found=true
+        cat <<EOF | {{ kubectl_cmd }} apply -f -
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: initial-image-seed
+          namespace: jenkins
+        spec:
+          backoffLimit: 2
+          template:
+            spec:
+              restartPolicy: Never
+              nodeSelector:
+                tier: secops
+              tolerations:
+                - key: "dedicated"
+                  operator: "Equal"
+                  value: "secops"
+                  effect: "NoSchedule"
+              initContainers:
+                - name: extract-src
+                  image: busybox:1.36
+                  command: ["sh", "-c", "tar -xzf /archive/src.tar.gz -C /workspace"]
+                  volumeMounts:
+                    - name: archive
+                      mountPath: /archive
+                    - name: workspace
+                      mountPath: /workspace
+              containers:
+                - name: kaniko-seed
+                  image: gcr.io/kaniko-project/executor:v1.23.2-debug
+                  args:
+                    - "--dockerfile=/workspace/Dockerfile"
+                    - "--context=dir:///workspace"
+                    - "--destination=harbor.{{ master_public_ip }}.nip.io/supplyshield/supplyshield-api:1.0.0"
+                    - "--destination=harbor.{{ master_public_ip }}.nip.io/supplyshield/supplyshield-api:latest"
+                    - "--insecure"
+                    - "--skip-tls-verify"
+                  volumeMounts:
+                    - name: workspace
+                      mountPath: /workspace
+                    - name: docker-config
+                      mountPath: /kaniko/.docker
+              volumes:
+                - name: archive
+                  configMap:
+                    name: supplyshield-source-archive
+                - name: workspace
+                  emptyDir: {}
+                - name: docker-config
+                  secret:
+                    secretName: harbor-regcred
+                    items:
+                      - key: .dockerconfigjson
+                        path: config.json
+        EOF
+        {{ kubectl_cmd }} wait --for=condition=complete job/initial-image-seed -n jenkins --timeout=300s
+      changed_when: true

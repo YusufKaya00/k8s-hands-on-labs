@@ -1,0 +1,6 @@
+apiVersion: v2
+name: supplyshield
+description: SupplyShield DevSecOps Software Supply Chain & Artifact Verification API
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

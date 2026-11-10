@@ -1,0 +1,16 @@
+---
+# ==============================================================================
+# SUPPLYSHIELD DEVSECOPS PLATFORM - MASTER ANSIBLE ORCHESTRATOR (site.yml)
+# ==============================================================================
+# Bu ana playbook, 3 düğümlü RKE2 kümesini, Harbor OCI Registry + Trivy
+# güvenlik tarayıcısını, Jenkins CI + Kubernetes Dynamic Agent Pod mimarisini,
+# ArgoCD GitOps motorunu ve Prometheus/Grafana gözlemlenebilirlik katmanını
+# deterministik bir sırayla uçtan uca kurar.
+# ==============================================================================
+
+- import_playbook: playbooks/01-os-hardening.yml
+- import_playbook: playbooks/02-rke2-master.yml
+- import_playbook: playbooks/03-rke2-workers.yml
+- import_playbook: playbooks/04-node-isolation.yml
+- import_playbook: playbooks/05-platform-and-harbor.yml
+- import_playbook: playbooks/06-jenkins-and-gitops.yml

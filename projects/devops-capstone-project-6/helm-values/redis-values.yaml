@@ -1,0 +1,83 @@
+# ==============================================================================
+# REDIS 7 (bitnami/redis) — BELLEK İÇİ ÖNBELLEK VE HIZLI DURUM KATMANI
+# ==============================================================================
+# MİMARİ AMAÇ:
+# Redis, SupplyShield DevSecOps mimarisinde `data` namespace'i altında çalışır ve
+# `supplyshield` FastAPI uygulaması tarafından sık sorgulanan güvenlik tarama
+# özetlerinin, artefakt doğrulama durumlarının mikrosaniye seviyesinde önbelleklenmesi
+# (caching) ile hız sınırlama (rate-limiting / idempotency) anahtarlarının
+# tutulması için kullanılır.
+#
+# NEDEN PROD ORTAMINDA BÖYLEDİR VS LAB ORTAMI?
+# - Prod'da: Redis Sentinel veya Redis Cluster (3 Master + 3 Replica) ile
+#   otomatik yük devretme (failover) mimarisinde çalışır.
+# - Lab'da: 4 GB RAM'li `vm-worker-app` (`tier: app`, taint yok) düğümünde
+#   `standalone` modda çalışır. Eğer Redis erişimi kesilirse, SupplyShield FastAPI
+#   uygulaması `ss_dependency_up{dependency="redis"} == 0` metriğini üretir ve
+#   Graceful Degradation (Zarif Bozulma) prensibiyle doğrudan PostgreSQL üzerinden
+#   hizmet vermeye devam eder.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. BITNAMI LEGACY İMAJ DEPOSU VE GÜVENLİK İZNİ
+# ------------------------------------------------------------------------------
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  repository: bitnamilegacy/redis
+
+# ------------------------------------------------------------------------------
+# 2. MİMARİ TOPOLOJİ VE KİMLİK DOĞRULAMA (SÖZLEŞME STANDARTLARI)
+# ------------------------------------------------------------------------------
+# Küme içi DNS: `redis-master.data.svc.cluster.local:6379`
+architecture: standalone
+
+auth:
+  enabled: true
+  password: "AdminPassword2026!"
+
+# ------------------------------------------------------------------------------
+# 3. MASTER POD PLANLAMASI VE KAYNAK LİMİTLERİ (VM-WORKER-APP)
+# ------------------------------------------------------------------------------
+master:
+  resourcesPreset: "none"
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  nodeSelector:
+    tier: app
+
+  persistence:
+    enabled: true
+    storageClass: "local-path"
+    size: 2Gi
+
+# ------------------------------------------------------------------------------
+# 4. PROMETHEUS METRİK EXPORTER (REDIS_EXPORTER SIDECAR)
+# ------------------------------------------------------------------------------
+# Redis bellek kullanımını (`redis_memory_used_bytes`), önbellek isabet oranını
+# (keyspace hits/misses) ve bağlı istemci sayısını Prometheus'a sunar.
+metrics:
+  enabled: true
+  image:
+    repository: bitnamilegacy/redis-exporter
+  resourcesPreset: "none"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: monitoring

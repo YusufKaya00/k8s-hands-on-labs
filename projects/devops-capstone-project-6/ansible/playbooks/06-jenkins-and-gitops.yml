@@ -1,0 +1,103 @@
+---
+# ==============================================================================
+# FAZ 6: JENKINS CI/CD, VERİ KATMANI (POSTGRES/REDIS), UYGULAMA VE GITOPS
+# Dosya: playbooks/06-jenkins-and-gitops.yml
+# Hedef: vm-master
+# ==============================================================================
+# MİMARİ AMAÇ:
+# 1. Jenkins Kubernetes Agent Pod'larının küme içerisinde Helm/kubectl ile
+#    dağıtım yapabilmesi için gerekli RBAC (`ClusterRoleBinding`) yetkilerini tanımlar.
+# 2. `vm-worker-secops` düğümüne **Jenkins Controller + JCasC** kurar (`supplyshield-pipeline`
+#    işi hazır gelir).
+# 3. `vm-worker-app` düğümüne **PostgreSQL 16** ve **Redis** (`namespace: data`) kurar.
+# 4. Harbor'daki `supplyshield-api:1.0.0` imajını kullanarak `supplyshield` uygulamasını
+#    (`namespace: app`) kurar ve `argocd-application.yaml` ile GitOps'a bağlar.
+# 5. Uçtan uca duman testi (Smoke Test) yaparak Harbor, Jenkins ve SupplyShield API'nin
+#    `HTTP 200 OK` döndüğünü kanıtlar.
+# ==============================================================================
+
+- name: "Faz 6: Jenkins CI/CD, Veri Katmanı (PostgreSQL & Redis), SupplyShield App ve Uçtan Uca Smoke Test"
+  hosts: master
+  become: true
+  vars:
+    kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+    helm_cmd: "KUBECONFIG=/etc/rancher/rke2/rke2.yaml /usr/local/bin/helm"
+    target_home: "/home/{{ ansible_user | default('ysf') }}"
+
+  tasks:
+    - name: "Jenkins ServiceAccount için CI/CD ClusterRoleBinding yetkisini oluştur"
+      shell: |
+        cat <<EOF | {{ kubectl_cmd }} apply -f -
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: jenkins-cicd-admin-binding
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+          - kind: ServiceAccount
+            name: default
+            namespace: jenkins
+          - kind: ServiceAccount
+            name: jenkins
+            namespace: jenkins
+        EOF
+      changed_when: true
+
+    - name: "Jenkinsfile dosyasını jenkins namespace'inde ConfigMap olarak kaydet (Dynamic Pod erişimi için)"
+      shell: |
+        {{ kubectl_cmd }} create configmap supplyshield-jenkinsfile -n jenkins \
+          --from-file=Jenkinsfile={{ target_home }}/Jenkinsfile \
+          --dry-run=client -o yaml | {{ kubectl_cmd }} apply -f -
+      changed_when: true
+
+    - name: "vm-worker-secops üzerine Jenkins Controller + JCasC kurulumunu gerçekleştir"
+      shell: |
+        {{ helm_cmd }} upgrade --install jenkins jenkinsci/jenkins \
+          --namespace jenkins \
+          -f {{ target_home }}/helm-values/jenkins-values.yaml \
+          --wait --timeout 8m
+      changed_when: true
+
+    - name: "data namespace'ine PostgreSQL 16 ve Redis kurulumunu gerçekleştir"
+      shell: |
+        {{ helm_cmd }} upgrade --install postgres bitnami/postgresql \
+          --namespace data \
+          -f {{ target_home }}/helm-values/postgres-values.yaml \
+          --wait --timeout 5m
+
+        {{ helm_cmd }} upgrade --install redis bitnami/redis \
+          --namespace data \
+          -f {{ target_home }}/helm-values/redis-values.yaml \
+          --wait --timeout 5m
+      changed_when: true
+
+    - name: "app namespace'ine SupplyShield FastAPI uygulamasını Helm ile kur ve ArgoCD Application tanımla"
+      shell: |
+        {{ helm_cmd }} upgrade --install supplyshield {{ target_home }}/app/chart \
+          --namespace app \
+          --wait --timeout 5m
+
+        {{ kubectl_cmd }} apply -f {{ target_home }}/gitops/argocd-application.yaml
+      changed_when: true
+
+    - name: "Uçtan Uca Duman Testi (Smoke Test): Harbor API, Jenkins UI ve SupplyShield API doğrulaması"
+      shell: |
+        echo "=== 1. Harbor v2.0 API & Proje Kontrolü ==="
+        curl -sf -u 'admin:AdminPassword2026!' "http://harbor.{{ master_public_ip }}.nip.io/api/v2.0/projects?name=supplyshield" | jq .
+
+        echo "=== 2. Jenkins Login Sayfası Kontrolü ==="
+        curl -sf -I "http://jenkins.{{ master_public_ip }}.nip.io/login" | head -n 5
+
+        echo "=== 3. SupplyShield Canlı API (/healthz & POST /api/artifacts/verify) Kontrolü ==="
+        curl -sf "http://app.{{ app_worker_public_ip }}.nip.io/healthz"
+        curl -sf -X POST "http://app.{{ app_worker_public_ip }}.nip.io/api/artifacts/verify" \
+          -H "Content-Type: application/json" \
+          -d '{"image_name":"supplyshield/supplyshield-api","tag":"1.0.0","digest":"sha256:initialseed01","trivy_status":"PASSED","critical_cves":0}'
+      register: smoke_out
+      retries: 10
+      delay: 6
+      until: smoke_out.rc == 0
+      changed_when: false

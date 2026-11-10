@@ -1,0 +1,87 @@
+# ==============================================================================
+# POSTGRESQL 16 (bitnami/postgresql) — İLİŞKİSEL (ACID SQL) VERİTABANI KATMANI
+# ==============================================================================
+# MİMARİ AMAÇ:
+# PostgreSQL 16, SupplyShield DevSecOps platformumuzda `data` namespace'i altında
+# çalışır ve `supplyshield` FastAPI mikroservisi için:
+#   1. Tedarik zinciri artefakt kayıtlarının, güvenlik tarama geçmişinin (CVE / SBOM
+#      denetim izleri) ve kurumsal işlemlerin ACID bütünlüğüyle saklandığı ana
+#      ilişkisel veritabanıdır.
+#   2. `/readyz` ve arka plan bağımlılık sağlık kontrolünün (`ss_dependency_up{dependency="postgresql"}`)
+#      doğrudan sorguladığı kritik birincil veri katmanıdır.
+#
+# NEDEN PROD ORTAMINDA BÖYLEDİR VS LAB ORTAMI?
+# - Prod'da: PostgreSQL; CloudNativePG, Patroni veya Azure Database for PostgreSQL
+#   Flexible Server üzerinde Primary + Synchronous Standby Replica + PgBouncer
+#   bağlantı havuzu ile çalışır.
+# - Lab'da: 4 GB RAM'li `vm-worker-app` (`tier: app`, taint yok) düğümünde Redis ve
+#   SupplyShield FastAPI pod'larıyla yan yana çalışacak şekilde hafifletilmiş
+#   (`100m` CPU / `192Mi` RAM istek) tekil `primary` StatefulSet olarak çalışır.
+#   Ayrıca Prometheus'un veritabanı bağlantı/sorgu metriklerini toplayabilmesi
+#   için `metrics.enabled: true` ile `postgres-exporter` yan konteyneri aktiftir.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. BITNAMI LEGACY İMAJ DEPOSU VE GÜVENLİK İZNİ
+# ------------------------------------------------------------------------------
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  repository: bitnamilegacy/postgresql
+
+# ------------------------------------------------------------------------------
+# 2. KİMLİK DOĞRULAMA VE VERİTABANI ŞEMASI (SÖZLEŞME STANDARTLARI)
+# ------------------------------------------------------------------------------
+# Küme içi DNS: `postgres-postgresql.data.svc.cluster.local:5432`
+# Kullanıcı: `supplyshield` | Şifre: `AdminPassword2026!` | Veritabanı: `supplyshield`
+auth:
+  postgresPassword: "AdminPassword2026!"
+  username: "supplyshield"
+  password: "AdminPassword2026!"
+  database: "supplyshield"
+
+# ------------------------------------------------------------------------------
+# 3. BİRİNCİL (PRIMARY) VERİTABANI SUNUCUSU YAPILANDIRMASI (VM-WORKER-APP)
+# ------------------------------------------------------------------------------
+primary:
+  resourcesPreset: "none"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  nodeSelector:
+    tier: app
+
+  persistence:
+    enabled: true
+    storageClass: "local-path"
+    size: 4Gi
+
+# ------------------------------------------------------------------------------
+# 4. PROMETHEUS METRİK EXPORTER (POSTGRES_EXPORTER SIDECAR)
+# ------------------------------------------------------------------------------
+# PostgreSQL aktif bağlantı sayılarını (`pg_stat_activity`), işlem (commit/rollback)
+# hızlarını ve veritabanı boyutunu Prometheus'a sunar.
+metrics:
+  enabled: true
+  image:
+    repository: bitnamilegacy/postgres-exporter
+  resourcesPreset: "none"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: monitoring

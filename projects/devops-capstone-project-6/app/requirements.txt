@@ -1,0 +1,21 @@
+# ==============================================================================
+# SUPPLYSHIELD PYTHON BAĞIMLILIKLARI VE GÜVENLİK ARAÇLARI (requirements.txt)
+# ==============================================================================
+# Neden sürümler sabitlenmiştir (Pinned Versions)?
+# Yazılım Tedarik Zinciri Güvenliği (Software Supply Chain Security) gereği,
+# ucu açık sürüm bırakmak (`pip install fastapi`) Tedarik Zinciri Zehirlenmesi
+# (Dependency Confusion / Typosquatting) ve beklenmedik kırılmalara yol açar.
+# Sabitlenmiş sürümler hem tekrarlanabilir derleme (Reproducible Builds) sağlar
+# hem de Harbor Trivy tarayıcısının Python kütüphane CVE'lerini kesin olarak
+# denetlemesine olanak tanır.
+# ==============================================================================
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+psycopg2-binary==2.9.10
+redis==5.2.1
+prometheus-client==0.21.1
+pydantic==2.10.4
+httpx==0.28.1
+pytest==8.3.4
+bandit==1.8.0
+flake8==7.1.1

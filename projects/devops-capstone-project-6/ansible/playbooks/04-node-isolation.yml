@@ -1,0 +1,39 @@
+---
+# ==============================================================================
+# FAZ 4: 3 KATMANLI DÜĞÜM İZOLASYONU (NODE LABELS & TAINTS)
+# Dosya: playbooks/04-node-isolation.yml
+# Hedef: vm-master (Küme düzeyinde Taint ve Label atamaları)
+# ==============================================================================
+# MİMARİ AMAÇ:
+# 6 vCPU ve 16 GB toplam RAM'i (8 + 4 + 4) en verimli şekilde ayırmak için:
+#   1. `vm-master` (8 GB RAM): `tier=platform` etiketi ve `CriticalAddonsOnly=true:NoSchedule`
+#      Taint'i alır. Yalnızca Control Plane, Rancher, ArgoCD ve Prometheus/Grafana çalışır.
+#   2. `vm-worker-secops` (4 GB RAM): `tier=secops` etiketi ve `dedicated=secops:NoSchedule`
+#      Taint'i alır. Yalnızca **Harbor + Trivy** ve **Jenkins Controller + Build Pod'ları** çalışır.
+#      Böylece ağır bir CI derlemesi veya Trivy taraması canlı uygulamayı yavaşlatamaz!
+#   3. `vm-worker-app` (4 GB RAM): `tier=app` etiketi alır (Taint yoktur).
+#      Canlı `supplyshield-api` (x2), PostgreSQL 16 ve Redis burada çalışır.
+# ==============================================================================
+
+- name: "Faz 4: 3 Düğümlü Taint ve NodeSelector İzolasyon Mimarisi"
+  hosts: master
+  become: true
+  vars:
+    kubectl_cmd: "/var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml"
+  tasks:
+    - name: "vm-master düğümüne tier=platform etiketi ve CriticalAddonsOnly Taint ata"
+      shell: |
+        {{ kubectl_cmd }} label node vm-master tier=platform --overwrite
+        {{ kubectl_cmd }} taint nodes vm-master CriticalAddonsOnly=true:NoSchedule --overwrite
+      changed_when: true
+
+    - name: "vm-worker-secops düğümüne tier=secops etiketi ve dedicated=secops:NoSchedule Taint ata"
+      shell: |
+        {{ kubectl_cmd }} label node vm-worker-secops tier=secops --overwrite
+        {{ kubectl_cmd }} taint nodes vm-worker-secops dedicated=secops:NoSchedule --overwrite
+      changed_when: true
+
+    - name: "vm-worker-app düğümüne tier=app etiketi ata"
+      shell: |
+        {{ kubectl_cmd }} label node vm-worker-app tier=app --overwrite
+      changed_when: true

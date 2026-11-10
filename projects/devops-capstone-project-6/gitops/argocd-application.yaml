@@ -1,0 +1,39 @@
+# ==============================================================================
+# ARGOCD GITOPS APPLICATION MANIFEST (gitops/argocd-application.yaml)
+# ==============================================================================
+# Bu bildirim (manifest), ArgoCD'ye küme içerisindeki veya Git deposundaki
+# SupplyShield Helm chart'ını sürekli izlemesini, elle yapılan değişiklikleri
+# (Configuration Drift) otomatik düzeltmesini (`selfHeal: true`) ve silinen
+# kaynakları temizlemesini (`prune: true`) emreder.
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: supplyshield
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/YusufKaya00/k8s-hands-on-labs.git
+    targetRevision: HEAD
+    path: projects/devops-capstone-project-6/app/chart
+    helm:
+      values: |
+        image:
+          repository: harbor.MASTER_IP.nip.io/supplyshield/supplyshield-api
+          tag: "1.0.0"
+        ingress:
+          host: app.APP_IP.nip.io
+        env:
+          HARBOR_EXTERNAL_URL: "http://harbor.MASTER_IP.nip.io"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
