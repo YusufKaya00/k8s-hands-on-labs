@@ -103,79 +103,16 @@ controller:
                 displayName('SupplyShield DevSecOps Pipeline (SAST -> Kaniko -> Harbor/Trivy -> ArgoCD)')
                 description('SupplyShield FastAPI mikroservisini test eden, Kaniko ile imaj derleyip Harbor Kayit Defterine gonderen, Trivy ile CVE taramasi yapan ve ArgoCD GitOps senkronizasyonunu tetikleyen uctan uca DevSecOps boru hatti.')
                 definition {
-                  cps {
-                    sandbox(true)
-                    script('''
-              pipeline {
-                agent {
-                  kubernetes {
-                    yaml """
-              apiVersion: v1
-              kind: Pod
-              metadata:
-                labels:
-                  app.kubernetes.io/part-of: supplyshield-ci
-              spec:
-                nodeSelector:
-                  tier: secops
-                tolerations:
-                  - key: "dedicated"
-                    operator: "Equal"
-                    value: "secops"
-                    effect: "NoSchedule"
-                containers:
-                  - name: jnlp
-                    image: jenkins/inbound-agent:latest-jdk17
-                    resources:
-                      requests:
-                        cpu: "100m"
-                        memory: "256Mi"
-                      limits:
-                        cpu: "500m"
-                        memory: "512Mi"
-              """
-                  }
-                }
-                options {
-                  timestamps()
-                }
-                stages {
-                  stage('1. Workspace & Jenkinsfile Check') {
-                    steps {
-                      sh '''
-                        echo "=== SupplyShield DevSecOps Pipeline Baslatildi ==="
-                        if [ -f /home/ysf/Jenkinsfile ]; then
-                          echo "Yerel /home/ysf/Jenkinsfile bulundu."
-                        else
-                          echo "Varsayilan DevSecOps dogrulama adimlari calistiriliyor..."
-                        fi
-                      '''
+                  cpsScm {
+                    scm {
+                      git {
+                        remote {
+                          url('https://github.com/YusufKaya00/k8s-hands-on-labs.git')
+                        }
+                        branch('*/main')
+                      }
                     }
-                  }
-                  stage('2. SAST & Dependency Security Check') {
-                    steps {
-                      sh '''
-                        echo "[SAST] Python kaynak kodu ve bagimlilik guvenlik kontrolu tamamlandi."
-                      '''
-                    }
-                  }
-                  stage('3. Harbor & Trivy CVE Security Gate') {
-                    steps {
-                      sh '''
-                        echo "[TRIVY] Harbor OCI Registry & Trivy CVE tarama kapisi kontrol ediliyor..."
-                      '''
-                    }
-                  }
-                  stage('4. ArgoCD GitOps Sync Verification') {
-                    steps {
-                      sh '''
-                        echo "[GITOPS] ArgoCD supplyshield uygulamasi senkronizasyon durumu dogrulandi."
-                      '''
-                    }
-                  }
-                }
-              }
-                    '''.stripIndent())
+                    scriptPath('projects/devops-capstone-project-6/Jenkinsfile')
                   }
                 }
               }
