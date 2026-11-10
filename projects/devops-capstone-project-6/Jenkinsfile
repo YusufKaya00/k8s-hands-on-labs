@@ -183,6 +183,12 @@ spec:
                             if [ "$STATUS" = "Success" ]; then
                                 SUMMARY=$(echo "$RESP" | jq -c '.scan_overview | to_entries[0].value.summary')
                                 echo "Trivy CVE Özeti: ${SUMMARY}"
+                                echo "----------------------------------------------------------"
+                                echo " ÖNE ÇIKAN ZAFİYETLER VE GÜVENLİK YAMALARI (TOP 10):"
+                                echo "----------------------------------------------------------"
+                                curl -s -u "${HARBOR_USER}:${HARBOR_PASS}" "${API_URL}/additions/vulnerabilities" \
+                                  | jq -r '."application/vnd.security.vulnerability.report; version=1.1".vulnerabilities[]? | select(.severity=="High" or .severity=="Critical") | "  • [\(.severity)] \(.id) | Paket: \(.package) | Yama: \(.fix_version // "Henüz yama yok")"' \
+                                  | head -n 10 || true
                                 break
                             fi
                             sleep 5
