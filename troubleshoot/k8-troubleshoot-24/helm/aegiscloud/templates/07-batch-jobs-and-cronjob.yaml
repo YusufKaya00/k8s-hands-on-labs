@@ -44,7 +44,7 @@ spec:
   schedule: {{ .Values.batch.auditor.schedule | quote }}
   suspend: {{ .Values.batch.auditor.suspend }}
   successfulJobsHistoryLimit: 2
-  failedJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 5
   jobTemplate:
     spec:
       template:
