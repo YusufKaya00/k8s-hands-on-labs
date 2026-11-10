@@ -45,7 +45,8 @@ echo "========================================================"
 helm upgrade --install aegiscloud "${HELM_DIR}" \
   --namespace aegis-core \
   --create-namespace \
-  --set global.ingressHost="${INGRESS_HOST}"
+  --set global.ingressHost="${INGRESS_HOST}" \
+  --no-hooks
 
 echo "Waiting 20 seconds for cluster controllers and probes to settle..."
 sleep 20
