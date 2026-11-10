@@ -79,7 +79,7 @@ coreApi:
   overrideVaultAddr: "http://127.0.0.1:8443"
   livenessProbe:
     path: /api/internal/health
-    port: 8001
+    port: 8000
   resources:
     requests:
       cpu: "100m"
