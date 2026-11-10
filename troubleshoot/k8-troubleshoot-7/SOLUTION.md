@@ -1,5 +1,11 @@
 # 🛠️ SRE Incident Remediation Guide & Post-Mortem: Lab 7 (NexusLogistics)
 
+> **[🇬🇧 English Version](#-english-version) | [🇹🇷 Türkçe Versiyon](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This guide documents the root cause analyses (RCA), architectural remediation steps, and verification procedures for **Incident Lab 7 (NexusLogistics Autonomous Dispatch Grid Outage)**.
 
 ---
