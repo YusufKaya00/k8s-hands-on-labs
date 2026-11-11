@@ -59,7 +59,7 @@ sharedStorage:
 paymentEngine:
   replicas: 2
   image: python:3.11-alpine
-  serviceAccountName: payment-engine
+  serviceAccountName: payment-engine-sa
   port: 8080
   containerPortName: http-api
   serviceSelectorComponent: core-engine
