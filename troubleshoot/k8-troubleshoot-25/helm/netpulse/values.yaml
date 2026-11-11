@@ -28,9 +28,9 @@ tokenSigner:
   port: 9000
 
 dataNetworkPolicy:
-  allowedNamespaceTier: backend-v1
+  allowedNamespaceTier: netpulse-data
   allowedRedisPort: 6379
-  allowedSignerPort: 9090
+  allowedSignerPort: 9000
 
 netAgent:
   image: busybox:1.36
