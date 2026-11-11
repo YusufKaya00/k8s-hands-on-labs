@@ -1,0 +1,123 @@
+# ==============================================================================
+# QUANTUMPAY DISTRIBUTED CORE — BASELINE VALUES (values.yaml)
+# ==============================================================================
+# %100 Kararlı Başlangıç (Pristine Baseline):
+# Sistem başlangıçta sıfır çöküş, yeşil problar ve HTTP 200 ile başlar.
+# Hata modları yalnızca Chaos Mesh deneyleri veya stres testleri ile tetiklendiğinde açığa çıkar!
+# ==============================================================================
+
+replicaCount:
+  gateway: 2
+  engine: 2
+  consumer: 1
+  analytics: 1
+  ledgerDb: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "app.9.205.30.202.nip.io"
+
+# Gateway Ayarları
+gateway:
+  port: 8080
+  # ZAFİYET 1: İstemci ve downstream çağrılarında timeout tanımlanmamış (0 = sonsuz bekleme).
+  # Ağ paketi bozulması (corrupt) veya sıra kayması (reorder) altında goroutine/socket sızıntısı yaratır.
+  downstreamTimeout: 0
+  readHeaderTimeout: 0
+  idleTimeout: 0
+  maxConnections: 1000
+  # ZAFİYET 2: preStop hook kapalı ve terminationGracePeriod kısa (5s).
+  # Rolling update veya pod kill sırasında Ingress drain tamamlanmadan pod ölür -> 502 Bad Gateway & RST.
+  preStopEnabled: false
+  preStopSleepSeconds: 0
+  terminationGracePeriodSeconds: 5
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# Transaction Engine Ayarları
+engine:
+  port: 8081
+  # ZAFİYET 3: Circuit Breaker devre dışı.
+  # Disk I/O hatası (EIO) veya yüksek disk gecikmesi olduğunda tüm işlem havuzu kilitlenir.
+  circuitBreaker:
+    enabled: false
+    errorThreshold: 5
+    recoveryTimeSeconds: 15
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# Settlement Consumer Ayarları
+consumer:
+  # ZAFİYET 4: Poison Pill (Zehirli Mesaj) DLQ koruması kapalı.
+  # Bozuk bir mesaj geldiğinde sonsuz döngüde aynı mesajı yeniden dener,
+  # max.poll.interval.ms süresini aşar ve sürekli Consumer Group Rebalance fırtınası çıkarır.
+  dlqEnabled: false
+  maxRetries: 999999
+  pollIntervalMs: 2000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# Risk Analytics Worker Ayarları
+analytics:
+  # ZAFİYET 5: Cgroup v2 bellek sınırı varken GOMEMLIMIT / heap sınırı ayarlanmamış.
+  # Bellek stresinde (StressChaos) garbage collector devreye giremeden kernel OOM Killer (ExitCode 137) ile podu öldürür.
+  enableMemoryTargetLimit: false
+  memoryTargetLimitMib: 0
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# Ledger DB (StatefulSet) Ayarları
+ledgerDb:
+  port: 5432
+  storageSize: 500Mi
+  storageClassName: "" # Cluster varsayılan StorageClass
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+# PDB (Pod Disruption Budget)
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# HPA (Horizontal Pod Autoscaler)
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 65
+
+# ServiceMonitor (Prometheus)
+serviceMonitor:
+  enabled: true
+  interval: 10s
