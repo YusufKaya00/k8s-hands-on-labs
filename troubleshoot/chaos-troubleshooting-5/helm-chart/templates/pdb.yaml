@@ -1,0 +1,29 @@
+{{- if .Values.pdb.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: quantumpay-gateway-pdb
+  labels:
+    {{- include "quantumpay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "quantumpay.name" . }}
+      app.kubernetes.io/component: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: quantumpay-engine-pdb
+  labels:
+    {{- include "quantumpay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: engine
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "quantumpay.name" . }}
+      app.kubernetes.io/component: engine
+{{- end }}

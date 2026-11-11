@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: quantumpay-ledger-db
+  labels:
+    {{- include "quantumpay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ledger-db
+spec:
+  serviceName: quantumpay-ledger-db
+  replicas: {{ .Values.replicaCount.ledgerDb }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "quantumpay.name" . }}
+      app.kubernetes.io/component: ledger-db
+  template:
+    metadata:
+      labels:
+        {{- include "quantumpay.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ledger-db
+    spec:
+      containers:
+        - name: ledger-db
+          image: "postgres:16-alpine"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: db
+              containerPort: {{ .Values.ledgerDb.port }}
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: "quantumpay"
+            - name: POSTGRES_USER
+              value: "quantum"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "quantumpay.fullname" . }}-credentials
+                  key: DB_PASSWORD
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          resources:
+            {{- toYaml .Values.ledgerDb.resources | nindent 12 }}
+          volumeMounts:
+            - name: db-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: db-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        {{- if .Values.ledgerDb.storageClassName }}
+        storageClassName: {{ .Values.ledgerDb.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.ledgerDb.storageSize }}
