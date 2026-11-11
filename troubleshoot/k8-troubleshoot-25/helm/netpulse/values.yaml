@@ -16,7 +16,7 @@ ledgerDb:
   port: 6379
   storageClassName: azurefile-csi
   storageSize: 1Gi
-  serviceName: ledger-internal-svc
+  serviceName: ledger-headless
   headlessServiceName: ledger-headless
   secretName: netpulse-data-secret
   secretKey: REDIS_PASSWORD
