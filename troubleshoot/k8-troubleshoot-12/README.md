@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 12: Vortex — Distributed Microservices & Traefik Ingress Platform Incident Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active **Incident Triage War Room** during a high-severity production outage of **Vortex**, an enterprise distributed microservice and edge API platform fronted by a Traefik Ingress Controller.
 
 All Kubernetes manifests and Helm chart templates deployed to the cluster are **syntactically valid** and accepted by the Kubernetes API server and Helm engine (`./setup.sh` executes with exit code 0). However, at runtime the platform suffers from cascading failures across the networking, security, data access, scheduling, and batch layers: Traefik crashes immediately on privileged port binding permissions, edge ingress routes return HTTP 404 Not Found, the authentication service fails to boot due to missing secret references and unreachable cache endpoints, payment processing deadlocks on cross-zone topology spread constraints, and the notification dispatcher CronJob is repeatedly killed by the Linux kernel OOM killer while accumulating unbounded failed runs.
@@ -339,7 +345,7 @@ echo "========================================================"
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Olay Müdahale Laboratuvarı 12: Vortex — Dağıtık Mikroservis ve Traefik Ingress Platformu
 

@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 10: Chronos — Distributed Order Fulfillment & Real-Time Inventory Coordination Incident Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active **Incident Triage War Room** during a catastrophic production deployment failure of **Chronos**, an enterprise distributed order fulfillment and real-time inventory coordination platform.
 
 The platform is deployed using native, parametric Helm charts alongside core declarative Kubernetes manifests. While all manifests and Helm charts are **syntactically valid** and accepted by the Kubernetes API server (`./setup.sh` executes with exit code 0), the system experiences cascading runtime outages: the inventory worker crashes immediately under kernel memory pressure, order processing pods deadlock on cluster scheduling constraints and fail health checks, cluster ingress drops client connections asymmetrically, and external orders are rejected with HTTP 403 Forbidden.
@@ -303,7 +309,7 @@ kubectl delete namespace chronos-prod --ignore-not-found
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Incident Lab 10: Chronos — Dağıtık Sipariş ve Gerçek Zamanlı Stok Platformu
 

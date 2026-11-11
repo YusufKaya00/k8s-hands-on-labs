@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 3: ApexPay Financial Gateway Outage Triage & Runbook
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active Incident Triage War Room during the production go-live failure of ApexPay, a real-time financial settlement and transaction processing platform.
 
 All manifests deployed to the cluster were **schema-compliant** and validated without syntax errors by the Kubernetes API server. However, system-level issues across Linux VFS mount overlays, non-root storage permissions (`fsGroup`), socket interface binding (`127.0.0.1` vs `0.0.0.0`), CPU request limits, and named port mapping resulted in a multi-tier platform outage.
@@ -161,7 +167,7 @@ kubectl get pods -n apex-prod -o wide
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # ApexPay (k8-troubleshoot-3) — SRE Incident Management & Triage Runbook
 

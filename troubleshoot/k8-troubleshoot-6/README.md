@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 6: AeroOps Flight Radar & Mesh Dispatch Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active Incident Triage War Room during the production go-live failure of **AeroOps Global**, a mission-critical real-time flight telemetry, transponder tracking, and air traffic control dispatch mesh.
 
 All manifests deployed to the cluster were **schema-compliant** and accepted without syntax errors by the Kubernetes API server. However, database taint scheduling failures, Headless Service DNS mismatches, cache port translation bugs, container probe failures, upstream ConfigMap typos, Service selector label drift, reverse proxy upstream mismatches, and strict pod anti-affinity scheduling conflicts have paralyzed the flight tracking platform.
@@ -198,7 +204,7 @@ kill $PF_PID
 ---
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Incident Lab 6: AeroOps Uçuş Radar & Servis Ağı Triage Labı
 

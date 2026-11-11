@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 1: ShopSphere E-Commerce Platform Outage Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 > 📟 **URGENT PAGERDUTY INCIDENT ALERT:**  
 > The ShopSphere production e-commerce platform has suffered a cascading multi-tier outage! Customers are unable to access the frontend, databases are unmounted, backend services are crashing in cyclic restart loops, and automated backups are failing silently.  
 >  
@@ -144,7 +150,7 @@ kubectl get all,pvc,hpa,cronjob -n ecom-prod
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # ShopSphere E-Ticaret Platformu — SRE Troubleshooting & Arıza Kurtarma Laboratuvarı
 

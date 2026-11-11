@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 7: NexusLogistics Autonomous Dispatch Grid Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active Incident Triage War Room during the mission-critical production go-live failure of **NexusLogistics Global**, an enterprise real-time freight routing, autonomous fleet scheduling, and warehouse dispatch platform.
 
 All manifests deployed to the cluster are **syntactically valid** and accepted without errors by the Kubernetes API server. However, storage provisioner rejections, secret reference typos, dependency hostname resolution loops, Linux cgroup memory limit starvation, in-cluster RBAC authorization denials, cloud LoadBalancer selector drift, NGINX reverse proxy upstream mismatches, and strict pod anti-affinity scheduling deadlocks have brought the autonomous dispatch grid to a complete standstill.
@@ -279,7 +285,7 @@ kubectl logs -l app.kubernetes.io/name=order-worker -n nexus-prod -c worker | ta
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Olay Müdahale Laboratuvarı 7: NexusLogistics Otonom Sevkiyat Ağı Arıza Kurtarma
 

@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 11: PulseStream — Real-Time Analytics & Reporting Platform Incident Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active **Incident Triage War Room** during a high-severity production deployment failure of **PulseStream**, an enterprise real-time event analytics streaming and analytical metrics platform.
 
 All manifests and Helm charts deployed to the cluster are **syntactically valid** and accepted by the Kubernetes API server and Helm engine (`./setup.sh` executes with exit code 0). However, at runtime the platform suffers from cascading failures across multiple layers: database migrations terminate prematurely with deadline errors, analytics stream workers fail to discover Redis and remain unready, the reporting API deadlocks during rolling deployment due to probe timeout failures, the Horizontal Pod Autoscaler controller cannot calculate utilization metrics, node-level log telemetry misses the database host, and external gateway requests return HTTP 502 Bad Gateway.
@@ -361,7 +367,7 @@ echo "🎉 ALL PULSESTREAM PRODUCTION TIERS FULLY HEALTHY & OPERATIONAL!"
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Olay Müdahale Laboratuvarı 10: PulseStream — Gerçek Zamanlı Analitik ve Raporlama Platformu
 

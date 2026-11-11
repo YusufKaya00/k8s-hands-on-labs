@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 8: Helix Ledger — Production Go-Live Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active **Incident Triage War Room** during the mission-critical production go-live failure of **Helix Ledger**, an enterprise financial accounting and transactional ledger platform.
 
 All manifests deployed to the cluster are **syntactically valid** and accepted without errors by the Kubernetes API server. Yet the platform fails to initialize: pods fail to schedule, containers repeatedly crash, services cannot discover or route to upstreams, and public web endpoints return gateway errors.
@@ -412,7 +418,7 @@ kubectl delete namespace helix-prod --ignore-not-found
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Incident Lab 8: Helix Ledger — Production Go-Live Triage
 

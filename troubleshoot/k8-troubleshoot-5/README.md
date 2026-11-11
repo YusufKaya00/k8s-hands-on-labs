@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 5: ApexPay Core Banking & Service Mesh Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active Incident Triage War Room during the production go-live failure of **ApexPay Global**, a mission-critical real-time payment settlement and fraud detection engine.
 
 All manifests deployed to the cluster were **schema-compliant** and accepted without syntax errors by the Kubernetes API server. However, severe service discovery failures, port mapping mismatches (`port` vs `targetPort`), transport protocol discrepancies, and NodePort routing misconfigurations have caused a cascading outage across the payment mesh.
@@ -167,7 +173,7 @@ curl -s http://notification-broker-svc:9090/
 ---
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Incident Lab 5: ApexPay Çekirdek Bankacılık & Servis Ağı Triage Labı
 

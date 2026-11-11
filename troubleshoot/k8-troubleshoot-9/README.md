@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 9: PayStream — High-Frequency Payment & Settlement System Incident Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active **Incident Triage War Room** during a mission-critical production deployment failure of **PayStream**, an enterprise high-frequency payment processing and transaction settlement platform.
 
 All manifests deployed to the cluster are **syntactically valid** and accepted without errors by the Kubernetes API server (`kubectl apply -f manifests/` returns 0). However, the platform fails completely at runtime: database and caching workloads cannot schedule or mount storage, application containers fail their bootstrap lifecycle and health checks, internal routing is blackholed, and public gateway requests return timeouts and 404s.
@@ -276,7 +282,7 @@ kubectl delete namespace paystream-prod --ignore-not-found
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Incident Lab 9: PayStream — Yüksek Frekanslı Ödeme ve Mutabakat Sistemi
 

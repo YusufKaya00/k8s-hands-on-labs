@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 2: NovaMarket Platform Outage Triage & Runbook
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace represents the active Incident Triage War Room during the production go-live failure of the NovaMarket e-commerce platform.
 
 All manifests deployed to the cluster were **schema-compliant** and accepted without syntax errors by the Kubernetes API server. However, severe architectural mismatches, volume mount behaviors, probe budget starvation, and scheduling deadlocks caused cascading microservice outages across the cluster.
@@ -162,7 +168,7 @@ kubectl get pods -n nova-prod -o wide
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # NovaMarket (k8-troubleshoot-2) — SRE Incident Management & Triage Runbook
 

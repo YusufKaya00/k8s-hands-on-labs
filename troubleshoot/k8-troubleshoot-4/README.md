@@ -1,5 +1,11 @@
 # 🚨 SRE Incident Lab 4: PulseMed Telemetry & Clinic Gateway Triage
 
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
+
 This workspace serves as the active Incident Triage War Room during the production go-live failure of PulseMed, a mission-critical hospital telemetry and clinic monitoring platform.
 
 All manifests deployed to the cluster were **schema-compliant** and accepted without syntax errors by the Kubernetes API server. However, severe service discovery failures, port mapping mismatches (`port` vs `targetPort`), probe misconfigurations, and scheduling constraints caused a cascading outage across all microservices.
@@ -165,7 +171,7 @@ kubectl get pods -n pulse-prod -o wide
 
 ---
 
-## 🇹🇷 Türkçe Dokümantasyon / Turkish Version
+# 🇹🇷 Türkçe Versiyon
 
 # PulseMed (k8-troubleshoot-4) — SRE Incident Management & Triage Runbook
 
