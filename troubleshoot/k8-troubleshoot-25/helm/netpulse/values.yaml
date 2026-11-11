@@ -35,7 +35,7 @@ dataNetworkPolicy:
 netAgent:
   image: busybox:1.36
   nodeSelector:
-    network-card: smartnic-100g
+    data: netpulse-data
   readOnlyRootFilesystem: true
   mountRunEmptyDir: false
 
