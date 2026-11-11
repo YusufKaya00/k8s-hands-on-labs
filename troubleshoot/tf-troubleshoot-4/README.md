@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # 🚨 SRE Incident Lab: tf-troubleshoot-4 — ChronoPay Edge Gateway (Terraform + Ansible Pipeline Outage)
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **tf-troubleshoot-4**. This workspace serves as the active **Incident Triage War Room** during a production provisioning and configuration management outage of **ChronoPay**, an edge payment gateway and internal payment verification service managed end-to-end via **Terraform** (infrastructure metadata, secrets, and dynamic inventory generation) and **Ansible** (daemon orchestration, security validation, Jinja2 templating, and handler lifecycle).
 

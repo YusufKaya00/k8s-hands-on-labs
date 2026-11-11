@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # 🚨 SRE Incident Lab: tf-troubleshoot-5 — NexusVault Stateful Platform (State Disasters, Refactoring & Ansible Precedence Outage)
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **tf-troubleshoot-5**. This workspace simulates a high-severity production outage on **NexusVault**, a stateful secret management node where an interrupted CI job and a code refactor broke the **Terraform State**, while the **Ansible** role hierarchy suffers from a variable precedence trap and a conditional type bug that leaves the Vault service sealed (`HTTP 503`).
 

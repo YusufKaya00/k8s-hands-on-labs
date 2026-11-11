@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # 🚨 SRE Incident Lab: tf-troubleshoot-6 — AegisCloud Multi-Tier Cluster (Dependency Cycles, Cross-Host `hostvars`, `lineinfile` & L7 LB Routing)
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **tf-troubleshoot-6**. This capstone IaC + Configuration Management lab simulates a multi-tier cluster outage across **AegisCloud** (1 Control-Plane Master, 2 Worker Nodes, and 1 Edge LoadBalancer) — mirroring the exact architecture of a multi-node Kubernetes/K3s cluster bootstrap with Terraform and Ansible.
 
