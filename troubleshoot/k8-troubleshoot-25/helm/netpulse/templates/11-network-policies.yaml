@@ -40,7 +40,7 @@ spec:
           port: {{ .Values.paymentEngine.port }}
   egress:
 {{- if .Values.coreNetworkPolicy.allowDnsEgress }}
-      ports:
+     - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
