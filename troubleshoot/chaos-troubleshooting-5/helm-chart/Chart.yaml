@@ -1,0 +1,6 @@
+apiVersion: v2
+name: quantumpay
+description: "QuantumPay Distributed Core - High-Concurrency Financial Transaction & Ledger Engine"
+type: application
+version: 1.0.0
+appVersion: "5.0.0"
