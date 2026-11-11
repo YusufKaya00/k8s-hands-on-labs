@@ -1,0 +1,33 @@
+# ==============================================================================
+# 08-troubleshoot-slowloris-connection-starve.yaml (TROUBLESHOOT DENEYİ T6)
+# ==============================================================================
+# AMAÇ:
+# Ingress ile Gateway arasındaki bant genişliği 20kbps'e düşürülerek
+# yavaş istemci (Slowloris) bağlantı açlığı simüle edilir.
+#
+# ZAFİYET:
+# readHeaderTimeout ve idleTimeout 0 olduğu için yavaş bağlantılar soketleri
+# sonsuza kadar işgal eder ve yeni bağlantılar kabul edilemez.
+#
+# ÇÖZÜM:
+# values.yaml içinde gateway.readHeaderTimeout: 2 ve gateway.idleTimeout: 5 yapılandırılması.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: troubleshoot-slowloris-bandwidth
+  namespace: chaos-mesh
+spec:
+  action: bandwidth
+  mode: all
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: gateway
+  bandwidth:
+    rate: '20kbps'
+    limit: 20
+    buffer: 10000
+  direction: to
+  duration: '60s'

@@ -1,0 +1,70 @@
+# ==============================================================================
+# 09-gameday-automated-workflow.yaml (GAMEDAY ORKESTRASYON WORKFLOW)
+# ==============================================================================
+# AMAÇ:
+# SRE Game Day senaryolarını aşamalı (Serial/Parallel) olarak yürütür:
+#   Aşama 1: Ağ Paketi Bozulması (NetworkChaos Corrupt 35%)
+#   Aşama 2: Disk I/O Yazma Hatası (IOChaos EIO)
+#   Aşama 3: Otomatik İyileşme Doğrulaması (StatusCheck)
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: Workflow
+metadata:
+  name: quantumpay-resilience-gameday
+  namespace: chaos-mesh
+spec:
+  entry: gameday-pipeline
+  templates:
+    - name: gameday-pipeline
+      templateType: Serial
+      children:
+        - stage-1-network-corrupt
+        - stage-2-io-fault
+        - stage-3-status-verification
+
+    - name: stage-1-network-corrupt
+      templateType: NetworkChaos
+      deadline: '45s'
+      networkChaos:
+        action: corrupt
+        mode: all
+        selector:
+          namespaces:
+            - app
+          labelSelectors:
+            app.kubernetes.io/component: engine
+        corrupt:
+          corrupt: '35'
+        direction: to
+
+    - name: stage-2-io-fault
+      templateType: IOChaos
+      deadline: '45s'
+      ioChaos:
+        action: fault
+        mode: all
+        selector:
+          namespaces:
+            - app
+          labelSelectors:
+            app.kubernetes.io/component: engine
+        volumePath: /var/lib/quantumpay/data
+        path: /var/lib/quantumpay/data/wal.log
+        errno: 5
+        percent: 100
+
+    - name: stage-3-status-verification
+      templateType: StatusCheck
+      statusCheck:
+        mode: Continuous
+        intervalSeconds: 5
+        timeoutSeconds: 2
+        criteria:
+          recordsHistoryLimit: 5
+        httpCheck:
+          url: "http://quantumpay-gateway.app.svc.cluster.local:8080/healthz"
+          requestHeaders:
+            Accept: "application/json"
+          criteria:
+            statusCodes:
+              - "200"
