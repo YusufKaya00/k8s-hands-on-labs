@@ -1,0 +1,57 @@
+# ==============================================================================
+# BROKEN MANIFEST 1: Gateway with Missing Sockets & Downstream Timeouts
+# ==============================================================================
+# KÖK NEDEN (RCA):
+# İstemci ve downstream çağrılarında (urllib / http.Client) timeout değeri (DOWNSTREAM_TIMEOUT)
+# '0' (sonsuz) olarak bırakılmıştır.
+#
+# KAOS ALTINDAKİ BELİRTİ:
+# Chaos Mesh 'NetworkChaos' ile paket bozulması (corrupt: 35%) veya sıra kayması (reorder: 25%)
+# uygulandığında, TCP bağlantıları soket okuma arabelleğinde (socket receive buffer) kilitlenir.
+# Worker thread havuzu tükenir, yeni gelen meşru istekler 504 Gateway Timeout alır.
+#
+# DÜZELTME (FIX):
+# DOWNSTREAM_TIMEOUT değerini '3' (3 saniye) yapın ve socket keepalive sürelerini sınırlayın.
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumpay-gateway-broken
+  namespace: app
+  labels:
+    app.kubernetes.io/name: quantumpay
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quantumpay
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quantumpay
+        app.kubernetes.io/component: gateway
+    spec:
+      containers:
+        - name: gateway
+          image: python:3.11-slim
+          command: ["python3", "/app/gateway.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: GATEWAY_PORT
+              value: "8080"
+            # ❌ HATA: Timeout 0 (sonsuz) olarak ayarlanmış!
+            - name: DOWNSTREAM_TIMEOUT
+              value: "0"
+            - name: ENGINE_URL
+              value: "http://quantumpay-engine:8081"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi

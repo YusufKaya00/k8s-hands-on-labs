@@ -1,0 +1,67 @@
+# ==============================================================================
+# BROKEN MANIFEST 2: Transaction Engine Without Circuit Breaker Protection
+# ==============================================================================
+# KÖK NEDEN (RCA):
+# CIRCUIT_BREAKER_ENABLED="false" olarak bırakılmıştır.
+#
+# KAOS ALTINDAKİ BELİRTİ:
+# Chaos Mesh 'IOChaos' ile kalıcı disk hacmine (PVC WAL) I/O hatası (fault: EIO) veya
+# 2500ms disk gecikmesi uygulandığında, her işlem diske fsync() yaparken hata alır ve
+# unhandled exception ile çöker veya tüm iş parçacıklarını kilitler. Gateway 500 alır.
+#
+# DÜZELTME (FIX):
+# CIRCUIT_BREAKER_ENABLED="true", CB_THRESHOLD="3", CB_RECOVERY_TIME="10" olarak
+# yapılandırın ve disk çöktüğünde read-only önbellek veya 503 Retry-After dönmesini sağlayın.
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumpay-engine-broken
+  namespace: app
+  labels:
+    app.kubernetes.io/name: quantumpay
+    app.kubernetes.io/component: engine
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quantumpay
+      app.kubernetes.io/component: engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quantumpay
+        app.kubernetes.io/component: engine
+    spec:
+      containers:
+        - name: engine
+          image: python:3.11-slim
+          command: ["python3", "/app/engine.py"]
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: ENGINE_PORT
+              value: "8081"
+            # ❌ HATA: Circuit Breaker kapalı!
+            - name: CIRCUIT_BREAKER_ENABLED
+              value: "false"
+            - name: CB_THRESHOLD
+              value: "5"
+            - name: WAL_PATH
+              value: "/var/lib/quantumpay/data/wal.log"
+            - name: EVENTS_DIR
+              value: "/var/lib/quantumpay/data/events"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          volumeMounts:
+            - name: shared-data
+              mountPath: /var/lib/quantumpay/data
+      volumes:
+        - name: shared-data
+          emptyDir: {}
