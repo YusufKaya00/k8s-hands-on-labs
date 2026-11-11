@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # 🚨 SRE Incident Lab 14: AegisGrid — Distributed Threat Intelligence & Security Telemetry Platform Outage
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **SRE Incident Lab 14**. This workspace serves as the active **Incident Triage War Room** during a high-severity production outage of **AegisGrid**, an enterprise distributed threat intelligence, malware signature scanning, and security telemetry platform running in the `aegis-prod` namespace on an Oracle Cloud Kubernetes Engine (OKE) cluster.
 

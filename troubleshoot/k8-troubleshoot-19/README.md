@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # INCIDENT #5108 — Complete Outage Following OmniPulse v3.0.0 Platform Release
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 ## Incident Summary (Incident Report)
 This morning at 08:30 UTC, our enterprise telemetry and status showcase platform **`omnipulse`** was upgraded to architecture `v3.0.0`. Under this release, all foundational Kubernetes workload objects were consolidated into a single unified Helm chart:
@@ -167,7 +171,7 @@ terraform destroy -auto-approve
 
 ---
 
-# 🇹🇷 Türkçe Dokümantasyon
+# 🇹🇷 Türkçe Versiyon
 
 # INCIDENT #5108 — OmniPulse v3.0.0 Platform Yayını Sonrası Tam Kesinti
 

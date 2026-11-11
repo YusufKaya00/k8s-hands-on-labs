@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # 🏆 SRE Incident Lab 16 (Grand Finale Capstone): OmniCore — Enterprise Order, Settlement, Telemetry & L7 Edge Platform Outage
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **SRE Incident Lab 16 (Grand Finale Master Review)**. This workspace serves as the active **Incident Triage War Room** during a catastrophic, cluster-wide production outage of **OmniCore**, our flagship enterprise order fulfillment, ledger settlement, real-time catalog indexing, node telemetry, and L7 API gateway platform running in the `omnicore-prod` namespace on an Oracle Cloud Kubernetes Engine (OKE) cluster.
 

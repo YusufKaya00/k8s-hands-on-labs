@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # INCIDENT #4092 — Complete Outage Following NovaStore v2.4.0 Release
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 ## Incident Summary (Incident Report)
 This morning at 09:15 UTC, the `storefront` Helm chart was upgraded to release `v2.4.0`. The rollout introduced several architectural and security changes:
@@ -103,7 +107,7 @@ The incident contains **6 sequential production defects** spanning the complete 
 
 ---
 
-# 🇹🇷 Türkçe Dokümantasyon
+# 🇹🇷 Türkçe Versiyon
 
 # INCIDENT #4092 — NovaStore v2.4.0 Yayını Sonrası Tam Kesinti
 

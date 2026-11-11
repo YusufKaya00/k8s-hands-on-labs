@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # 🚨 SRE Incident Lab 15: QuantFlow — Algorithmic Risk, Liquidity Engine & L7 Edge Gateway Outage
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **SRE Incident Lab 15**. This workspace serves as the active **Incident Triage War Room** during a high-severity production outage of **QuantFlow**, an enterprise algorithmic risk evaluation, orderbook liquidity calculation, and edge gateway platform running in the `quantflow-prod` namespace on an Oracle Cloud Kubernetes Engine (OKE) cluster.
 

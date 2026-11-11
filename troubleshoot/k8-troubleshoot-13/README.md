@@ -1,6 +1,10 @@
-# 🇬🇧 English Version / Comprehensive SRE Incident Guide: Lab 13 (NovaEdge)
-
 # 🚨 SRE Incident Lab 13: NovaEdge Real-Time Edge IoT & Ingress Stream Gateway Outage
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **Incident Lab 13**. You are the Lead Site Reliability Engineer (SRE) on-call for **NovaEdge**, an enterprise real-time IoT stream ingestion and edge routing platform running in the dedicated `novaedge-prod` namespace.
 
@@ -205,7 +209,7 @@ echo "🎉 ALL NOVAEDGE PLATFORM SERVICES ARE 100% HEALTHY!"
 
 ---
 
-# 🇹🇷 Türkçe Versiyon / Kapsamlı SRE Olay Müdahale Rehberi: Lab 13 (NovaEdge)
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Olay Müdahale Labı 13: NovaEdge Gerçek Zamanlı Edge IoT & Ingress Akış Ağ Geçidi Kesintisi
 

@@ -1,6 +1,10 @@
-# 🇬🇧 English Version
-
 # 🚨 SRE Incident Lab 17 (Master Review): AetherMesh — Global Payment, Event Stream & API Gateway Platform Outage
+
+> **[🇬🇧 English](#-english-version) | [🇹🇷 Türkçe](#-türkçe-versiyon)**
+
+---
+
+# 🇬🇧 English Version
 
 Welcome to **SRE Incident Lab 17 (Master Review)**. This workspace serves as the active **Incident Triage War Room** during a high-severity, cluster-wide production outage of **AetherMesh**, our next-generation enterprise real-time payment settlement, in-memory event stream processing, node health telemetry, and L7 edge API gateway platform running in the `aether-prod` namespace.
 
@@ -385,7 +389,7 @@ cd /home/ysf/k8sfundamentals/Troubleshoot/k8-troubleshoot-17
 ---
 ---
 
-# 🇹🇷 Türkçe Sürüm
+# 🇹🇷 Türkçe Versiyon
 
 # 🚨 SRE Olay Müdahale Laboratuvarı 17 (Kapsamlı Tekrar): AetherMesh — Küresel Ödeme, Stream ve API Gateway Platform Kesintisi
 
