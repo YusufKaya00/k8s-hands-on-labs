@@ -1,0 +1,31 @@
+# ==============================================================================
+# 07-troubleshoot-memory-cgroup-oom.yaml (TROUBLESHOOT DENEYİ T5)
+# ==============================================================================
+# AMAÇ:
+# quantumpay-analytics pod'una 180MB sentetik bellek stresi uygulanır.
+#
+# ZAFİYET:
+# Pod'un bellek sınırı 256MiB'dir. Uygulama cgroup sınırından habersiz olduğu için
+# Garbage Collector devreye giremez ve Linux Kernel Cgroup OOM Killer podu öldürür (137).
+#
+# ÇÖZÜM:
+# values.yaml içinde analytics.enableMemoryTargetLimit: true ve
+# memoryTargetLimitMib: 192 yapılandırılması.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: troubleshoot-memory-cgroup-oom
+  namespace: chaos-mesh
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: analytics
+  stressors:
+    memory:
+      workers: 2
+      size: '180MB'
+  duration: '60s'

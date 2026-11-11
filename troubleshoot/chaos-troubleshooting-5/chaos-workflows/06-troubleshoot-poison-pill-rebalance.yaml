@@ -1,0 +1,35 @@
+# ==============================================================================
+# 06-troubleshoot-poison-pill-rebalance.yaml (TROUBLESHOOT DENEYİ T4)
+# ==============================================================================
+# AMAÇ:
+# HTTPChaos ile Gateway'in /api/v1/poison endpoint'ine tetikleme veya
+# zehirli mesaj enjeksiyonu simüle edilir.
+#
+# ZAFİYET:
+# Consumer'da DLQ_ENABLED=false olduğu için tüketici aynı zehirli mesajda kilitlenir,
+# max.poll.interval.ms süresini aşar ve sürekli Consumer Group Rebalance fırtınası çıkar.
+#
+# ÇÖZÜM:
+# values.yaml içinde consumer.dlqEnabled: true ve maxRetries: 3 yapılandırılması.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: troubleshoot-poison-pill-trigger
+  namespace: chaos-mesh
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: gateway
+  target: Request
+  port: 8080
+  path: '/api/v1/transfer'
+  method: POST
+  patch:
+    body:
+      type: JSON
+      value: '{"corrupt": true, "poison": true, "tx_id": "poison-999"}'
+  duration: '60s'
