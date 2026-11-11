@@ -1,0 +1,119 @@
+# ==============================================================================
+# QUANTUMPAY DISTRIBUTED CORE — HARDENED VALUES (values-hardened.yaml)
+# ==============================================================================
+# Bu değerler, Lab 5'teki tüm kaos deneylerine karşı sistemi güçlendirilmiş (hardened),
+# dayanıklı (resilient) ve sıfır kesintili (zero-downtime) hale getirir.
+# ==============================================================================
+
+replicaCount:
+  gateway: 3
+  engine: 3
+  consumer: 2
+  analytics: 2
+  ledgerDb: 1
+
+image:
+  repository: python
+  tag: "3.11-slim"
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "app.9.205.30.202.nip.io"
+
+# Gateway Ayarları (GÜÇLENDİRİLMİŞ)
+gateway:
+  port: 8080
+  # İYİLEŞTİRME 1: Katı timeout değerleri ile paket bozulması / sıra kaymasında socket sızıntısını önler.
+  downstreamTimeout: 3
+  readHeaderTimeout: 2
+  idleTimeout: 5
+  maxConnections: 500
+  # İYİLEŞTİRME 2: preStop hook 5s sleep eklenerek NGINX Ingress endpoint drain yarışı çözüldü.
+  preStopEnabled: true
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 30
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 384Mi
+
+# Transaction Engine Ayarları (GÜÇLENDİRİLMİŞ)
+engine:
+  port: 8081
+  # İYİLEŞTİRME 3: Circuit Breaker aktif. Disk I/O hatasında (EIO) kaskad çöküş engellenir,
+  # read-only önbellek veya 503 Retry-After ile zarif düşüş (graceful degradation) sağlanır.
+  circuitBreaker:
+    enabled: true
+    errorThreshold: 3
+    recoveryTimeSeconds: 10
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 384Mi
+
+# Settlement Consumer Ayarları (GÜÇLENDİRİLMİŞ)
+consumer:
+  # İYİLEŞTİRME 4: DLQ aktif ve maxRetries=3. Zehirli mesajlar DLQ'ya yönlendirilir,
+  # consumer grubu rebalance fırtınasına girmez.
+  dlqEnabled: true
+  maxRetries: 3
+  pollIntervalMs: 1000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 400m
+      memory: 256Mi
+
+# Risk Analytics Worker Ayarları (GÜÇLENDİRİLMİŞ)
+analytics:
+  # İYİLEŞTİRME 5: Bellek hedef sınırı (GOMEMLIMIT benzeri) cgroup sınırının %75'ine (192MiB) bağlandı.
+  # Bellek stresinde OOM Killer yerine garbage collection tetiklenir.
+  enableMemoryTargetLimit: true
+  memoryTargetLimitMib: 192
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 384Mi
+
+# Ledger DB (StatefulSet) Ayarları (GÜÇLENDİRİLMİŞ)
+ledgerDb:
+  port: 5432
+  storageSize: 1Gi
+  storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# PDB (Pod Disruption Budget)
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# HPA (Horizontal Pod Autoscaler)
+hpa:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 60
+
+# ServiceMonitor (Prometheus)
+serviceMonitor:
+  enabled: true
+  interval: 10s
