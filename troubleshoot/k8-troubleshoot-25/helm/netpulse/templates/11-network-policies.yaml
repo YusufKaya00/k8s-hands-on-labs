@@ -39,13 +39,17 @@ spec:
         - protocol: TCP
           port: {{ .Values.paymentEngine.port }}
   egress:
-{{- if .Values.coreNetworkPolicy.allowDnsEgress }}
-     - ports:
+    {{- if .Values.coreNetworkPolicy.allowDnsEgress }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
-{{- end }}
+    {{- end }}
     - to:
         - namespaceSelector:
             matchLabels:
