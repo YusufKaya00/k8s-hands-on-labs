@@ -1,0 +1,472 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "quantumpay.fullname" . }}-scripts
+  labels:
+    {{- include "quantumpay.labels" . | nindent 4 }}
+data:
+  gateway.py: |
+    #!/usr/bin/env python3
+    import http.server
+    import socketserver
+    import json
+    import os
+    import sys
+    import time
+    import urllib.request
+    import urllib.error
+    import signal
+    import threading
+
+    PORT = int(os.environ.get("GATEWAY_PORT", "8080"))
+    DOWNSTREAM_TIMEOUT = float(os.environ.get("DOWNSTREAM_TIMEOUT", "0"))
+    ENGINE_URL = os.environ.get("ENGINE_URL", "http://quantumpay-engine:8081")
+
+    # Metrics counters
+    REQUESTS_TOTAL = 0
+    ERRORS_TOTAL = 0
+    ACTIVE_CONNS = 0
+    METRICS_LOCK = threading.Lock()
+
+    SHUTTING_DOWN = False
+
+    def handle_signal(sig, frame):
+        global SHUTTING_DOWN
+        sys.stderr.write(f"[GATEWAY] Signal {sig} received. Starting graceful shutdown sequence...\n")
+        SHUTTING_DOWN = True
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    class GatewayHandler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            # Suppress normal access logs to prevent log spam
+            if "/metrics" not in self.path and "/healthz" not in self.path:
+                sys.stdout.write(f"[GATEWAY] {self.address_string()} - {format%args}\n")
+
+        def do_GET(self):
+            global REQUESTS_TOTAL, ERRORS_TOTAL, ACTIVE_CONNS
+            with METRICS_LOCK:
+                ACTIVE_CONNS += 1
+                REQUESTS_TOTAL += 1
+
+            try:
+                if self.path == "/healthz":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(b'{"status":"ok","component":"gateway"}\n')
+                    return
+
+                elif self.path == "/readyz":
+                    # Readiness verifies downstream engine connectivity
+                    try:
+                        timeout = DOWNSTREAM_TIMEOUT if DOWNSTREAM_TIMEOUT > 0 else 2.0
+                        req = urllib.request.Request(f"{ENGINE_URL}/healthz")
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            if resp.status == 200:
+                                self.send_response(200)
+                                self.send_header("Content-Type", "application/json")
+                                self.end_headers()
+                                self.wfile.write(b'{"status":"ready","downstream":"ok"}\n')
+                                return
+                    except Exception as e:
+                        self.send_response(503)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"status":"not_ready","error":str(e)}).encode() + b'\n')
+                        return
+
+                elif self.path == "/api/v1/metrics":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain; version=0.0.4")
+                    self.end_headers()
+                    body = (
+                        f"# HELP quantumpay_requests_total Total HTTP requests handled\n"
+                        f"# TYPE quantumpay_requests_total counter\n"
+                        f"quantumpay_requests_total {REQUESTS_TOTAL}\n"
+                        f"# HELP quantumpay_errors_total Total errors encountered\n"
+                        f"# TYPE quantumpay_errors_total counter\n"
+                        f"quantumpay_errors_total {ERRORS_TOTAL}\n"
+                        f"# HELP quantumpay_active_connections Current active connections\n"
+                        f"# TYPE quantumpay_active_connections gauge\n"
+                        f"quantumpay_active_connections {ACTIVE_CONNS}\n"
+                        f"# HELP quantumpay_downstream_timeout_configured Configured downstream timeout in seconds\n"
+                        f"# TYPE quantumpay_downstream_timeout_configured gauge\n"
+                        f"quantumpay_downstream_timeout_configured {DOWNSTREAM_TIMEOUT}\n"
+                    )
+                    self.wfile.write(body.encode())
+                    return
+
+                elif self.path == "/api/v1/status":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "system": "QuantumPay Core",
+                        "status": "OPERATIONAL",
+                        "downstream_timeout": DOWNSTREAM_TIMEOUT,
+                        "engine_url": ENGINE_URL
+                    }).encode() + b'\n')
+                    return
+
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    self.wfile.write(b'{"error":"not_found"}\n')
+
+            finally:
+                with METRICS_LOCK:
+                    ACTIVE_CONNS -= 1
+
+        def do_POST(self):
+            global REQUESTS_TOTAL, ERRORS_TOTAL, ACTIVE_CONNS
+            with METRICS_LOCK:
+                ACTIVE_CONNS += 1
+                REQUESTS_TOTAL += 1
+
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length)
+
+                if self.path == "/api/v1/transfer":
+                    # Forward transfer to transaction engine
+                    timeout = DOWNSTREAM_TIMEOUT if DOWNSTREAM_TIMEOUT > 0 else None
+                    req = urllib.request.Request(
+                        f"{ENGINE_URL}/api/v1/execute",
+                        data=body,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    try:
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            resp_data = resp.read()
+                            self.send_response(resp.status)
+                            self.send_header("Content-Type", "application/json")
+                            self.end_headers()
+                            self.wfile.write(resp_data)
+                            return
+                    except urllib.error.HTTPError as e:
+                        with METRICS_LOCK:
+                            ERRORS_TOTAL += 1
+                        self.send_response(e.code)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(e.read())
+                        return
+                    except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
+                        with METRICS_LOCK:
+                            ERRORS_TOTAL += 1
+                        sys.stderr.write(f"[GATEWAY ERROR] Downstream call failed: {e}\n")
+                        self.send_response(504)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "error": "gateway_timeout",
+                            "message": f"Engine failed to respond within {DOWNSTREAM_TIMEOUT}s timeout: {e}"
+                        }).encode() + b'\n')
+                        return
+
+                elif self.path == "/api/v1/poison":
+                    # Forward poison pill injection
+                    req = urllib.request.Request(
+                        f"{ENGINE_URL}/api/v1/poison",
+                        data=body or b'{"poison": true}',
+                        headers={"Content-Type": "application/json"}
+                    )
+                    try:
+                        with urllib.request.urlopen(req, timeout=5.0) as resp:
+                            self.send_response(resp.status)
+                            self.send_header("Content-Type", "application/json")
+                            self.end_headers()
+                            self.wfile.write(resp.read())
+                            return
+                    except Exception as e:
+                        self.send_response(500)
+                        self.send_header("Content-Type", "application/json")
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": str(e)}).encode() + b'\n')
+                        return
+
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    self.wfile.write(b'{"error":"not_found"}\n')
+
+            finally:
+                with METRICS_LOCK:
+                    ACTIVE_CONNS -= 1
+
+    class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    print(f"[GATEWAY] QuantumPay Gateway listening on port {PORT} (Downstream Timeout: {DOWNSTREAM_TIMEOUT}s)...")
+    server = ThreadedHTTPServer(("0.0.0.0", PORT), GatewayHandler)
+    server.serve_forever()
+
+  engine.py: |
+    #!/usr/bin/env python3
+    import http.server
+    import socketserver
+    import json
+    import os
+    import sys
+    import time
+    import threading
+
+    PORT = int(os.environ.get("ENGINE_PORT", "8081"))
+    WAL_PATH = os.environ.get("WAL_PATH", "/var/lib/quantumpay/data/wal.log")
+    EVENTS_DIR = os.environ.get("EVENTS_DIR", "/var/lib/quantumpay/data/events")
+    CB_ENABLED = os.environ.get("CIRCUIT_BREAKER_ENABLED", "false").lower() == "true"
+    CB_THRESHOLD = int(os.environ.get("CB_THRESHOLD", "3"))
+    CB_RECOVERY_TIME = float(os.environ.get("CB_RECOVERY_TIME", "10"))
+
+    os.makedirs(os.path.dirname(WAL_PATH), exist_ok=True)
+    os.makedirs(EVENTS_DIR, exist_ok=True)
+
+    # Circuit Breaker State: CLOSED, OPEN, HALF_OPEN
+    CB_STATE = "CLOSED"
+    CONSECUTIVE_ERRORS = 0
+    LAST_FAILURE_TIME = 0
+    CB_LOCK = threading.Lock()
+
+    class EngineHandler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            if "/healthz" not in self.path:
+                sys.stdout.write(f"[ENGINE] {format%args}\n")
+
+        def check_circuit_breaker(self):
+            global CB_STATE, CONSECUTIVE_ERRORS, LAST_FAILURE_TIME
+            if not CB_ENABLED:
+                return True
+
+            with CB_LOCK:
+                now = time.time()
+                if CB_STATE == "OPEN":
+                    if now - LAST_FAILURE_TIME > CB_RECOVERY_TIME:
+                        CB_STATE = "HALF_OPEN"
+                        sys.stderr.write("[ENGINE CB] Recovery period elapsed. Circuit transitioning to HALF_OPEN.\n")
+                        return True
+                    return False
+                return True
+
+        def record_cb_success(self):
+            global CB_STATE, CONSECUTIVE_ERRORS
+            if not CB_ENABLED:
+                return
+            with CB_LOCK:
+                CONSECUTIVE_ERRORS = 0
+                CB_STATE = "CLOSED"
+
+        def record_cb_failure(self):
+            global CB_STATE, CONSECUTIVE_ERRORS, LAST_FAILURE_TIME
+            if not CB_ENABLED:
+                return
+            with CB_LOCK:
+                CONSECUTIVE_ERRORS += 1
+                LAST_FAILURE_TIME = time.time()
+                if CONSECUTIVE_ERRORS >= CB_THRESHOLD:
+                    CB_STATE = "OPEN"
+                    sys.stderr.write(f"[ENGINE CB ALERT] Consecutive disk/IO errors reached threshold ({CONSECUTIVE_ERRORS}). Circuit Breaker is now OPEN!\n")
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok","component":"engine"}\n')
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_POST(self):
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+
+            if self.path == "/api/v1/execute":
+                if not self.check_circuit_breaker():
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Retry-After", "5")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "error": "circuit_breaker_open",
+                        "status": "CIRCUIT_BREAKER_OPEN",
+                        "message": "Storage layer is experiencing severe I/O faults. Degrading gracefully to prevent thread exhaustion."
+                    }).encode() + b'\n')
+                    return
+
+                try:
+                    payload = json.loads(body) if body else {"tx_id": f"tx-{int(time.time()*1000)}"}
+                    tx_id = payload.get("tx_id", f"tx-{int(time.time()*1000)}")
+
+                    # ACID Write to Persistent Ledger WAL
+                    # Under IOChaos (latency or EIO), this call will hang or raise OSError (EIO = errno 5)
+                    with open(WAL_PATH, "a") as f:
+                        f.write(f"{time.time()}|{tx_id}|COMMITTED\n")
+                        f.flush()
+                        os.fsync(f.fileno())
+
+                    # Publish transaction event for settlement consumer
+                    evt_file = os.path.join(EVENTS_DIR, f"{tx_id}.json")
+                    with open(evt_file, "w") as ef:
+                        json.dump(payload, ef)
+
+                    self.record_cb_success()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "status": "SUCCESS",
+                        "tx_id": tx_id,
+                        "circuit_breaker": CB_STATE
+                    }).encode() + b'\n')
+
+                except OSError as e:
+                    self.record_cb_failure()
+                    sys.stderr.write(f"[ENGINE DISK ERROR] WAL fsync failed: {e}\n")
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({
+                        "error": "disk_io_error",
+                        "errno": getattr(e, 'errno', None),
+                        "message": str(e),
+                        "circuit_breaker": CB_STATE
+                    }).encode() + b'\n')
+
+            elif self.path == "/api/v1/poison":
+                tx_id = f"poison-tx-{int(time.time()*1000)}"
+                evt_file = os.path.join(EVENTS_DIR, f"{tx_id}.json")
+                with open(evt_file, "w") as ef:
+                    json.dump({"tx_id": tx_id, "corrupt": True, "poison": True, "payload": "MALFORMED_HEADER_DATA"}, ef)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "POISON_PILL_QUEUED", "tx_id": tx_id}).encode() + b'\n')
+
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+    class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    print(f"[ENGINE] QuantumPay Engine listening on port {PORT} (Circuit Breaker: {CB_ENABLED})...")
+    server = ThreadedHTTPServer(("0.0.0.0", PORT), EngineHandler)
+    server.serve_forever()
+
+  consumer.py: |
+    #!/usr/bin/env python3
+    import os
+    import sys
+    import time
+    import json
+    import glob
+
+    EVENTS_DIR = os.environ.get("EVENTS_DIR", "/var/lib/quantumpay/data/events")
+    DLQ_DIR = os.environ.get("DLQ_DIR", "/var/lib/quantumpay/data/dlq")
+    DLQ_ENABLED = os.environ.get("DLQ_ENABLED", "false").lower() == "true"
+    MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "999999"))
+    POLL_INTERVAL_MS = int(os.environ.get("POLL_INTERVAL_MS", "2000"))
+
+    os.makedirs(EVENTS_DIR, exist_ok=True)
+    os.makedirs(DLQ_DIR, exist_ok=True)
+
+    retry_counts = {}
+
+    print(f"[CONSUMER] Settlement Consumer started. DLQ_ENABLED={DLQ_ENABLED}, MAX_RETRIES={MAX_RETRIES}...")
+
+    while True:
+        try:
+            event_files = sorted(glob.glob(os.path.join(EVENTS_DIR, "*.json")))
+            for ef in event_files:
+                base = os.path.basename(ef)
+                try:
+                    with open(ef, "r") as f:
+                        data = json.load(f)
+
+                    # Check for poison pill
+                    if data.get("corrupt") or data.get("poison"):
+                        current_retries = retry_counts.get(base, 0) + 1
+                        retry_counts[base] = current_retries
+
+                        sys.stderr.write(f"[CONSUMER ALERT] Unhandled exception processing {base} (Attempt {current_retries}): Malformed payload!\n")
+
+                        if DLQ_ENABLED and current_retries >= MAX_RETRIES:
+                            # Forward to Dead Letter Queue and advance stream
+                            dlq_dest = os.path.join(DLQ_DIR, base)
+                            os.rename(ef, dlq_dest)
+                            sys.stderr.write(f"[CONSUMER DLQ] Successfully routed poison pill {base} to DLQ ({dlq_dest}). Offset committed! Consumer group healthy.\n")
+                            retry_counts.pop(base, None)
+                        else:
+                            # Without DLQ, consumer keeps retrying the exact same offset!
+                            if current_retries > 5:
+                                sys.stderr.write(f"[CRITICAL HEARTBEAT TIMEOUT] Consumer blocked on {base} for > 30s! max.poll.interval.ms exceeded!\n")
+                                sys.stderr.write(f"[ALERT] BROKER INITIATING REBALANCE STORM! Group partition assignments revoked across all consumers!\n")
+                            time.sleep(1.0)
+                            # Do not delete or advance
+                            continue
+                    else:
+                        # Clean message processed
+                        os.remove(ef)
+                        retry_counts.pop(base, None)
+                        print(f"[CONSUMER] Successfully settled and committed transaction {data.get('tx_id')}")
+
+                except Exception as ex:
+                    sys.stderr.write(f"[CONSUMER ERROR] Error reading {base}: {ex}\n")
+
+            time.sleep(POLL_INTERVAL_MS / 1000.0)
+
+        except Exception as e:
+            sys.stderr.write(f"[CONSUMER LOOP ERROR] {e}\n")
+            time.sleep(2.0)
+
+  analytics.py: |
+    #!/usr/bin/env python3
+    import os
+    import sys
+    import time
+    import gc
+
+    TARGET_LIMIT_ENABLED = os.environ.get("ENABLE_MEMORY_TARGET_LIMIT", "false").lower() == "true"
+    TARGET_LIMIT_MIB = int(os.environ.get("MEMORY_TARGET_LIMIT_MIB", "192"))
+
+    print(f"[ANALYTICS] Risk Analytics Worker running. TargetLimitEnabled={TARGET_LIMIT_ENABLED}, TargetLimitMib={TARGET_LIMIT_MIB}MiB...")
+
+    matrix_cache = []
+
+    def get_cgroup_memory_usage_mib():
+        # Read from cgroup v2 or v1
+        for path in ["/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"]:
+            if os.path.exists(path):
+                try:
+                    with open(path) as f:
+                        return int(f.read().strip()) / (1024 * 1024)
+                except Exception:
+                    pass
+        return len(matrix_cache) * 2 # Fallback estimate
+
+    iteration = 0
+    while True:
+        iteration += 1
+        # Allocate simulation matrices
+        chunk = bytearray(2 * 1024 * 1024) # 2 MiB chunks
+        matrix_cache.append(chunk)
+
+        usage = get_cgroup_memory_usage_mib()
+        if iteration % 5 == 0:
+            print(f"[ANALYTICS] Calculated portfolio risk matrix #{iteration}. Estimated memory: {usage:.1f} MiB (Cache size: {len(matrix_cache)} chunks)")
+
+        if TARGET_LIMIT_ENABLED and usage >= TARGET_LIMIT_MIB:
+            print(f"[ANALYTICS GC] Memory usage ({usage:.1f} MiB) reached target limit ({TARGET_LIMIT_MIB} MiB). Evicting cache and forcing GC...")
+            matrix_cache.clear()
+            gc.collect()
+
+        # In baseline mode without target limit, under StressChaos, memory grows until kernel OOM killer fires
+        if not TARGET_LIMIT_ENABLED and len(matrix_cache) > 100:
+            # Keep cache bounded under normal runs to stay pristine, but vulnerable under external memory stress
+            matrix_cache = matrix_cache[-80:]
+
+        time.sleep(1.0)
