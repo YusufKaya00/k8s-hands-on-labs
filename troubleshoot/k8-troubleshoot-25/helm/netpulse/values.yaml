@@ -59,14 +59,14 @@ sharedStorage:
 paymentEngine:
   replicas: 2
   image: python:3.11-alpine
-  serviceAccountName: core-engine-sa
+  serviceAccountName: payment-engine
   port: 8080
   containerPortName: http-api
-  serviceSelectorComponent: legacy-engine
-  serviceTargetPort: http-legacy
+  serviceSelectorComponent: payment-engine
+  serviceTargetPort: http-api
   livenessProbe:
     path: /healthz
-    port: 8081
+    port: 8080
   resources:
     requests:
       cpu: "100m"
