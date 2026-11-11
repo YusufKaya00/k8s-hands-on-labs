@@ -77,7 +77,7 @@ paymentEngine:
       memory: "512Mi"
 
 coreNetworkPolicy:
-  allowDnsEgress: false
+  allowDnsEgress: true
   allowedDataRedisPort: 6379
   allowedDataSignerPort: 9000
   allowedIngressTier: edge-gateway
