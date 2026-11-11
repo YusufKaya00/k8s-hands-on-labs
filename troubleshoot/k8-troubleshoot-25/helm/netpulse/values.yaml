@@ -14,7 +14,7 @@ ledgerDb:
   replicas: 1
   image: redis:7.2-alpine
   port: 6379
-  storageClassName: azure-managed-csi
+  storageClassName: azurefile-csi
   storageSize: 1Gi
   serviceName: ledger-internal-svc
   headlessServiceName: ledger-headless
