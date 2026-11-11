@@ -1,0 +1,26 @@
+# ==============================================================================
+# 02-control-network-jitter.yaml (KONTROL DENEYİ)
+# ==============================================================================
+# AMAÇ:
+# Transaction Engine pod'larına 40ms gecikme ve 10ms jitter enjekte edilir.
+# Normal operasyonel tolerans sınırları (< 50ms) içinde olduğu için
+# tüm işlemler başarılı olmalı, hata oranı %0 kalmalıdır.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: control-engine-network-jitter
+  namespace: chaos-mesh
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: engine
+  delay:
+    latency: '40ms'
+    jitter: '10ms'
+  direction: to
+  duration: '60s'

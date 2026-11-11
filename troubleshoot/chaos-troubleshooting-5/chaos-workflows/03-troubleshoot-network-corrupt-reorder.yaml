@@ -1,0 +1,34 @@
+# ==============================================================================
+# 03-troubleshoot-network-corrupt-reorder.yaml (TROUBLESHOOT DENEYİ T1)
+# ==============================================================================
+# AMAÇ:
+# Gateway ile Engine arasındaki ağ paketlerinin %35'i bozulur (corrupt) ve
+# %25'i sıra dışı (reorder) gönderilir.
+#
+# ZAFİYET:
+# Gateway'de DOWNSTREAM_TIMEOUT=0 (sonsuz) olduğu için TCP yeniden iletimleri
+# soket alım arabelleğini tıkar ve thread'ler kilitlenir. Meşru trafik 504 alır.
+#
+# ÇÖZÜM:
+# values.yaml içinde gateway.downstreamTimeout: 3 yapılandırılması.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: troubleshoot-corrupt-reorder
+  namespace: chaos-mesh
+spec:
+  action: corrupt
+  mode: all
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: engine
+  corrupt:
+    corrupt: '35'
+  reorder:
+    reorder: '25'
+    gap: 5
+  direction: both
+  duration: '90s'

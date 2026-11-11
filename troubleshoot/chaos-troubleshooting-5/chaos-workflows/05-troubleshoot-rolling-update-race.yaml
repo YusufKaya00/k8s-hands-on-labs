@@ -1,0 +1,29 @@
+# ==============================================================================
+# 05-troubleshoot-rolling-update-race.yaml (TROUBLESHOOT DENEYİ T3)
+# ==============================================================================
+# AMAÇ:
+# Yük altında Gateway pod'larından biri aniden durdurulur (pod-failure).
+#
+# ZAFİYET:
+# preStop hook olmadığı ve grace period 5s olduğu için Ingress endpoint güncellemesi
+# yetişemez ve istemciler 502 Bad Gateway / ECONNRESET hatası alır.
+#
+# ÇÖZÜM:
+# values.yaml içinde gateway.preStopEnabled: true (sleep 5) ve
+# terminationGracePeriodSeconds: 30 yapılandırılması.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: troubleshoot-rolling-update-race
+  namespace: chaos-mesh
+spec:
+  action: pod-failure
+  mode: fixed
+  value: '1'
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: gateway
+  duration: '30s'

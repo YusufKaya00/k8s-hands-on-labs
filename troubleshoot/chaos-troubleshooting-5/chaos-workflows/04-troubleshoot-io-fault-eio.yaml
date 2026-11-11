@@ -1,0 +1,32 @@
+# ==============================================================================
+# 04-troubleshoot-io-fault-eio.yaml (TROUBLESHOOT DENEYİ T2)
+# ==============================================================================
+# AMAÇ:
+# Transaction Engine pod'unun WAL dosyasına (/var/lib/quantumpay/data/wal.log)
+# Linux çekirdeği düzeyinde EIO (errno 5) disk yazma hatası enjekte edilir.
+#
+# ZAFİYET:
+# Circuit Breaker devre dışı (false) olduğu için her işlem 500 döner ve sistem
+# kaskad çöküşe uğrar.
+#
+# ÇÖZÜM:
+# values.yaml içinde engine.circuitBreaker.enabled: true yapılandırılması.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: IOChaos
+metadata:
+  name: troubleshoot-io-fault-eio
+  namespace: chaos-mesh
+spec:
+  action: fault
+  mode: all
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: engine
+  volumePath: /var/lib/quantumpay/data
+  path: /var/lib/quantumpay/data/wal.log
+  errno: 5
+  percent: 100
+  duration: '60s'

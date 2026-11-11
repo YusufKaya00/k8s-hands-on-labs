@@ -1,0 +1,22 @@
+# ==============================================================================
+# 01-control-pod-kill-redundancy.yaml (KONTROL DENEYİ)
+# ==============================================================================
+# AMAÇ:
+# Yüksek erişilebilirlik (HA) kontrolü. Gateway'in 2 replikası varken 1 pod öldürülür.
+# Sistemde en az 1 sağlıklı pod kaldığı ve Service yükü dağıttığı için
+# HTTP 200 yanıtı kesintisiz devam etmeli, sistem sıfır hata ile dayanmalıdır.
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: control-gateway-pod-kill
+  namespace: chaos-mesh
+spec:
+  action: pod-kill
+  mode: fixed
+  value: '1'
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app.kubernetes.io/component: gateway
