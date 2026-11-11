@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumpay-analytics
+  labels:
+    {{- include "quantumpay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: analytics
+spec:
+  replicas: {{ .Values.replicaCount.analytics }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "quantumpay.name" . }}
+      app.kubernetes.io/component: analytics
+  template:
+    metadata:
+      labels:
+        {{- include "quantumpay.labels" . | nindent 8 }}
+        app.kubernetes.io/component: analytics
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: analytics
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python3", "/app/analytics.py"]
+          env:
+            - name: ENABLE_MEMORY_TARGET_LIMIT
+              value: {{ .Values.analytics.enableMemoryTargetLimit | quote }}
+            - name: MEMORY_TARGET_LIMIT_MIB
+              value: {{ .Values.analytics.memoryTargetLimitMib | quote }}
+          resources:
+            {{- toYaml .Values.analytics.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /app
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "quantumpay.fullname" . }}-scripts
+            defaultMode: 0755

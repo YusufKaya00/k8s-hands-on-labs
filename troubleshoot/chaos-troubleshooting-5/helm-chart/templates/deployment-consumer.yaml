@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumpay-consumer
+  labels:
+    {{- include "quantumpay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: consumer
+spec:
+  replicas: {{ .Values.replicaCount.consumer }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "quantumpay.name" . }}
+      app.kubernetes.io/component: consumer
+  template:
+    metadata:
+      labels:
+        {{- include "quantumpay.labels" . | nindent 8 }}
+        app.kubernetes.io/component: consumer
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: consumer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python3", "/app/consumer.py"]
+          env:
+            - name: DLQ_ENABLED
+              value: {{ .Values.consumer.dlqEnabled | quote }}
+            - name: MAX_RETRIES
+              value: {{ .Values.consumer.maxRetries | quote }}
+            - name: POLL_INTERVAL_MS
+              value: {{ .Values.consumer.pollIntervalMs | quote }}
+            - name: EVENTS_DIR
+              value: "/var/lib/quantumpay/data/events"
+            - name: DLQ_DIR
+              value: "/var/lib/quantumpay/data/dlq"
+          resources:
+            {{- toYaml .Values.consumer.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /app
+            - name: shared-data
+              mountPath: /var/lib/quantumpay/data
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "quantumpay.fullname" . }}-scripts
+            defaultMode: 0755
+        - name: shared-data
+          emptyDir: {}
