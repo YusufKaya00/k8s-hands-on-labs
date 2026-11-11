@@ -24,7 +24,7 @@ ledgerDb:
 tokenSigner:
   replicas: 1
   image: python:3.11-alpine
-  bindAddress: "127.0.0.1"
+  bindAddress: "0.0.0.0"
   port: 9000
 
 dataNetworkPolicy:
