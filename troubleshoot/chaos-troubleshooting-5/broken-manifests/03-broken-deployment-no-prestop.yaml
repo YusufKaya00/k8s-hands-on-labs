@@ -1,0 +1,64 @@
+# ==============================================================================
+# BROKEN MANIFEST 3: Deployment Missing preStop Hook & Ingress Drain Race
+# ==============================================================================
+# KÖK NEDEN (RCA):
+# Pod şablonunda 'lifecycle.preStop' kancası (hook) tanımlanmamış ve
+# 'terminationGracePeriodSeconds' 5 saniye gibi çok kısa bir süreye ayarlanmıştır.
+#
+# KAOS ALTINDAKİ BELİRTİ:
+# Dağıtık ortamda rolling update, autoscaling scale-down veya Chaos Mesh 'PodChaos'
+# çalışırken, Kubelet container'a 'SIGTERM' sinyali gönderdiği anda uygulama dinleme
+# soketini kapatır. Ancak Kubernetes EndpointSlice / NGINX Ingress upstream güncellemesi
+# 2-4 saniye gecikmeyle tamamlandığından, Ingress hala eski pod'a istek göndermeye
+# devam eder. İstemciler '502 Bad Gateway' ve 'ECONNRESET' hataları alır!
+#
+# DÜZELTME (FIX):
+# lifecycle.preStop: exec: command: ["/bin/sh", "-c", "sleep 5"] ekleyin ve
+# terminationGracePeriodSeconds değerini 30 yapın.
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumpay-gateway-no-prestop
+  namespace: app
+  labels:
+    app.kubernetes.io/name: quantumpay
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quantumpay
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quantumpay
+        app.kubernetes.io/component: gateway
+    spec:
+      # ❌ HATA 1: Çok kısa grace period!
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: gateway
+          image: python:3.11-slim
+          command: ["python3", "/app/gateway.py"]
+          ports:
+            - name: http
+              containerPort: 8080
+          # ❌ HATA 2: preStop hook eksik! Kubelet pod'u anında öldürür, Ingress drain yetişemez.
+          # lifecycle:
+          #   preStop:
+          #     exec:
+          #       command: ["/bin/sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
