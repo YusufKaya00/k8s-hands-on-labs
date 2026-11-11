@@ -62,7 +62,7 @@ paymentEngine:
   serviceAccountName: payment-engine
   port: 8080
   containerPortName: http-api
-  serviceSelectorComponent: payment-engine
+  serviceSelectorComponent: core-engine
   serviceTargetPort: http-api
   livenessProbe:
     path: /healthz
