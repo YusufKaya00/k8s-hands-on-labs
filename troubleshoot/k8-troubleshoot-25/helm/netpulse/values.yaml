@@ -78,8 +78,8 @@ paymentEngine:
 coreNetworkPolicy:
   allowDnsEgress: false
   allowedDataRedisPort: 6379
-  allowedDataSignerPort: 9099
-  allowedIngressTier: api-gateway
+  allowedDataSignerPort: 9000
+  allowedIngressTier: edge-gateway
 
 batch:
   seedJob:
