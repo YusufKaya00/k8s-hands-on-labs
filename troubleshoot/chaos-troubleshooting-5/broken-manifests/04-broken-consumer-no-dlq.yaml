@@ -1,0 +1,60 @@
+# ==============================================================================
+# BROKEN MANIFEST 4: Event Consumer Missing Dead Letter Queue (DLQ) & Rebalance Storm
+# ==============================================================================
+# KÖK NEDEN (RCA):
+# DLQ_ENABLED="false" ve MAX_RETRIES="999999" (sonsuz) olarak bırakılmıştır.
+#
+# KAOS ALTINDAKİ BELİRTİ:
+# Sıraya zehirli (malformed/poison pill) bir mesaj düştüğünde, tüketici bu mesajı
+# işleyemez ancak sıradan da düşüremez (offset commit yapamaz). Sürekli aynı mesajı
+# yeniden dener. İşlem süresi 'max.poll.interval.ms' (30 saniye) sınırını aştığında,
+# Broker (Kafka/RabbitMQ) tüketiciyi ölü kabul eder ve kümeden atar!
+# Bu durum sürekli 'Consumer Group Rebalance Storm' yaratır ve tüm kuyruk kilitlenir.
+#
+# DÜZELTME (FIX):
+# DLQ_ENABLED="true" ve MAX_RETRIES="3" yapılandırın; 3 başarısızlıktan sonra
+# mesajı DLQ kuyruğuna taşıyıp offset'i ilerletin.
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantumpay-consumer-no-dlq
+  namespace: app
+  labels:
+    app.kubernetes.io/name: quantumpay
+    app.kubernetes.io/component: consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quantumpay
+      app.kubernetes.io/component: consumer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quantumpay
+        app.kubernetes.io/component: consumer
+    spec:
+      containers:
+        - name: consumer
+          image: python:3.11-slim
+          command: ["python3", "/app/consumer.py"]
+          env:
+            # ❌ HATA: DLQ kapalı ve sonsuz yeniden deneme!
+            - name: DLQ_ENABLED
+              value: "false"
+            - name: MAX_RETRIES
+              value: "999999"
+            - name: POLL_INTERVAL_MS
+              value: "2000"
+            - name: EVENTS_DIR
+              value: "/var/lib/quantumpay/data/events"
+            - name: DLQ_DIR
+              value: "/var/lib/quantumpay/data/dlq"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
