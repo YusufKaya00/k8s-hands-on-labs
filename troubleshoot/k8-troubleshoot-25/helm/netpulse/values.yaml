@@ -49,6 +49,7 @@ rbac:
     - configmaps
     - secrets
     - services
+    - endpoints
 
 sharedStorage:
   pvcName: audit-archive-pvc
