@@ -40,7 +40,7 @@ spec:
             - |
               import http.server, json, os
 
-              BIND_ADDR = os.environ.get("BIND_ADDR", "127.0.0.1")
+              BIND_ADDR = os.environ.get("BIND_ADDR", "0.0.0.0")
               PORT = int(os.environ.get("SIGNER_PORT", "9000"))
 
               class Handler(http.server.BaseHTTPRequestHandler):
