@@ -129,7 +129,7 @@ metadata:
 spec:
   ingressClassName: {{ .Values.edgeGateway.ingress.ingressClassName }}
   rules:
-    - host: {{ .Values.edgeGateway.ingress.host }}
+    - host: {{ .Values.global.ingressHost | default .Values.edgeGateway.ingress.host }}
       http:
         paths:
           - path: {{ .Values.edgeGateway.ingress.path }}
