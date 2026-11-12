@@ -114,4 +114,4 @@ edgeNetworkPolicy:
 
 ingress:
   className: nginx
-  path: /v2/internal
+  path: /
