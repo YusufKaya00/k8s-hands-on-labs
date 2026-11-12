@@ -59,7 +59,7 @@ paymentApi:
     enabled: true
     allowEdgeGateway:
       matchNamespace: false
-      namespaceName: netvortex-edge
+      namespaceName: core
       podLabel: edge-gateway
     egressBank:
       enabled: true
