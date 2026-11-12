@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ledger-db-config
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/name: ledger-db
+    app.kubernetes.io/component: data
+data:
+  redis.conf: |
+    bind {{ .Values.ledgerDb.config.bindAddress }}
+    protected-mode {{ .Values.ledgerDb.config.protectedMode }}
+    port {{ .Values.ledgerDb.containerPort }}
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+    daemonize no
+    loglevel notice
+    maxmemory {{ .Values.ledgerDb.config.maxMemory }}
+    maxmemory-policy noeviction
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.ledgerDb.headlessService.name }}
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/name: ledger-db
+    app.kubernetes.io/component: data
+spec:
+  clusterIP: None
+  ports:
+    - name: redis
+      port: {{ .Values.ledgerDb.headlessService.port }}
+      targetPort: {{ .Values.ledgerDb.containerPort }}
+  selector:
+    app.kubernetes.io/name: ledger-db
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ledger-db
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/name: ledger-db
+    app.kubernetes.io/component: data
+spec:
+  serviceName: {{ .Values.ledgerDb.statefulSet.serviceName }}
+  replicas: {{ .Values.ledgerDb.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ledger-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ledger-db
+        app.kubernetes.io/component: data
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.ledgerDb.image.repository }}:{{ .Values.ledgerDb.image.tag }}"
+          imagePullPolicy: {{ .Values.ledgerDb.image.pullPolicy }}
+          command: ["redis-server", "/etc/redis/redis.conf"]
+          ports:
+            - name: redis
+              containerPort: {{ .Values.ledgerDb.containerPort }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "redis-cli -h 127.0.0.1 -p {{ .Values.ledgerDb.containerPort }} ping | grep -q PONG"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "redis-cli -h 127.0.0.1 -p {{ .Values.ledgerDb.containerPort }} ping | grep -q PONG"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.ledgerDb.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: ledger-db-config
+---
+{{- if .Values.ledgerDb.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ledger-db-netpol
+  namespace: {{ .Values.namespaces.data }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ledger-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.core }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.ledgerDb.containerPort }}
+{{- end }}
