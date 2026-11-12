@@ -1,0 +1,138 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-server-config
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: auth
+data:
+  server.py: |
+    import http.server
+    import socketserver
+    import os
+
+    PORT = int(os.environ.get("PORT", "8082"))
+    BIND_HOST = os.environ.get("BIND_ADDRESS", "127.0.0.1")
+
+    class AuthHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"OK")
+            elif self.path in ["/api/auth/verify", "/verify"]:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"authenticated": true, "user": "enterprise-client"}\n')
+            else:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"NotFound\n")
+
+    print(f"Auth Server binding to {BIND_HOST}:{PORT}")
+    with socketserver.TCPServer((BIND_HOST, PORT), AuthHandler) as httpd:
+        httpd.serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: auth
+spec:
+  replicas: {{ .Values.authService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-service
+        app.kubernetes.io/component: auth
+    spec:
+      containers:
+        - name: auth-service
+          image: "{{ .Values.authService.image.repository }}:{{ .Values.authService.image.tag }}"
+          imagePullPolicy: {{ .Values.authService.image.pullPolicy }}
+          command: ["python", "-u", "/app/server.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.authService.containerPort }}"
+            - name: BIND_ADDRESS
+              value: "{{ .Values.authService.config.bindAddress }}"
+          ports:
+            - name: http
+              containerPort: {{ .Values.authService.containerPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:{{ .Values.authService.containerPort }}/healthz', timeout=1)"
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:{{ .Values.authService.containerPort }}/healthz', timeout=1)"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.authService.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: auth-server-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: auth
+spec:
+  type: {{ .Values.authService.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.authService.service.port }}
+      targetPort: {{ .Values.authService.service.targetPort }}
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: auth-service
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-netpol
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.core }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.edge }}
+      ports:
+        - protocol: TCP
+          port: 8082

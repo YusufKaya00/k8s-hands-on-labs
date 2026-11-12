@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-service-server
+  namespace: {{ .Values.namespaces.inventory }}
+  labels:
+    app.kubernetes.io/name: inventory-service
+    app.kubernetes.io/component: inventory
+data:
+  server.py: |
+    import http.server
+    import socketserver
+    import json
+    import os
+
+    PORT = int(os.environ.get("PORT", "8081"))
+
+    class InventoryHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"OK")
+            elif self.path in ["/api/inventory", "/api/inventory/"]:
+                resp = {
+                    "service": "inventory-service",
+                    "status": "ready",
+                    "stock": {"sku_101": 420, "sku_102": 85}
+                }
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(resp).encode())
+            elif self.path == "/api/inventory/reserve":
+                resp = {
+                    "reservation": "SUCCESS",
+                    "quantity": 1,
+                    "sku": "sku_101"
+                }
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(resp).encode())
+            else:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"NotFound")
+
+    with socketserver.TCPServer(("0.0.0.0", PORT), InventoryHandler) as httpd:
+        print(f"Inventory Service serving on 0.0.0.0:{PORT}")
+        httpd.serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-service
+  namespace: {{ .Values.namespaces.inventory }}
+  labels:
+    app.kubernetes.io/name: inventory-service
+    app.kubernetes.io/component: inventory
+spec:
+  replicas: {{ .Values.inventoryService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: inventory-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: inventory-service
+        app.kubernetes.io/component: inventory
+    spec:
+      containers:
+        - name: inventory-service
+          image: "{{ .Values.inventoryService.image.repository }}:{{ .Values.inventoryService.image.tag }}"
+          imagePullPolicy: {{ .Values.inventoryService.image.pullPolicy }}
+          command: ["python", "-u", "/app/server.py"]
+          ports:
+            - name: {{ .Values.inventoryService.containerPortName }}
+              containerPort: {{ .Values.inventoryService.containerPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.inventoryService.containerPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.inventoryService.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.inventoryService.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: inventory-service-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: {{ .Values.namespaces.inventory }}
+  labels:
+    app.kubernetes.io/name: inventory-service
+    app.kubernetes.io/component: inventory
+spec:
+  type: {{ .Values.inventoryService.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.inventoryService.service.port }}
+      targetPort: {{ .Values.inventoryService.service.targetPort }}
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: inventory-service
+---
+{{- if .Values.inventoryService.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: inventory-service-netpol
+  namespace: {{ .Values.namespaces.inventory }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: inventory-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.inventoryService.networkPolicy.allowedNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8081
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.inventoryCache.headlessService.name }}
+  namespace: {{ .Values.namespaces.inventory }}
+  labels:
+    app.kubernetes.io/name: inventory-cache
+    app.kubernetes.io/component: cache
+spec:
+  clusterIP: None
+  ports:
+    - name: redis
+      port: {{ .Values.inventoryCache.headlessService.port }}
+      targetPort: {{ .Values.inventoryCache.containerPort }}
+  selector:
+    app.kubernetes.io/name: inventory-cache
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: inventory-cache
+  namespace: {{ .Values.namespaces.inventory }}
+  labels:
+    app.kubernetes.io/name: inventory-cache
+    app.kubernetes.io/component: cache
+spec:
+  serviceName: {{ .Values.inventoryCache.statefulSet.serviceName }}
+  replicas: {{ .Values.inventoryCache.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: inventory-cache
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: inventory-cache
+        app.kubernetes.io/component: cache
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.inventoryCache.image.repository }}:{{ .Values.inventoryCache.image.tag }}"
+          imagePullPolicy: {{ .Values.inventoryCache.image.pullPolicy }}
+          ports:
+            - name: redis
+              containerPort: {{ .Values.inventoryCache.containerPort }}
+          resources:
+            {{- toYaml .Values.inventoryCache.resources | nindent 12 }}
