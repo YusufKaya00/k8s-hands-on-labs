@@ -113,5 +113,5 @@ edgeNetworkPolicy:
   allowedIngressControllerNamespace: kube-ingress
 
 ingress:
-  className: istio-external
+  className: nginx
   path: /v2/internal
