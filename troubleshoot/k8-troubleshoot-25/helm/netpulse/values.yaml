@@ -85,7 +85,7 @@ coreNetworkPolicy:
 batch:
   seedJob:
     image: redis:7.2-alpine
-    targetRedisPort: 6380
+    targetRedisPort: 6379
   reconcileCron:
     image: busybox:1.36
     schedule: "*/2 * * * *"
