@@ -1,0 +1,177 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-gateway-config
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app.kubernetes.io/name: edge-gateway
+    app.kubernetes.io/component: proxy
+data:
+  nginx.conf: |
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      sendfile on;
+      keepalive_timeout 65;
+
+      resolver 10.96.0.10 kube-dns.kube-system.svc.cluster.local valid=5s ipv6=off;
+
+      upstream core_backend {
+        server {{ .Values.edgeGateway.config.upstreamUrl | replace "http://" "" }};
+      }
+
+      server {
+        listen 80;
+        server_name _;
+
+        location /healthz {
+          access_log off;
+          return 200 "OK\n";
+        }
+
+        location / {
+          proxy_pass {{ .Values.edgeGateway.config.upstreamUrl }};
+          proxy_http_version 1.1;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_connect_timeout {{ .Values.edgeGateway.config.timeoutSeconds }}s;
+          proxy_read_timeout {{ .Values.edgeGateway.config.timeoutSeconds }}s;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-gateway
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app.kubernetes.io/name: edge-gateway
+    app.kubernetes.io/component: proxy
+spec:
+  replicas: {{ .Values.edgeGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: edge-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: edge-gateway
+        app.kubernetes.io/component: proxy
+    spec:
+      containers:
+        - name: proxy
+          image: "{{ .Values.edgeGateway.image.repository }}:{{ .Values.edgeGateway.image.tag }}"
+          imagePullPolicy: {{ .Values.edgeGateway.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.edgeGateway.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: edge-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-gateway-lb
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app.kubernetes.io/name: edge-gateway
+    app.kubernetes.io/component: proxy
+spec:
+  type: {{ .Values.edgeGateway.service.type }}
+  externalTrafficPolicy: {{ .Values.edgeGateway.service.externalTrafficPolicy }}
+  ports:
+    - name: http
+      port: {{ .Values.edgeGateway.service.port }}
+      targetPort: {{ .Values.edgeGateway.service.targetPort }}
+      {{- if .Values.edgeGateway.service.nodePort }}
+      nodePort: {{ .Values.edgeGateway.service.nodePort }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/name: edge-gateway
+---
+{{- if .Values.edgeGateway.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: edge-ingress
+  namespace: {{ .Values.namespaces.edge }}
+  annotations:
+    {{- if .Values.edgeGateway.ingress.useRegex }}
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    {{- end }}
+    {{- if .Values.edgeGateway.ingress.rewriteTarget }}
+    nginx.ingress.kubernetes.io/rewrite-target: {{ .Values.edgeGateway.ingress.rewriteTarget | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.edgeGateway.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.edgeGateway.ingress.host }}
+      http:
+        paths:
+          - path: {{ .Values.edgeGateway.ingress.path }}
+            pathType: {{ .Values.edgeGateway.ingress.pathType }}
+            backend:
+              service:
+                name: edge-gateway-lb
+                port:
+                  number: {{ .Values.edgeGateway.service.port }}
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: edge-gateway-netpol
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: edge-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.core }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
