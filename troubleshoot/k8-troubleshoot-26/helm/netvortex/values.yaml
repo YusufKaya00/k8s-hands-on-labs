@@ -64,9 +64,9 @@ paymentApi:
     egressBank:
       enabled: true
       targetIp: "198.51.100.25"
-      cidr: "0.0.0.0/0"
+      cidr: "198.51.100.25/32"
       except:
-        - "198.51.100.0/24"
+        - []
       port: 8443
   resources:
     limits:
