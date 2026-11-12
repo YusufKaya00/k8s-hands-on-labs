@@ -90,7 +90,7 @@ fraudDetector:
     port: 8081
     targetPort: 8081
     selector:
-      component: engine-v2
+      component: engine
   networkPolicy:
     enabled: true
     dns:
