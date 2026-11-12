@@ -98,7 +98,7 @@ scaling:
     maxReplicas: 5
     targetCPUUtilizationPercentage: 75
   pdb:
-    minAvailable: 3
+    minAvailable: 1
 
 # =====================================================================
 # BÖLÜM 3: EDGE GATEWAY & INGRESS KATMANI (netpulse-edge)
