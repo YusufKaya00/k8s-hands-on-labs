@@ -1,0 +1,198 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-api-server
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/component: api
+data:
+  server.py: |
+    import http.server
+    import socketserver
+    import urllib.request
+    import json
+    import os
+    import sys
+
+    PORT = int(os.environ.get("PORT", "8080"))
+
+    class PaymentHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"OK")
+            elif self.path in ["/", "/api/v1", "/api/v1/", "/checkout"]:
+                response = {
+                    "service": "payment-api",
+                    "status": "ready",
+                    "version": "9.0.0",
+                    "features": ["checkout", "ledger-sync", "fraud-check", "settlement"]
+                }
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(response).encode())
+            elif self.path == "/check-fraud":
+                try:
+                    req = urllib.request.urlopen("http://fraud-detector:8081/evaluate", timeout=3)
+                    data = req.read().decode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(data.encode())
+                except Exception as e:
+                    self.send_response(502)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+            else:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"NotFound")
+
+    with socketserver.TCPServer(("0.0.0.0", PORT), PaymentHandler) as httpd:
+        print(f"Payment API serving on 0.0.0.0:{PORT}")
+        httpd.serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.paymentApi.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-api
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+        - name: payment-api
+          image: "{{ .Values.paymentApi.image.repository }}:{{ .Values.paymentApi.image.tag }}"
+          imagePullPolicy: {{ .Values.paymentApi.image.pullPolicy }}
+          command: ["python", "-u", "/app/server.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.paymentApi.containerPort }}"
+          ports:
+            - name: {{ .Values.paymentApi.containerPortName }}
+              containerPort: {{ .Values.paymentApi.containerPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.paymentApi.containerPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.paymentApi.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.paymentApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: payment-api-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: payment-api
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.paymentApi.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.paymentApi.service.port }}
+      targetPort: {{ .Values.paymentApi.service.targetPort }}
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: payment-api
+---
+{{- if .Values.paymentApi.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: payment-api-netpol
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: payment-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- if .Values.paymentApi.networkPolicy.allowEdgeGateway.matchNamespace }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.paymentApi.networkPolicy.allowEdgeGateway.namespaceName }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.paymentApi.networkPolicy.allowEdgeGateway.podLabel }}
+        {{- else }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.paymentApi.networkPolicy.allowEdgeGateway.podLabel }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fraud-detector
+      ports:
+        - protocol: TCP
+          port: 8081
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespaces.data }}
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- if .Values.paymentApi.networkPolicy.egressBank.enabled }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.paymentApi.networkPolicy.egressBank.cidr }}
+            {{- if .Values.paymentApi.networkPolicy.egressBank.except }}
+            except:
+              {{- toYaml .Values.paymentApi.networkPolicy.egressBank.except | nindent 14 }}
+            {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.paymentApi.networkPolicy.egressBank.port }}
+    {{- end }}
+{{- end }}
