@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fraud-detector-server
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: fraud-detector
+    app.kubernetes.io/component: {{ .Values.fraudDetector.labels.component }}
+data:
+  server.py: |
+    import http.server
+    import socketserver
+    import json
+    import os
+
+    PORT = int(os.environ.get("PORT", "8081"))
+
+    class FraudHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"OK")
+            elif self.path == "/evaluate":
+                response = {
+                    "verdict": "APPROVED",
+                    "riskScore": 0.05,
+                    "engine": "v9-rule-evaluator"
+                }
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(response).encode())
+            else:
+                self.send_response(404)
+                self.send_header("Content-Type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"NotFound")
+
+    with socketserver.TCPServer(("0.0.0.0", PORT), FraudHandler) as httpd:
+        print(f"Fraud Detector serving on 0.0.0.0:{PORT}")
+        httpd.serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-detector
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: fraud-detector
+    app.kubernetes.io/component: {{ .Values.fraudDetector.labels.component }}
+spec:
+  replicas: {{ .Values.fraudDetector.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fraud-detector
+      app.kubernetes.io/component: {{ .Values.fraudDetector.labels.component }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fraud-detector
+        app.kubernetes.io/component: {{ .Values.fraudDetector.labels.component }}
+    spec:
+      containers:
+        - name: fraud-detector
+          image: "{{ .Values.fraudDetector.image.repository }}:{{ .Values.fraudDetector.image.tag }}"
+          imagePullPolicy: {{ .Values.fraudDetector.image.pullPolicy }}
+          command: ["python", "-u", "/app/server.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.fraudDetector.containerPort }}"
+          ports:
+            - name: http
+              containerPort: {{ .Values.fraudDetector.containerPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.fraudDetector.containerPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.fraudDetector.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.fraudDetector.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: fraud-detector-server
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-detector
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: fraud-detector
+    app.kubernetes.io/component: {{ .Values.fraudDetector.labels.component }}
+spec:
+  type: {{ .Values.fraudDetector.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.fraudDetector.service.port }}
+      targetPort: {{ .Values.fraudDetector.service.targetPort }}
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: fraud-detector
+    app.kubernetes.io/component: {{ .Values.fraudDetector.service.selector.component }}
+---
+{{- if .Values.fraudDetector.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fraud-detector-netpol
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fraud-detector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: payment-api
+      ports:
+        - protocol: TCP
+          port: 8081
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        {{- if .Values.fraudDetector.networkPolicy.dns.enableUdp }}
+        - protocol: UDP
+          port: 53
+        {{- end }}
+        {{- if .Values.fraudDetector.networkPolicy.dns.enableTcp }}
+        - protocol: TCP
+          port: 53
+        {{- end }}
+{{- end }}
