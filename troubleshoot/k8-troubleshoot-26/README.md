@@ -1,4 +1,4 @@
-# NetVortex v9.0 — Kubernetes Deep Network & Zero-Trust Outage
+# 🌐 K8s Troubleshoot Lab 26: NetVortex v9.0 — Advanced Kubernetes Networking & Zero-Trust Mesh Outage
 
 > **[🇹🇷 Türkçe](#-türkçe-bölüm) | [🇬🇧 English](#-english-section)**
 
@@ -7,497 +7,432 @@
 <a id="-türkçe-bölüm"></a>
 ## 🇹🇷 Türkçe Bölüm
 
-### 1. Senaryo & Mimariye Genel Bakış
+### 📋 Lab Özeti (Incident Briefing)
 
-**NetVortex v9.0**, çok katmanlı ve yüksek işlem hacimli bir finansal yönlendirme platformudur. Sistem, Zero-Trust güvenlik standartlarına uygun olarak 3 farklı namespace (`netvortex-edge`, `netvortex-core`, `netvortex-data`) üzerinde izole edilmiştir.
-
-Son altyapı dağıtımının ardından, sistemde şu kritik ağ anomalileri bildirilmiştir:
-1. Dış ağdan gelen bazı istekler bağlantı zaman aşımına (`Connection timed out`) düşerken, diğerleri başarıyla dönmektedir.
-2. Ingress üzerinden `/api/v1/checkout` yoluna giden istekler `404 Not Found` almaktadır.
-3. Edge katmanından Core API'ye giden istekler `502 Bad Gateway` vermektedir.
-4. Core API podları çalışır görünmesine rağmen Service IP üzerinden gelen trafik podlara ulaşamamaktadır.
-5. Cross-namespace Zero-Trust kuralları devreye girdiğinde, izin verilmesi gereken API trafiği sessizce düşürülmektedir (`packet drop`).
-6. Bankacılık harici entegrasyonuna giden ödeme takas (`settlement`) istekleri engellenmektedir.
-7. Sahtekarlık tespit (`fraud-detector`) motoruna giden servis çağrıları boş endpoint (`<none>`) nedeniyle başarısız olmaktadır.
-8. CoreDNS sorguları bazen başarılı olurken, büyük yanıt gerektiren durumlarda podlar DNS timeout yaşamaktadır.
-9. StatefulSet olarak çalışan veri katmanı podları, headless servis DNS adı üzerinden birbirini ve veritabanını çözememektedir.
-10. Veritabanı podu ayakta ve `Ready` görünmesine rağmen, diğer podlar bağlandığında `Connection refused` hatası almaktadır.
+| Alan | Detay |
+| :--- | :--- |
+| **Platform** | **NetVortex v9.0** — High-Throughput Financial Routing & Zero-Trust Mesh |
+| **Odak Noktası** | **%100 Derin Kubernetes Ağ & Güvenlik:** L4 LoadBalancer (`externalTrafficPolicy: Local`), L7 Ingress (Regex Rewrite), Cross-NS DNS FQDN, Named Ports, NetworkPolicy (AND vs OR mantık tuzağı), Egress `ipBlock` CIDR maskeleme, Empty EndpointSlices, CoreDNS TCP 53 fallback, Headless DNS & StatefulSet `serviceName`, Socket Bind (`127.0.0.1` vs `0.0.0.0`) |
+| **Altyapı (Terraform)** | **Azure Kubernetes Service (AKS)** — 2 Düğümlü (`Standard_B2s_v2`), Calico Ağ İlkesi Motoru (`network_policy = "calico"`), NGINX Ingress Controller |
+| **Etkilenen Alanlar** | `netvortex-data`, `netvortex-core`, `netvortex-edge` (3 Namespace, 10 Kritik Ağ Arızası) |
+| **Kontrol Aracı** | `./check.sh` — 10 ağ adımını tek tek test eden, teşhis yönlendirmeleri sunan interaktif kontrol betiği |
+| **Çözüm Anahtarı** | [`SOLUTION.md`](./SOLUTION.md) — 10 arızanın ayrıntılı kök neden analizi, L4/L7 paket akış teorisi ve tam çözümleri |
 
 ---
 
-### 2. Mimari Ağ Şeması
+### 🧠 Lab Öncesi Aklında Kalması Gereken 8 Altın Kubernetes Ağ Kuralı
+
+Bu laboratuvarda karşılaşacağın ağ tuzaklarını metodolojik olarak çözebilmek için aşağıdaki **8 temel ağ kuralını** derinlemesine anlamış olmalısın:
+
+1. **`externalTrafficPolicy: Local` vs `Cluster` Farkı ve Paket Düşüşü:**
+   - `Cluster` (varsayılan): Dışarıdan gelen paket hangi Kubernetes düğümüne ulaşırsa ulaşsın, `kube-proxy` paketi SNAT yaparak hedef podun bulunduğu düğüme aktarır (2. sekme / hop).
+   - `Local`: İstemcinin gerçek kaynak IP'sini (`Client Source IP`) korumak için 2. sekmeyi engeller. Paket, üzerinde ilgili podun koştuğu bir düğüme gelirse pod'a iletilir; ancak **üzerinde pod bulunmayan bir düğüme gelirse kube-proxy paketi sessizce düşürür (`DROP`)**! Çok düğümlü (multi-node) kümelerde bu durum rastlantısal bağlantı zaman aşımlarına yol açar.
+2. **NGINX Ingress Path Regex ve Rewrite Target (`/$2`):**
+   - Dış istemci `/api/v1/checkout` çağırdığında, arka uçtaki mikroservis yalnızca `/checkout` yolunu dinliyor olabilir.
+   - NGINX Ingress'te `path: /api/v1(/|$)(.*)` kullanıldığında, prefix'i soymak için `nginx.ingress.kubernetes.io/rewrite-target: /$2` annotasyonu gereklidir. Bu regex'in çalışması için `nginx.ingress.kubernetes.io/use-regex: "true"` ve `pathType: ImplementationSpecific` tanımlanmalıdır.
+3. **Farklı Namespace'ler Arası DNS Çözümleme (Search Domains & FQDN):**
+   - Bir podun `/etc/resolv.conf` dosyasında arama listesi yerel namespace'i önceler: `<ns>.svc.cluster.local svc.cluster.local cluster.local`.
+   - `netvortex-edge` içindeki bir pod `http://payment-api:8080` çağırdığında CoreDNS bunu `payment-api.netvortex-edge...` altında arar ve `NXDOMAIN` döner. Farklı namespace'teki servise ulaşmak için FQDN veya en azından `<servis>.<hedef-namespace>` yazılmalıdır.
+4. **Service `targetPort` — Named Port (İsimlendirilmiş Port) Tuzağı:**
+   - Servis tanımında `targetPort: api-http` (string) yazıldığında, pod konteyner manifestindeki `ports[].name` alanında tam olarak `api-http` adı aranır.
+   - Eğer konteyner port adı `http` olarak bırakılmışsa veya numeric port (`8080`) ile eşleşmiyorsa, Kubernetes `Endpoints` nesnesinde portu eşleyemez ve istekler `Connection refused` alır.
+5. **NetworkPolicy `AND` vs `OR` Tuzağı (`namespaceSelector` & `podSelector`):**
+   - NetworkPolicy kuralında tek bir liste elemanı içinde (`- namespaceSelector: ... podSelector: ...`) yazıldığında **`AND`** mantığı çalışır: *"Yalnızca belirtilen namespace'teki belirtilen etiketli podlar gelebilir."*
+   - Eğer kuralda `namespaceSelector` yazılmayıp sadece `- podSelector: ...` bırakılırsa, Kubernetes bu kuralı **YALNIZCA AYNI NAMESPACE** içinde değerlendirir! Farklı bir namespace'teki pod etiketleri eşleşse bile tüm paketler Default Deny tarafından düşürülür.
+6. **Egress NetworkPolicy `ipBlock` CIDR ve `except` Tuzağı:**
+   - Dış dünyaya (örneğin `198.51.100.25` bankacılık gateway IP'sine) giden trafiğe izin vermek için `ipBlock.cidr: 198.51.100.0/24` tanımlanabilir.
+   - Ancak `except` listesinde bu alt ağın tamamı (`198.51.100.0/24`) hariç tutulursa, dışlama kuralı izni ezer ve tüm egress paketleri CNI (Calico) tarafından engellenir.
+7. **CoreDNS TCP Port 53 Fallback Mekanizması:**
+   - Standart DNS sorguları UDP 53 üzerinden iletilir. Ancak yanıt 512 baytı aştığında (örneğin büyük SRV/TXT kayıtları veya DNSSEC), CoreDNS yanıtta `TC` (Truncated) bayrağını set eder.
+   - DNS istemcisi sorguyu derhal **TCP Port 53** üzerinden yineler. Egress kuralında yalnızca `UDP 53` izni verilip `TCP 53` unutulursa, büyük DNS sorguları timeout'a girer ve kilitlenir.
+8. **Loopback (`127.0.0.1`) vs Tüm Arayüzler (`0.0.0.0`) Soket Dinleme:**
+   - Konteyner içindeki bir process (örneğin veritabanı veya API sunucusu) soketini `127.0.0.1` adresine bağlarsa (`bind`), işletim sistemi yalnızca yerel loopback (`lo`) arayüzünden gelen paketleri kabul eder.
+   - Podun `eth0` IP'sine veya Service Virtual IP'sine gelen paketler Linux çekirdeği tarafından derhal `RST` bayrağı ile reddedilir (`Connection refused`). Pod dışı erişim için daima `0.0.0.0` dinlenmelidir.
+
+---
+
+### 🏗️ Hedeflenen Mimari ve Ağ Akışı (Target Architecture)
 
 ```mermaid
 flowchart TD
-    subgraph Client["İnternet / İstemci"]
-        C[Harici İstek]
-    end
+    Client(["🌐 Dış İstemci / Bankacılık Testi<br/>http://netvortex.<IP>.nip.io/api/v1/checkout"]) -->|"1. L4 TCP :80 / NodePort :30080"| AzureLB["☁️ Azure Public LoadBalancer<br/>(aks-netvortex-26)"]
+    
+    AzureLB -->|"2. externalTrafficPolicy: Cluster<br/>(Cluster-wide node proxy)"| IngNode["🚪 Ingress-NGINX Controller<br/>(ns: ingress-nginx)"]
 
-    subgraph Edge["Namespace: netvortex-edge"]
-        LB["edge-gateway-lb (LoadBalancer)\n[externalTrafficPolicy: ?]"]
-        ING["edge-ingress (Ingress NGINX)\n[Path Regex & Rewrite: ?]"]
-        EP["edge-gateway (Proxy Pods)\n[Upstream URL: ?]"]
-        NP_EDGE["edge-gateway-netpol\n(NetworkPolicy)"]
-    end
-
-    subgraph Core["Namespace: netvortex-core"]
-        SVC_API["payment-api (ClusterIP Svc)\n[targetPort: ?]"]
-        POD_API["payment-api (Pods)\n[containerPort name: ?]"]
-        NP_API["payment-api-netpol\n[from/to selectors & ipBlock: ?]"]
+    subgraph EdgeNS ["🌐 Namespace: netvortex-edge (tier: edge)"]
+        IngObj["Ingress: edge-ingress<br/>(path: /api/v1(/|$)(.*) -> rewrite: /$2)"]
+        EdgeSvc["Service: edge-gateway-lb (:80)"]
+        EdgePod["Deployment: edge-gateway (2 Replicas)<br/>Upstream: http://payment-api.netvortex-core:8080"]
+        EdgeNP["🛡️ NetworkPolicy: edge-gateway-netpol"]
         
-        SVC_FD["fraud-detector (ClusterIP Svc)\n[selector: ?]"]
-        POD_FD["fraud-detector (Pods)\n[labels: ?]"]
-        NP_FD["fraud-detector-netpol\n[DNS egress UDP vs TCP: ?]"]
+        IngNode -->|"3. Ingress Route"| EdgeSvc
+        EdgeSvc --> EdgePod
     end
 
-    subgraph Data["Namespace: netvortex-data"]
-        SVC_HL["ledger-headless (Headless Svc)\n[clusterIP: None]"]
-        STS_DB["ledger-db (StatefulSet)\n[spec.serviceName: ?]"]
-        CM_DB["ledger-db-config\n[bind address: ?]"]
-        NP_DATA["ledger-db-netpol\n(NetworkPolicy)"]
+    subgraph CoreNS ["⚙️ Namespace: netvortex-core (tier: core)"]
+        CoreNP["🛡️ NetworkPolicy: payment-api-netpol<br/>Ingress: AND(ns=edge, pod=edge-gateway)<br/>Egress: DNS(:53 UDP/TCP), Bank ipBlock, Data(:6379)"]
+        CoreSvc["Service: payment-api (:8080 -> targetPort: api-http)"]
+        CorePod["Deployment: payment-api (2 Replicas)<br/>containerPortName: api-http (:8080)"]
+        
+        FDSvc["Service: fraud-detector (:8081)<br/>selector: component=engine"]
+        FDPod["Deployment: fraud-detector (2 Replicas)<br/>labels: component=engine"]
+        FDNP["🛡️ NetworkPolicy: fraud-detector-netpol<br/>Egress: kube-system UDP+TCP :53"]
+
+        EdgePod -->|"4. Cross-NS FQDN HTTP :8080"| CoreSvc
+        CoreSvc --> CorePod
+        CorePod -->|"5. Fraud RPC :8081"| FDSvc
+        FDSvc --> FDPod
     end
 
-    C --> LB
-    LB --> ING
-    ING --> EP
-    EP -.->|Cross-NS NetPol & DNS| SVC_API
-    SVC_API --> POD_API
-    POD_API --> SVC_FD
-    SVC_FD --> POD_FD
-    POD_API -.->|Headless DNS & NetPol| SVC_HL
-    SVC_HL --> STS_DB
-    STS_DB --- CM_DB
+    subgraph DataNS ["🔐 Namespace: netvortex-data (tier: data)"]
+        DataNP["🛡️ NetworkPolicy: ledger-db-netpol<br/>Ingress from ns: netvortex-core (:6379)"]
+        HeadlessSvc["Headless Service: ledger-headless<br/>(clusterIP: None, :6379)"]
+        LedgerSTS["StatefulSet: ledger-db (ledger-db-0)<br/>spec.serviceName: ledger-headless"]
+        LedgerCM["ConfigMap: ledger-db-config<br/>bind: 0.0.0.0"]
+
+        HeadlessSvc --> LedgerSTS
+        LedgerSTS --- LedgerCM
+    end
+
+    CorePod -->|"6. UDP/TCP :53"| CoreDNS(["🧭 CoreDNS (kube-system)"])
+    FDPod -->|"7. UDP/TCP :53"| CoreDNS
+    CorePod -->|"8. StatefulSet Headless DNS TCP :6379"| HeadlessSvc
+    CorePod -->|"9. Bank Settlement Egress TCP :8443"| ExtBank(["🏦 Harici Bank Gateway<br/>198.51.100.25:8443 (ipBlock)"])
 ```
 
 ---
 
-### 3. Laboratuvarı Başlatma
+### 🚀 Kurulum ve Güncelleme Komutları
 
-Kurulum betiği ortamınızı otomatik olarak tespit eder (Minikube / Kind veya Cloud K8s) ve başlangıçtaki hatalı NetVortex sürümünü yükler:
-
+#### 1. Ortamı Kurmak İçin (Terraform ile AKS Sağlama):
 ```bash
+chmod +x setup.sh cleanup.sh check.sh
 ./setup.sh
 ```
+> **İpucu:** Eğer cluster'ınız zaten çalışıyorsa ve yalnızca Helm chart'ı sıfırdan kurmak istiyorsanız `./setup.sh --skip-terraform` parametresini kullanabilirsiniz.
 
-Durumu kontrol etmek ve başarısız ağ testlerini görmek için istediğiniz an doğrulama betiğini çalıştırabilirsiniz:
-
+#### 2. Durumu ve İlerlemeni Kontrol Etmek İçin (`check.sh`):
+Herhangi bir anda kaç hatayı çözdüğünüzü ve sıradaki hatanın teşhis ipuçlarını görmek için:
 ```bash
 ./check.sh
 ```
 
----
-
-### 4. Metodolojik Teşhis & Araştırma Rehberi
-
-> [!IMPORTANT]
-> Bu rehberde doğrudan çözüm satırları veya kopyalar verilmemiştir. Bir Cloud/Network Mühendisi olarak sistemdeki semptomları izlemek, katman katman teşhis koymak ve sorunun kök nedenine ulaşmak için aşağıdaki adımları sırasıyla takip edin.
-
----
-
-#### 🧭 Katman 1: Dış Ağ Girişi, L4 LoadBalancer & L7 Ingress (`netvortex-edge`)
-
-##### 🔍 Teşhis 1: Dengesiz Dış Trafik & Node Bazlı Paket Düşüşleri
-- **Semptom:** Dışarıdan Service veya NodePort IP'sine istek attığınızda bazı node'lar üzerinden yanıt gelirken, diğer node'lar üzerinden atılan istekler zaman aşımına uğruyor (`Connection timed out`).
-- **Neden Olabilir?** L4 Kubernetes servislerinde `externalTrafficPolicy` varsayılan olarak `Cluster` modundadır (tüm node'lar gelen trafiği arka uç pod'un bulunduğu node'a SNAT ile yönlendirir). Ancak `Local` seçildiğinde kube-proxy yalnızca üzerinde ilgili pod'un bizzat koştuğu node'larda trafiği kabul eder; pod bulunmayan node'lara gelen paketler sessizce düşürülür.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  # 1. Kümenizdeki node'ları ve IP'lerini listeleyin:
-  kubectl get nodes -o wide
-
-  # 2. edge-gateway pod'larının hangi node'lar üzerinde koştuğunu inceleyin:
-  kubectl get pods -n netvortex-edge -o wide
-
-  # 3. edge-gateway-lb servisinin yapılandırmasını inceleyin:
-  kubectl get svc edge-gateway-lb -n netvortex-edge -o yaml
-  ```
-- **Kritik Soru:** Pod'un olmadığı bir node'a gelen trafiğin istemci IP'si korunurken diğer node'lara yönlendirilmesi mi gerekiyor, yoksa tüm küme genelinde yük dağılımı mı hedefleniyor?
-
----
-
-##### 🔍 Teşhis 2: Ingress Path Regex & URL Yeniden Yazma (Rewrite Target)
-- **Semptom:** Ingress üzerinden `/api/v1/checkout` çağrıldığında arka uç API'ye ulaşamıyor ve `404 Not Found` dönüyor.
-- **Neden Olabilir?** NGINX Ingress Controller'da path `/api/v1` veya regex olarak tanımlandığında, arka uç mikroservis yalnızca `/checkout` bekliyorsa, prefix'in soyulması (`rewrite-target`) gerekir. Regex yakalama grubu (`$2`) kullanılıyorsa Ingress annotasyonlarında regex desteği açık olmalıdır.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  kubectl get ingress edge-ingress -n netvortex-edge -o yaml
-  ```
-- **Kritik Soru:** `pathType` alanı `Prefix` mi yoksa regex için `ImplementationSpecific` mi olmalı? `nginx.ingress.kubernetes.io/use-regex` ve `nginx.ingress.kubernetes.io/rewrite-target` annotasyonları eşleşiyor mu?
-
----
-
-##### 🔍 Teşhis 3: Cross-Namespace Servis Keşfi (DNS FQDN)
-- **Semptom:** `edge-gateway` podu Ingress'ten gelen isteği Core API'ye iletmeye çalıştığında `502 Bad Gateway` alıyor ve nginx loglarında `payment-api could not be resolved` hatası görünüyor.
-- **Neden Olabilir?** `edge-gateway`, `netvortex-edge` namespace'indedir. `payment-api` ise `netvortex-core` namespace'indedir. Kubernetes DNS resolv.conf dosyasındaki `search` alanları yerel namespace'i önceler. Farklı bir namespace'teki servise sadece servis adıyla erişilemez.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  # 1. edge-gateway pod loglarını inceleyin:
-  kubectl logs -n netvortex-edge -l app.kubernetes.io/name=edge-gateway
-
-  # 2. edge-gateway NGINX konfigürasyonunu kontrol edin:
-  kubectl get cm edge-gateway-config -n netvortex-edge -o yaml
-  ```
-- **Kritik Soru:** Farklı bir namespace'teki bir servise erişmek için standart Kubernetes FQDN veya namespace nitelemesi (`service.namespace`) nasıl yazılmalıdır?
-
----
-
-#### 🧭 Katman 2: Core Mikroservisler, Portlar & Zero-Trust Politikaları (`netvortex-core`)
-
-##### 🔍 Teşhis 4: Named Port (İsimlendirilmiş Port) Uyumsuzluğu
-- **Semptom:** Servis mevcut, Pod çalışıyor (`1/1 Running`), ancak `kubectl describe svc payment-api -n netvortex-core` çıktısında Endpoints portu tanımlanmamış veya istekler porta ulaşamıyor.
-- **Neden Olabilir?** Bir Kubernetes Service tanımında `targetPort` string olarak (örn. `api-http`) verildiğinde, Kubernetes Pod manifestindeki `containerPort` listesinde adı tam olarak bu olan bir port arar. Ad eşleşmezse kube-proxy yönlendirmeyi kuramaz.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  # 1. Servisin targetPort tanımını inceleyin:
-  kubectl get svc payment-api -n netvortex-core -o yaml
-
-  # 2. Pod'un containerPort ve port name tanımını inceleyin:
-  kubectl get deploy payment-api -n netvortex-core -o yaml
-  ```
-- **Kritik Soru:** Servisteki `targetPort` ile pod container'ındaki `ports[].name` birbiriyle birebir uyuşuyor mu?
-
----
-
-##### 🔍 Teşhis 5: NetworkPolicy'de AND vs OR Mantık Tuzağı (Cross-Namespace Ingress)
-- **Semptom:** `edge-gateway` doğru adrese istek atmasına rağmen bağlantı zaman aşımına uğruyor (`Connection timed out`), paketler Core API'ye hiç ulaşamıyor.
-- **Neden Olabilir?** Kubernetes NetworkPolicy kurallarında:
-  - `- podSelector: ...` (yalnızca podSelector varsa, K8s bu kuralı **YALNIZCA AYNI NAMESPACE** içinde değerlendirir!).
-  - Başka bir namespace'ten gelen pod'a izin vermek için **aynı dizi elemanı içinde** hem `namespaceSelector` hem de `podSelector` bulunmalıdır.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  # 1. payment-api ingress NetworkPolicy kuralını inceleyin:
-  kubectl get netpol payment-api-netpol -n netvortex-core -o yaml
-
-  # 2. netvortex-edge namespace etiketlerini kontrol edin:
-  kubectl get ns netvortex-edge --show-labels
-  ```
-- **Kritik Soru:** Kuralınız `netvortex-edge` namespace'ini açıkça seçiyor mu? Yoksa podSelector tek başına kaldığı için yalnızca `netvortex-core` içindeki podları mı arıyor?
-
----
-
-##### 🔍 Teşhis 6: Egress NetworkPolicy `ipBlock` CIDR & `except` Tuzağı
-- **Semptom:** `payment-api` podu dış dünyadaki bankacılık gateway IP'sine (`198.51.100.25`) HTTP/HTTPS çağrısı yaptığında istekler engelleniyor.
-- **Neden Olabilir?** `payment-api-netpol` içindeki egress kurallarında harici IP aralığı için bir `ipBlock` tanımlanmıştır. Ancak `except` bloğu yanlış bir CIDR maskesiyle hedef alt ağı tamamen dışlamış olabilir.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  kubectl get netpol payment-api-netpol -n netvortex-core -o yaml
-  ```
-- **Kritik Soru:** `ipBlock.cidr` izin verirken `ipBlock.except` alanı gitmek istediğiniz IP adresini yanlışlıkla engelliyor mu?
-
----
-
-##### 🔍 Teşhis 7: Servis Seçici (Selector) Typo'su & Boş EndpointSlices
-- **Semptom:** `fraud-detector` podu sağlıklı çalışıyor, ancak servise giden istekler `503 Service Unavailable` veya `Connection refused` alıyor.
-- **Neden Olabilir?** Servisin `spec.selector` alanındaki etiketler, pod'un `metadata.labels` alanındaki etiketlerle tam olarak eşleşmediğinde kube-controller-manager hiçbir Endpoint veya EndpointSlice üretemez.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  # 1. Servisin endpoint'lerini listeleyin:
-  kubectl get endpoints,endpointslices -n netvortex-core
-
-  # 2. Servis selector'ını pod etiketleriyle karşılaştırın:
-  kubectl get svc fraud-detector -n netvortex-core -o jsonpath='{.spec.selector}'
-  kubectl get pods -n netvortex-core -l app.kubernetes.io/name=fraud-detector --show-labels
-  ```
-- **Kritik Soru:** Servis seçicisindeki hangi etiket pod'da tanımlı olandan farklı?
-
----
-
-##### 🔍 Teşhis 8: CoreDNS Egress NetworkPolicy (UDP vs TCP Port 53)
-- **Semptom:** `fraud-detector` podu standart kısa DNS sorgularını çözebilirken, büyük SRV veya TXT kayıtları sorgulandığında ya da DNSSEC doğrulaması gerektiğinde DNS sorguları donuyor ve zaman aşımına uğruyor.
-- **Neden Olabilir?** DNS protokolü standart olarak UDP 53 kullanır. Ancak yanıt 512 baytı aştığında (veya EDNS0 tamponu dolduğunda), DNS istemcisi otomatik olarak **TCP Port 53** fallback'i yapar. Egress NetworkPolicy'de yalnızca UDP 53'e izin verilip TCP 53 unutulursa bu sorgular düşürülür.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  kubectl get netpol fraud-detector-netpol -n netvortex-core -o yaml
-  ```
-- **Kritik Soru:** Egress kuralları altında `kube-system` yönüne giden port listesinde hem `UDP` hem `TCP` port 53 tanımlanmış mı?
-
----
-
-#### 🧭 Katman 3: Veri Katmanı, Headless DNS & Socket Dinleme (`netvortex-data`)
-
-##### 🔍 Teşhis 9: StatefulSet `spec.serviceName` & Headless Service Eşleşmesi
-- **Semptom:** `payment-api` podu `ledger-db-0.ledger-headless.netvortex-data.svc.cluster.local` adresine erişmek istediğinde `NXDOMAIN` (böyle bir alan adı yok) hatası alıyor.
-- **Neden Olabilir?** Kubernetes StatefulSet podlarının öngörülebilir DNS A/SRV kayıtlarına sahip olabilmesi için `spec.serviceName` alanı ile headless servisin (`clusterIP: None`) `metadata.name` alanı **birebir aynı** olmalıdır.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  # 1. Headless servisin adını kontrol edin:
-  kubectl get svc -n netvortex-data
-
-  # 2. StatefulSet spec.serviceName alanını kontrol edin:
-  kubectl get sts ledger-db -n netvortex-data -o jsonpath='{.spec.serviceName}'
-  ```
-- **Kritik Soru:** StatefulSet'in `spec.serviceName` değeri headless servisin adıyla uyuşuyor mu?
-
----
-
-##### 🔍 Teşhis 10: Daemon Socket Bağlantısı (Loopback `127.0.0.1` vs `0.0.0.0`)
-- **Semptom:** `ledger-db` podu ayakta, kendi içindeki liveness probe'lar geçiyor, ancak `payment-api` veya headless service IP'si üzerinden pod'a bağlanılmak istendiğinde anında `Connection refused` alınıyor.
-- **Neden Olabilir?** Bir servis daemon'ı (örneğin Redis veya API sunucusu) konfigürasyonunda `bind 127.0.0.1` olarak ayarlanırsa, socket yalnızca pod içi loopback (`lo`) arayüzünü dinler. Pod'un `eth0` arayüzüne veya servis IP'sine gelen paketler Linux çekirdeği tarafından reddedilir.
-- **Nasıl İncelemelisiniz?**
-  ```bash
-  # 1. ledger-db konfigürasyonunu kontrol edin:
-  kubectl get cm ledger-db-config -n netvortex-data -o yaml
-
-  # 2. Pod içinde dinlenen soketleri inceleyin:
-  kubectl exec -it ledger-db-0 -n netvortex-data -- netstat -tlpn 2>/dev/null || true
-  ```
-- **Kritik Soru:** Veritabanı daemon'ı tüm pod arayüzlerinden gelen trafiği kabul etmek için hangi IP adresine bağlanmalıdır (`0.0.0.0`)?
-
----
-
-### 5. Değişiklikleri Uygulama & Doğrulama
-
-Sorunları tespit ettikten sonra, Helm değerlerinizi güncelleyerek release'i yenileyin:
-
+#### 3. Yapılandırmayı Güncelledikten Sonra Uygulamak İçin:
 ```bash
-# Değişiklikleri uygulayın:
+INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
 helm upgrade --install netvortex ./helm/netvortex \
   --namespace netvortex-edge \
-  -f ./helm/netvortex/values.yaml
+  --set global.ingressHost="netvortex.${INGRESS_IP}.nip.io"
+```
 
-# StatefulSet serviceName alanını değiştirdiğinizde:
-kubectl delete sts ledger-db -n netvortex-data --cascade=orphan 2>/dev/null || true
-helm upgrade --install netvortex ./helm/netvortex \
-  --namespace netvortex-edge \
-  -f ./helm/netvortex/values.yaml
+---
 
-# Doğrulama testini çalıştırın:
+### 🛠️ Adım Adım Sorun Giderme Rehberi (Namespace Bazlı 10 Görev)
+
+Sorunları rastgele aramak yerine `./check.sh` çıktısındaki sırayla, **aşağıdan yukarıya (`netvortex-data` -> `netvortex-core` -> `netvortex-edge`)** doğru metodolojik olarak çözün:
+
+---
+
+#### 📦 BÖLÜM 1: Veri Katmanı & Soket Dinleme (`namespace: netvortex-data`)
+
+Önce `netvortex-data` içindeki kaynakları listeleyin:
+```bash
+kubectl get sts,pods,svc,netpol,cm -n netvortex-data
+```
+
+* **Görev 1 — `ledger-db-0` Poduna Neden Headless DNS Adresiyle Erişilemiyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl get svc -n netvortex-data
+    kubectl get sts ledger-db -n netvortex-data -o jsonpath='{.spec.serviceName}{"\n"}'
+    ```
+  - **İnceleme Alanı:** Kubernetes StatefulSet podlarının `<pod-adi>.<headless-svc-adi>` şeklinde deterministik DNS A ve SRV kayıtları alabilmesi için `StatefulSet.spec.serviceName` alanı ile Headless `Service.metadata.name` alanı birebir aynı olmalıdır. İki tanım arasındaki isim uyumsuzluğunu inceleyin.
+  - **Önemli Hatırlatma:** `spec.serviceName` alanı değiştirildiğinde StatefulSet podunun bu değişikliği alabilmesi için mevcut StatefulSet nesnesini silip tekrar oluşturun:
+    ```bash
+    kubectl delete sts ledger-db -n netvortex-data --cascade=orphan 2>/dev/null || true
+    ```
+
+* **Görev 2 — Veritabanı Podu Ayakta Olduğu Halde Diğer Podlar Neden `Connection refused` Alıyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl get cm ledger-db-config -n netvortex-data -o yaml
+    kubectl logs -n netvortex-data ledger-db-0
+    ```
+  - **İnceleme Alanı:** `ledger-db-config` içindeki `redis.conf` dosyasında `bind` direktifini inceleyin. Uygulamanın yalnızca pod içi yerel döngü arayüzünü (`127.0.0.1`) mi dinlediğini, yoksa tüm ağ arayüzlerini (`0.0.0.0`) mi dinlediğini değerlendirin.
+
+---
+
+#### ⚙️ BÖLÜM 2: Çekirdek Katman, Portlar & Zero-Trust Politikaları (`namespace: netvortex-core`)
+
+Önce `netvortex-core` içindeki kaynakları listeleyin:
+```bash
+kubectl get deploy,pods,svc,endpoints,netpol -n netvortex-core
+```
+
+* **Görev 3 — `fraud-detector` Podları Çalıştığı Halde Servisin Endpoint Listesi Neden Boş (`<none>`)?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl get endpoints fraud-detector -n netvortex-core
+    kubectl get svc fraud-detector -n netvortex-core -o yaml
+    kubectl get pods -n netvortex-core -l app.kubernetes.io/name=fraud-detector --show-labels
+    ```
+  - **İnceleme Alanı:** Service nesnesinin podları seçebilmesi için `Service.spec.selector` alanındaki etiketlerin pod manifestindeki etiketlerle tam olarak eşleşmesi gerekir. Servis seçicisindeki typo veya bileşen etiketi farkını tespit edin.
+
+* **Görev 4 — `fraud-detector` Podunun Büyük DNS Sorguları Neden Zaman Aşımına Uğruyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl describe netpol fraud-detector-netpol -n netvortex-core
+    ```
+  - **İnceleme Alanı:** `fraud-detector-netpol` içindeki egress kurallarını inceleyin. DNS protokolünde yanıt boyutu 512 baytı aştığında veya truncation olduğunda DNS istemcileri otomatik olarak `TCP Port 53` üzerinden sorgu tekrarlar. Egress kuralında yalnızca `UDP 53` mü tanımlı, yoksa `TCP 53` izni de var mı?
+
+* **Görev 5 — `payment-api` Podunun Servis Portu Neden Çözümlenemiyor (Named Port Uyumsuzluğu)?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl describe svc payment-api -n netvortex-core
+    kubectl get deploy payment-api -n netvortex-core -o yaml
+    ```
+  - **İnceleme Alanı:** `payment-api` servisinde `targetPort` string olarak verilmiştir. Pod container manifestindeki `ports[].name` alanının bu string ad ile birebir eşleşip eşleşmediğini kontrol edin.
+
+* **Görev 6 — Cross-Namespace Ingress Trafiği Neden `payment-api-netpol` Tarafından Sessizce Düşürülüyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl describe netpol payment-api-netpol -n netvortex-core
+    kubectl get ns netvortex-edge --show-labels
+    ```
+  - **İnceleme Alanı:** Kubernetes NetworkPolicy kuralında `from` altında yalnızca `podSelector` yazıldığında, Kubernetes'in bu kuralı **yalnızca yerel namespace** içinde aradığını unutmayın. Farklı bir namespace'teki pod'a izin vermek için kuralda hem `namespaceSelector` hem de `podSelector`'ın aynı liste elemanı içinde (`AND` koşuluyla) tanımlanıp tanımlanmadığını inceleyin.
+
+* **Görev 7 — Harici Bankacılık Ağ Geçidine Giden Egress İstekleri Neden Bloklanıyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl describe netpol payment-api-netpol -n netvortex-core
+    ```
+  - **İnceleme Alanı:** `payment-api-netpol` içindeki `egress.to[].ipBlock` kuralını inceleyin. `cidr` ile izin verilen IP bloğunun `except` listesi tarafından tamamen hariç tutulup tutulmadığını kontrol edin.
+
+---
+
+#### 🚪 BÖLÜM 3: Edge Gateway, Ingress & L4 Yük Dağıtımı (`namespace: netvortex-edge`)
+
+Önce `netvortex-edge` içindeki kaynakları listeleyin:
+```bash
+kubectl get deploy,pods,svc,ingress,netpol -n netvortex-edge
+```
+
+* **Görev 8 — `edge-gateway` Podu Core API'ye Bağlanırken Neden `502 Bad Gateway` Veriyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl logs -n netvortex-edge -l app.kubernetes.io/name=edge-gateway
+    kubectl get cm edge-gateway-config -n netvortex-edge -o yaml
+    ```
+  - **İnceleme Alanı:** `edge-gateway` NGINX reverse proxy konfigürasyonundaki `upstreamUrl` değerini inceleyin. Farklı bir namespace'teki servise kısa isimle (`payment-api`) mi yoksa FQDN / namespace nitelemesiyle (`payment-api.netvortex-core`) mi erişilmesi gerektiğini değerlendirin.
+
+* **Görev 9 — Ingress Üzerinden `/api/v1/checkout` İstekleri Neden `404 Not Found` Dönüyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl describe ingress edge-ingress -n netvortex-edge
+    ```
+  - **İnceleme Alanı:** Ingress kuralındaki `Path`, `pathType` ve NGINX Controller annotasyonlarını (`rewrite-target`, `use-regex`) inceleyin. Gelen URL prefix'inin soyularak arka uç pod'a aktarılabilmesi için regex yakalama grubunun doğru yapılandırılıp yapılandırılmadığını denetleyin.
+
+* **Görev 10 — Dış Ağdan Yapılan İstekler Neden Bazı Düğümlerde Zaman Aşımına Uğruyor?**
+  - **Teşhis Komutu:**
+    ```bash
+    kubectl get nodes -o wide
+    kubectl get pods -n netvortex-edge -o wide
+    kubectl get svc edge-gateway-lb -n netvortex-edge -o yaml
+    ```
+  - **İnceleme Alanı:** `edge-gateway-lb` servisinin `spec.externalTrafficPolicy` alanını inceleyin. `Local` politikası kullanıldığında, üzerinde pod bulunmayan düğümlere gelen dış trafiğe ne olduğunu hatırlayın. Küme genelinde yük dağılımı sağlamak için politikanın ne olması gerektiğini değerlendirin.
+
+---
+
+### ✅ Başarı Kriterleri (Success Criteria)
+
+Tüm adımları tamamladıktan sonra:
+```bash
 ./check.sh
 ```
 
-Tüm 10 kontrol yeşil olduğunda tebrikler! Kubernetes ağ katmanının en derin tuzaklarını başarıyla çözdünüz.
+Aşağıdaki çıktıyı ve **`10 Passed / 0 Failed`** sonucunu gördüğünüzde labı başarıyla tamamladınız demektir:
+```text
+======================================================================
+   Audit Summary: 10 Passed / 0 Failed (Total: 10)
+======================================================================
+🎉 CONGRATULATIONS! All NetVortex v9.0 networking issues are resolved!
+   The cluster network mesh is fully healthy and zero-trust compliant.
+```
 
 ---
 
 <a id="-english-section"></a>
 ## 🇬🇧 English Section
 
-### 1. Scenario & Architectural Overview
+### 📋 Incident Briefing
 
-**NetVortex v9.0** is a multi-tier, high-throughput financial transaction routing platform. Designed following Zero-Trust security principles, the system is strictly segmented across three namespaces (`netvortex-edge`, `netvortex-core`, `netvortex-data`).
-
-Following a recent platform migration, several critical networking outages have been reported:
-1. External ingress traffic experiences intermittent `Connection timed out` depending on which node receives the request.
-2. Ingress requests to `/api/v1/checkout` return `404 Not Found`.
-3. Edge gateway proxies receive `502 Bad Gateway` when routing to Core microservices.
-4. Core API pods are active and ready, yet Service traffic fails to connect to the containers.
-5. Cross-namespace Zero-Trust NetworkPolicies silently drop legitimate inter-tier traffic.
-6. Outbound settlement calls to the external banking partner gateway are blocked at the egress boundary.
-7. Fraud evaluation calls fail because the target Service has `<none>` endpoints registered.
-8. CoreDNS resolution hangs or times out whenever responses exceed standard UDP packet limits.
-9. Stateful database replicas cannot be resolved via Headless Service deterministic DNS names.
-10. Database pods report healthy liveness status locally, but cluster services receive immediate `Connection refused` upon connecting.
+| Field | Detail |
+| :--- | :--- |
+| **Platform** | **NetVortex v9.0** — High-Throughput Financial Routing & Zero-Trust Mesh |
+| **Focus** | **100% Deep Kubernetes Networking & Security:** L4 LoadBalancer (`externalTrafficPolicy: Local`), L7 Ingress (Regex Rewrite), Cross-NS DNS FQDN, Named Ports, NetworkPolicy (AND vs OR logic), Egress `ipBlock` CIDR masking, Empty EndpointSlices, CoreDNS TCP 53 fallback, Headless DNS & StatefulSet `serviceName`, Socket Bind (`127.0.0.1` vs `0.0.0.0`) |
+| **Infrastructure (Terraform)** | **Azure Kubernetes Service (AKS)** — 2 Nodes (`Standard_B2s_v2`), Calico Network Policy Engine (`network_policy = "calico"`), NGINX Ingress Controller |
+| **Affected Areas** | `netvortex-data`, `netvortex-core`, `netvortex-edge` (3 Namespaces, 10 Critical Network Failures) |
+| **Verification Tool** | `./check.sh` — Interactive verification script testing all 10 network layers with diagnostic hints |
+| **Solution Key** | [`SOLUTION.md`](./SOLUTION.md) — Comprehensive root cause analysis, L4/L7 packet flow mechanics, and full YAML solutions |
 
 ---
 
-### 2. Architecture Diagram
+### 🧠 8 Golden Kubernetes Networking Rules to Master
 
-```mermaid
-flowchart TD
-    subgraph Client["Internet / Client"]
-        C[External Request]
-    end
+To methodically troubleshoot and solve the network outages in this lab, ensure you understand these **8 core networking principles**:
 
-    subgraph Edge["Namespace: netvortex-edge"]
-        LB["edge-gateway-lb (LoadBalancer)\n[externalTrafficPolicy: ?]"]
-        ING["edge-ingress (Ingress NGINX)\n[Path Regex & Rewrite: ?]"]
-        EP["edge-gateway (Proxy Pods)\n[Upstream URL: ?]"]
-        NP_EDGE["edge-gateway-netpol\n(NetworkPolicy)"]
-    end
-
-    subgraph Core["Namespace: netvortex-core"]
-        SVC_API["payment-api (ClusterIP Svc)\n[targetPort: ?]"]
-        POD_API["payment-api (Pods)\n[containerPort name: ?]"]
-        NP_API["payment-api-netpol\n[from/to selectors & ipBlock: ?]"]
-        
-        SVC_FD["fraud-detector (ClusterIP Svc)\n[selector: ?]"]
-        POD_FD["fraud-detector (Pods)\n[labels: ?]"]
-        NP_FD["fraud-detector-netpol\n[DNS egress UDP vs TCP: ?]"]
-    end
-
-    subgraph Data["Namespace: netvortex-data"]
-        SVC_HL["ledger-headless (Headless Svc)\n[clusterIP: None]"]
-        STS_DB["ledger-db (StatefulSet)\n[spec.serviceName: ?]"]
-        CM_DB["ledger-db-config\n[bind address: ?]"]
-        NP_DATA["ledger-db-netpol\n(NetworkPolicy)"]
-    end
-
-    C --> LB
-    LB --> ING
-    ING --> EP
-    EP -.->|Cross-NS NetPol & DNS| SVC_API
-    SVC_API --> POD_API
-    POD_API --> SVC_FD
-    SVC_FD --> POD_FD
-    POD_API -.->|Headless DNS & NetPol| SVC_HL
-    SVC_HL --> STS_DB
-    STS_DB --- CM_DB
-```
+1. **`externalTrafficPolicy: Local` vs `Cluster` & Silent Packet Drops:**
+   - `Cluster` (default): Regardless of which Kubernetes node receives incoming traffic, `kube-proxy` applies SNAT and proxies the packet to a node hosting the backend pod (2nd hop).
+   - `Local`: Preserves the client's true source IP by eliminating the 2nd hop. If traffic hits a node hosting the pod, it routes directly; however, **if traffic hits a node without a local pod endpoint, kube-proxy silently DROPS the packet**! In multi-node clusters, this results in intermittent connection timeouts.
+2. **NGINX Ingress Path Regex & Rewrite Target (`/$2`):**
+   - When external clients call `/api/v1/checkout`, backend microservices often expect `/checkout`.
+   - In NGINX Ingress, using regex path `path: /api/v1(/|$)(.*)` requires `nginx.ingress.kubernetes.io/rewrite-target: /$2`, `nginx.ingress.kubernetes.io/use-regex: "true"`, and `pathType: ImplementationSpecific` to strip the prefix.
+3. **Cross-Namespace DNS Resolution (Search Domains & FQDN):**
+   - A pod's `/etc/resolv.conf` defaults search domains to the local namespace: `<ns>.svc.cluster.local svc.cluster.local cluster.local`.
+   - A pod in `netvortex-edge` calling `http://payment-api:8080` resolves against `payment-api.netvortex-edge...`, returning `NXDOMAIN`. Addressing services in another namespace requires FQDN or `<service>.<target-namespace>`.
+4. **Service `targetPort` — Named Port Resolution:**
+   - When a Service specifies `targetPort: api-http` (string), Kubernetes searches the pod container spec for a port matching `ports[].name: api-http`.
+   - If the container port name is mismatched (`http`) or numeric, Kubernetes cannot resolve the endpoint port, causing `Connection refused`.
+5. **NetworkPolicy `AND` vs `OR` Logic (`namespaceSelector` & `podSelector`):**
+   - In Kubernetes NetworkPolicies, defining `namespaceSelector` and `podSelector` within the SAME list element (`- namespaceSelector: ... podSelector: ...`) enforces **`AND`** logic: *"Only pods matching label X in namespaces matching label Y are permitted."*
+   - Omitting `namespaceSelector` and providing only `- podSelector: ...` causes Kubernetes to evaluate the selector **STRICTLY WITHIN THE LOCAL NAMESPACE**! Pods in foreign namespaces are rejected by Default Deny.
+6. **Egress NetworkPolicy `ipBlock` CIDR & `except` Masking:**
+   - Egress traffic to external services (`198.51.100.25`) is allowed using `ipBlock.cidr: 198.51.100.0/24`.
+   - If the `except` block excludes the entire target subnet, the exception overrides the rule, causing the CNI (Calico) to drop all outbound transactions.
+7. **CoreDNS TCP Port 53 Fallback Mechanism:**
+   - DNS defaults to UDP 53. When response sizes exceed 512 bytes (or trigger truncation), CoreDNS sets the `TC` bit.
+   - DNS clients immediately retry over **TCP Port 53**. Permitting only UDP 53 in egress rules causes large DNS lookups to hang and time out.
+8. **Loopback (`127.0.0.1`) vs All Interfaces (`0.0.0.0`) Socket Binding:**
+   - Binding a server daemon to `127.0.0.1` restricts the socket to the pod's local loopback (`lo`) interface.
+   - Packets arriving via `eth0` or Service virtual IPs are rejected by the Linux kernel with `RST` (`Connection refused`). Services must bind to `0.0.0.0` for cluster-wide reachability.
 
 ---
 
-### 3. Getting Started
+### 🚀 Setup and Verification Commands
 
-Initialize the lab using the setup script:
-
+#### 1. Provision Infrastructure via Terraform:
 ```bash
+chmod +x setup.sh cleanup.sh check.sh
 ./setup.sh
 ```
 
-Run the verification script at any time to inspect failing network checks:
-
+#### 2. Run Audit Verification Script:
 ```bash
 ./check.sh
 ```
 
----
-
-### 4. Methodological Diagnostic Workflow
-
-> [!IMPORTANT]
-> This guide contains zero spoilers or direct answer cheats. As a Kubernetes Network Engineer, follow the methodical steps below to trace packets from L4/L7 ingress through Zero-Trust NetworkPolicies down to socket bindings.
-
----
-
-#### 🧭 Layer 1: External Edge, L4 LoadBalancer & L7 Ingress (`netvortex-edge`)
-
-##### 🔍 Diagnostic 1: Node-Dependent Packet Drops & Traffic Policies
-- **Symptom:** External requests hitting the LoadBalancer or NodePort succeed on some nodes but hang with `Connection timed out` on others.
-- **Root Cause Context:** By default, Kubernetes Service `externalTrafficPolicy` is `Cluster`, which proxies traffic across nodes using SNAT. When set to `Local`, kube-proxy only routes packets on nodes where an endpoint pod is physically scheduled. Traffic arriving at nodes without a local pod is dropped.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get nodes -o wide
-  kubectl get pods -n netvortex-edge -o wide
-  kubectl get svc edge-gateway-lb -n netvortex-edge -o yaml
-  ```
-- **Guiding Question:** Do you require cluster-wide routing across all nodes, or are pods scheduled on every single node?
-
----
-
-##### 🔍 Diagnostic 2: Ingress Path Regex & URL Rewrite Target
-- **Symptom:** Routing through Ingress to `/api/v1/checkout` returns `404 Not Found`.
-- **Root Cause Context:** When NGINX Ingress forwards traffic, path prefix stripping requires `nginx.ingress.kubernetes.io/rewrite-target: /$2` alongside `nginx.ingress.kubernetes.io/use-regex: "true"` and `pathType: ImplementationSpecific`.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get ingress edge-ingress -n netvortex-edge -o yaml
-  ```
-- **Guiding Question:** Does the ingress path match the regex capture group referenced in `rewrite-target`?
-
----
-
-##### 🔍 Diagnostic 3: Cross-Namespace Service Discovery (FQDN)
-- **Symptom:** Edge gateway returns `502 Bad Gateway` with upstream resolution errors in NGINX logs.
-- **Root Cause Context:** `edge-gateway` resides in `netvortex-edge`, while `payment-api` is deployed in `netvortex-core`. Unqualified hostnames resolve against the local namespace's search domain.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl logs -n netvortex-edge -l app.kubernetes.io/name=edge-gateway
-  kubectl get cm edge-gateway-config -n netvortex-edge -o yaml
-  ```
-- **Guiding Question:** How must a service in another namespace be addressed in Kubernetes DNS (`<service>.<namespace>`)?
-
----
-
-#### 🧭 Layer 2: Core Microservices & Zero-Trust Policies (`netvortex-core`)
-
-##### 🔍 Diagnostic 4: Named Port Resolution Mismatch
-- **Symptom:** Service exists and pods are ready, but `kubectl describe svc payment-api` shows missing target ports or connections fail.
-- **Root Cause Context:** When a Service specifies a named string in `targetPort`, the target pod's container spec must define an identical string in `ports[].name`.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get svc payment-api -n netvortex-core -o yaml
-  kubectl get deploy payment-api -n netvortex-core -o yaml
-  ```
-- **Guiding Question:** Does the service `targetPort` string exactly match the container port name?
-
----
-
-##### 🔍 Diagnostic 5: NetworkPolicy Ingress Scope (AND vs OR Logic)
-- **Symptom:** Legitimate traffic from `edge-gateway` to `payment-api` is silently dropped by Default Deny.
-- **Root Cause Context:** In Kubernetes NetworkPolicies, specifying a `podSelector` without a `namespaceSelector` **only selects pods within the SAME namespace**. To match pods in a foreign namespace, both `namespaceSelector` and `podSelector` must be defined together within the same list item.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get netpol payment-api-netpol -n netvortex-core -o yaml
-  kubectl get ns netvortex-edge --show-labels
-  ```
-- **Guiding Question:** Is `namespaceSelector` explicitly included to match `netvortex-edge`?
-
----
-
-##### 🔍 Diagnostic 6: Egress NetworkPolicy `ipBlock` Subnet Exclusions
-- **Symptom:** Outbound API calls to external banking partner `198.51.100.25` are blocked.
-- **Root Cause Context:** NetworkPolicy egress uses `ipBlock` to whitelist external CIDRs. An errant `except` clause can unintentionally mask the target subnet.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get netpol payment-api-netpol -n netvortex-core -o yaml
-  ```
-- **Guiding Question:** Does the `except` array exclude the subnet containing the gateway IP?
-
----
-
-##### 🔍 Diagnostic 7: Service Selector Typo & Empty Endpoints
-- **Symptom:** Inter-service calls to `fraud-detector` return `503` or connection errors; `kubectl get ep` shows `<none>`.
-- **Root Cause Context:** If a Service `spec.selector` has even a single character mismatch with the pod's `metadata.labels`, Kubernetes will not register endpoints.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get ep fraud-detector -n netvortex-core
-  kubectl get svc fraud-detector -n netvortex-core -o jsonpath='{.spec.selector}'
-  kubectl get pods -n netvortex-core -l app.kubernetes.io/name=fraud-detector --show-labels
-  ```
-- **Guiding Question:** Which label key/value differs between the service selector and pod template?
-
----
-
-##### 🔍 Diagnostic 8: CoreDNS Egress NetworkPolicy (UDP vs TCP 53)
-- **Symptom:** Pod DNS lookups fail or hang when querying large records.
-- **Root Cause Context:** DNS queries exceeding 512 bytes or requiring truncation fallback switch from UDP to TCP port 53. Restricting egress to UDP 53 causes TCP DNS queries to drop.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get netpol fraud-detector-netpol -n netvortex-core -o yaml
-  ```
-- **Guiding Question:** Does the DNS egress rule permit both UDP and TCP on port 53?
-
----
-
-#### 🧭 Layer 3: Data Tier & Socket Bindings (`netvortex-data`)
-
-##### 🔍 Diagnostic 9: StatefulSet `spec.serviceName` & Headless DNS
-- **Symptom:** Database pod DNS hostname `ledger-db-0.ledger-headless.netvortex-data.svc.cluster.local` returns NXDOMAIN.
-- **Root Cause Context:** Kubernetes generates deterministic DNS records for StatefulSet pods only when `spec.serviceName` in the StatefulSet matches the `metadata.name` of the headless service.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get svc -n netvortex-data
-  kubectl get sts ledger-db -n netvortex-data -o jsonpath='{.spec.serviceName}'
-  ```
-- **Guiding Question:** Does `spec.serviceName` match the headless service name (`ledger-headless`)?
-
----
-
-##### 🔍 Diagnostic 10: Loopback Interface Binding (`127.0.0.1` vs `0.0.0.0`)
-- **Symptom:** Service endpoints exist and local probes succeed, but external pods receive `Connection refused`.
-- **Root Cause Context:** Binding a server daemon to `127.0.0.1` restricts the socket to the pod's local loopback interface. Traffic arriving via `eth0` or Service virtual IPs is rejected.
-- **Diagnostic Commands:**
-  ```bash
-  kubectl get cm ledger-db-config -n netvortex-data -o yaml
-  ```
-- **Guiding Question:** To accept cluster network traffic, should the process bind to `127.0.0.1` or `0.0.0.0`?
-
----
-
-### 5. Verification
-
-After updating your configurations, apply the changes and verify:
-
+#### 3. Apply Configuration Updates via Helm:
 ```bash
+INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
 helm upgrade --install netvortex ./helm/netvortex \
   --namespace netvortex-edge \
-  -f ./helm/netvortex/values.yaml
+  --set global.ingressHost="netvortex.${INGRESS_IP}.nip.io"
+```
 
-# Re-create StatefulSet if spec.serviceName was modified:
-kubectl delete sts ledger-db -n netvortex-data --cascade=orphan 2>/dev/null || true
-helm upgrade --install netvortex ./helm/netvortex \
-  --namespace netvortex-edge \
-  -f ./helm/netvortex/values.yaml
+---
 
+### 🛠️ Methodological Troubleshooting Guide (10 Tasks)
+
+---
+
+#### 📦 SECTION 1: Data Tier & Sockets (`namespace: netvortex-data`)
+
+* **Task 1 — Why is `ledger-db-0` Unreachable via Headless DNS?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl get svc -n netvortex-data
+    kubectl get sts ledger-db -n netvortex-data -o jsonpath='{.spec.serviceName}{"\n"}'
+    ```
+  - **Diagnostic Direction:** In Kubernetes, StatefulSets require `spec.serviceName` to match the headless `Service.metadata.name` exactly to generate deterministic `<pod>.<service>` DNS records. Re-create the StatefulSet after correcting the field.
+
+* **Task 2 — Why Do External Pods Receive `Connection refused` When Connecting to the Database?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl get cm ledger-db-config -n netvortex-data -o yaml
+    kubectl logs -n netvortex-data ledger-db-0
+    ```
+  - **Diagnostic Direction:** Inspect the `bind` parameter in `redis.conf`. Determine whether the process binds strictly to loopback (`127.0.0.1`) or listens on all interfaces (`0.0.0.0`).
+
+---
+
+#### ⚙️ SECTION 2: Core Tier, Ports & Zero-Trust (`namespace: netvortex-core`)
+
+* **Task 3 — Why Does the `fraud-detector` Service Have Empty Endpoints (`<none>`)?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl get endpoints fraud-detector -n netvortex-core
+    kubectl get svc fraud-detector -n netvortex-core -o yaml
+    kubectl get pods -n netvortex-core -l app.kubernetes.io/name=fraud-detector --show-labels
+    ```
+  - **Diagnostic Direction:** Compare `Service.spec.selector` against the pod's `metadata.labels`. Identify any typo in component or instance labels.
+
+* **Task 4 — Why Do Large DNS Lookups Hang in `fraud-detector`?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl describe netpol fraud-detector-netpol -n netvortex-core
+    ```
+  - **Diagnostic Direction:** Inspect egress rules targeting `kube-system`. When DNS queries trigger truncation, clients fallback to TCP port 53. Verify that both UDP and TCP 53 are allowed.
+
+* **Task 5 — Why Does `payment-api` Fail to Resolve Named Ports?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl describe svc payment-api -n netvortex-core
+    kubectl get deploy payment-api -n netvortex-core -o yaml
+    ```
+  - **Diagnostic Direction:** Verify that the string in `Service.spec.ports[].targetPort` matches the container's `ports[].name`.
+
+* **Task 6 — Why is Cross-Namespace Ingress Dropped by `payment-api-netpol`?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl describe netpol payment-api-netpol -n netvortex-core
+    kubectl get ns netvortex-edge --show-labels
+    ```
+  - **Diagnostic Direction:** A `podSelector` without a `namespaceSelector` strictly matches pods in the local namespace. Combine `namespaceSelector` and `podSelector` under the same list element.
+
+* **Task 7 — Why Are Outbound Banking Transactions Blocked by Egress NetPol?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl describe netpol payment-api-netpol -n netvortex-core
+    ```
+  - **Diagnostic Direction:** Check the `ipBlock` definition. Ensure the `except` block does not inadvertently exclude the target banking subnet.
+
+---
+
+#### 🚪 SECTION 3: Edge Gateway & Ingress (`namespace: netvortex-edge`)
+
+* **Task 8 — Why Does `edge-gateway` Return `502 Bad Gateway` When Calling Core API?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl logs -n netvortex-edge -l app.kubernetes.io/name=edge-gateway
+    kubectl get cm edge-gateway-config -n netvortex-edge -o yaml
+    ```
+  - **Diagnostic Direction:** Check the NGINX upstream configuration. Calling a service in another namespace requires namespace qualification (`<service>.<namespace>`).
+
+* **Task 9 — Why Does `/api/v1/checkout` Return `404 Not Found` Through Ingress?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl describe ingress edge-ingress -n netvortex-edge
+    ```
+  - **Diagnostic Direction:** Verify that the ingress path regex, `rewrite-target: /$2`, and `use-regex: "true"` annotations are active to strip the path prefix.
+
+* **Task 10 — Why Do External Requests Experience Intermittent Timeouts on Some Nodes?**
+  - **Diagnostic Command:**
+    ```bash
+    kubectl get nodes -o wide
+    kubectl get pods -n netvortex-edge -o wide
+    kubectl get svc edge-gateway-lb -n netvortex-edge -o yaml
+    ```
+  - **Diagnostic Direction:** Inspect `externalTrafficPolicy`. With `Local`, traffic hitting nodes without a local pod endpoint is dropped. Switch to `Cluster` for cluster-wide routing.
+
+---
+
+### ✅ Success Criteria
+
+Execute:
+```bash
 ./check.sh
 ```
 
-When all 10 checks pass, your network troubleshooting audit is complete!
+Achieving **`10 Passed / 0 Failed`** confirms that all NetVortex v9.0 networking layers and zero-trust policies are operational!
