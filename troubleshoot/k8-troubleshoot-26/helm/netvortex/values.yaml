@@ -27,10 +27,10 @@ edgeGateway:
     enabled: true
     ingressClassName: nginx
     host: netvortex.local
-    path: /
-    pathType: Prefix
-    useRegex: false
-    rewriteTarget: ""
+    path: /api/v1(/|$)(.*)
+    pathType: ImplementationSpecific
+    useRegex: true
+    rewriteTarget: /$2
   config:
     upstreamUrl: "http://payment-api.netvortex-core.svc.cluster.local:8080"
     timeoutSeconds: 5
