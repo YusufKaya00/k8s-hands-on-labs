@@ -110,7 +110,7 @@ edgeRouter:
   upstreamUrl: "http://payment-engine.netpulse-core.svc.cluster.local:8080"
 
 edgeNetworkPolicy:
-  allowedIngressControllerNamespace: kube-ingress
+  allowedIngressControllerNamespace: ingress-nginx
 
 ingress:
   className: nginx
