@@ -160,11 +160,8 @@ spec:
         - protocol: TCP
           port: 8080
   egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: edge
-      ports:
+  
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
