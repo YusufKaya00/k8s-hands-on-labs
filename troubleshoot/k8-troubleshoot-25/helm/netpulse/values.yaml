@@ -28,7 +28,7 @@ tokenSigner:
   port: 9000
 
 dataNetworkPolicy:
-  allowedNamespaceTier: netpulse-core
+  allowedNamespaceTier: core
   allowedRedisPort: 6379
   allowedSignerPort: 9000
 
