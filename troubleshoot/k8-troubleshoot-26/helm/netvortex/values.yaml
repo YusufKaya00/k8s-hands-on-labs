@@ -21,7 +21,7 @@ edgeGateway:
     type: LoadBalancer
     port: 80
     targetPort: 80
-    externalTrafficPolicy: cluster
+    externalTrafficPolicy: Cluster
     nodePort: 30080
   ingress:
     enabled: true
