@@ -65,8 +65,7 @@ paymentApi:
       enabled: true
       targetIp: "198.51.100.25"
       cidr: "198.51.100.25/32"
-      except:
-        - []
+      except: []
       port: 8443
   resources:
     limits:
