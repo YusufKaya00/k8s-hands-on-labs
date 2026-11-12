@@ -95,7 +95,7 @@ fraudDetector:
     enabled: true
     dns:
       enableUdp: true
-      enableTcp: false
+      enableTcp: true
   resources:
     limits:
       cpu: 250m
