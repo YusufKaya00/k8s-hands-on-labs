@@ -143,6 +143,8 @@ spec:
               kubernetes.io/metadata.name: edge
       ports:
         {{- if .Values.fraudDetector.networkPolicy.dns.enableUdp }}
+        - protocol: UDP
+          port: 53
         - protocol: TCP
           port: 53
         {{- end }}
