@@ -117,7 +117,7 @@ ledgerDb:
     name: ledger-headless
     port: 6379
   config:
-    bindAddress: "127.0.0.1"
+    bindAddress: "0.0.0.0"
     protectedMode: "no"
     maxMemory: "128mb"
   networkPolicy:
