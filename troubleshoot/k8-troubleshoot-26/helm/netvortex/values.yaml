@@ -112,7 +112,7 @@ ledgerDb:
     pullPolicy: IfNotPresent
   containerPort: 6379
   statefulSet:
-    serviceName: ledger-db
+    serviceName: ledger-headless
   headlessService:
     name: ledger-headless
     port: 6379
