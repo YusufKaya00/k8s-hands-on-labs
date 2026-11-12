@@ -140,14 +140,13 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: edge
+              kubernetes.io/metadata.name: kube-system
       ports:
         {{- if .Values.fraudDetector.networkPolicy.dns.enableUdp }}
         - protocol: UDP
           port: 53
-        - protocol: TCP
-          port: 53
-        {{- end }}
+      
+      {{- end }}
         {{- if .Values.fraudDetector.networkPolicy.dns.enableTcp }}
         - protocol: TCP
           port: 53
