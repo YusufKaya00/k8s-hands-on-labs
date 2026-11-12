@@ -1,0 +1,131 @@
+global:
+  domain: netvortex.local
+  environment: production
+  networkMesh:
+    mtls: true
+    tracing: enabled
+
+namespaces:
+  edge: netvortex-edge
+  core: netvortex-core
+  data: netvortex-data
+
+edgeGateway:
+  replicaCount: 2
+  image:
+    repository: nginx
+    tag: 1.25-alpine
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 80
+    targetPort: 80
+    externalTrafficPolicy: Local
+    nodePort: 30080
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    host: netvortex.local
+    path: /api/v1
+    pathType: Prefix
+    useRegex: false
+    rewriteTarget: ""
+  config:
+    upstreamUrl: "http://payment-api:8080"
+    timeoutSeconds: 5
+    clientMaxBodySize: "10m"
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+paymentApi:
+  replicaCount: 2
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  containerPortName: http
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: api-http
+  networkPolicy:
+    enabled: true
+    allowEdgeGateway:
+      matchNamespace: false
+      namespaceName: netvortex-edge
+      podLabel: edge-gateway
+    egressBank:
+      enabled: true
+      targetIp: "198.51.100.25"
+      cidr: "198.51.100.0/24"
+      except:
+        - "198.51.100.0/24"
+      port: 8443
+  resources:
+    limits:
+      cpu: 300m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+fraudDetector:
+  replicaCount: 2
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8081
+  labels:
+    component: engine
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+    selector:
+      component: engine-v2
+  networkPolicy:
+    enabled: true
+    dns:
+      enableUdp: true
+      enableTcp: false
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+ledgerDb:
+  replicas: 1
+  image:
+    repository: redis
+    tag: 7.2-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 6379
+  statefulSet:
+    serviceName: ledger-db
+  headlessService:
+    name: ledger-headless
+    port: 6379
+  config:
+    bindAddress: "127.0.0.1"
+    protectedMode: "no"
+    maxMemory: "128mb"
+  networkPolicy:
+    enabled: true
+    allowCoreOnly: true
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
