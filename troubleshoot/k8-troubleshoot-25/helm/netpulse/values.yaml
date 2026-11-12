@@ -93,7 +93,7 @@ batch:
 
 scaling:
   hpa:
-    targetDeploymentName: payment-api-v1
+    targetDeploymentName: payment-engine
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilizationPercentage: 75
