@@ -167,7 +167,7 @@ spec:
         - protocol: TCP
           port: 8080
     
-      ports:
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
