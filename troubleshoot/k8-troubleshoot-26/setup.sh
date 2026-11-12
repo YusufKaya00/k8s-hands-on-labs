@@ -1,63 +1,70 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TF_DIR="${SCRIPT_DIR}/terraform"
 HELM_DIR="${SCRIPT_DIR}/helm/netvortex"
 
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-echo -e "${CYAN}======================================================================${NC}"
-echo -e "${CYAN}   🚀 NetVortex v9.0 — Setup & Initial Deployment                     ${NC}"
-echo -e "${CYAN}======================================================================${NC}"
-echo ""
-
-# Step 1: Validate Kubernetes connectivity
-echo -e "${CYAN}[1/4] Checking Kubernetes cluster connectivity...${NC}"
-if ! kubectl cluster-info > /dev/null 2>&1; then
-  echo -e "${RED}[ERROR] Cannot connect to a Kubernetes cluster. Please start Minikube, Kind, or configure your kubeconfig.${NC}"
-  exit 1
+SKIP_TERRAFORM=false
+if [[ "$1" == "--skip-terraform" ]]; then
+  SKIP_TERRAFORM=true
 fi
-echo -e "  ${GREEN}✓${NC} Kubernetes cluster is reachable."
 
-# Step 2: Minikube Ingress Addon check
-if kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null | grep -qi "minikube"; then
-  echo -e "${CYAN}[2/4] Minikube environment detected. Verifying ingress addon...${NC}"
-  minikube addons enable ingress 2>/dev/null || true
+if [[ "${SKIP_TERRAFORM}" == "false" ]]; then
+  echo "========================================================"
+  echo " [1/5] Provisioning AKS Cluster via Terraform..."
+  echo "========================================================"
+  terraform -chdir="${TF_DIR}" init
+  terraform -chdir="${TF_DIR}" apply -auto-approve
+
+  RG_NAME=$(terraform -chdir="${TF_DIR}" output -raw resource_group_name)
+  CLUSTER_NAME=$(terraform -chdir="${TF_DIR}" output -raw aks_cluster_name)
+
+  echo "========================================================"
+  echo " [2/5] Fetching AKS Credentials..."
+  echo "========================================================"
+  az aks get-credentials --resource-group "${RG_NAME}" --name "${CLUSTER_NAME}" --overwrite-existing
 else
-  echo -e "${CYAN}[2/4] Standard cluster detected. Checking ingress controllers...${NC}"
+  echo "========================================================"
+  echo " [1/2] Skipping Terraform (--skip-terraform detected)..."
+  echo "========================================================"
 fi
 
-# Step 3: Deploy Helm Chart
-echo -e "${CYAN}[3/4] Deploying NetVortex v9.0 Helm chart (initial faulty state)...${NC}"
+echo "========================================================"
+echo " [3/5] Waiting for NGINX Ingress External IP..."
+echo "========================================================"
+INGRESS_IP=""
+for i in {1..30}; do
+  INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+  if [[ -n "${INGRESS_IP}" ]]; then
+    break
+  fi
+  echo "Waiting for LoadBalancer IP... (${i}/30)"
+  sleep 10
+done
+
+if [[ -z "${INGRESS_IP}" ]]; then
+  echo "WARNING: LoadBalancer IP not yet assigned, using 127.0.0.1.nip.io fallback."
+  INGRESS_HOST="netvortex.127.0.0.1.nip.io"
+else
+  INGRESS_HOST="netvortex.${INGRESS_IP}.nip.io"
+fi
+
+echo "========================================================"
+echo " [4/5] Deploying NetVortex v9.0 via Helm..."
+echo "========================================================"
 helm upgrade --install netvortex "${HELM_DIR}" \
   --namespace netvortex-edge \
   --create-namespace \
-  --wait \
-  --timeout 120s || true
+  --set global.ingressHost="${INGRESS_HOST}"
 
-# Step 4: Final status
-echo -e "${CYAN}[4/4] Verifying deployed resources across namespaces...${NC}"
-echo ""
-echo -e "${YELLOW}--- Namespace: netvortex-edge ---${NC}"
-kubectl get all,netpol,ingress -n netvortex-edge
-echo ""
-echo -e "${YELLOW}--- Namespace: netvortex-core ---${NC}"
-kubectl get all,netpol -n netvortex-core
-echo ""
-echo -e "${YELLOW}--- Namespace: netvortex-data ---${NC}"
-kubectl get all,netpol -n netvortex-data
-echo ""
+echo "Waiting 15 seconds for pods and network controllers to initialize..."
+sleep 15
 
-echo -e "${GREEN}======================================================================${NC}"
-echo -e "${GREEN}   🎯 NetVortex v9.0 has been deployed in its initial state!          ${NC}"
-echo -e "${GREEN}======================================================================${NC}"
-echo -e "Next steps:"
-echo -e "  1. Run ${CYAN}./check.sh${NC} to observe the initial failing networking tests."
-echo -e "  2. Read ${CYAN}README.md${NC} for diagnostic guidance (Zero-spoiler methodology)."
-echo -e "  3. Fix the networking misconfigurations using kubectl / helm upgrade."
-echo -e "  4. Re-run ${CYAN}./check.sh${NC} until all 10 checks pass!"
+echo "========================================================"
+echo " [5/5] NetVortex v9.0 Initial Status"
+echo "========================================================"
+echo "Target Ingress URL: http://${INGRESS_HOST}/api/v1/checkout"
 echo ""
+echo "Run './check.sh' at any time to test your progress!"
+echo "Read 'README.md' for step-by-step guidance."

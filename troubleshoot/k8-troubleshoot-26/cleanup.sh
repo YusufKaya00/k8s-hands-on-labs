@@ -1,23 +1,18 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-NC='\033[0m'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TF_DIR="${SCRIPT_DIR}/terraform"
 
-echo -e "${CYAN}======================================================================${NC}"
-echo -e "${CYAN}   🧹 NetVortex v9.0 — Teardown & Resource Cleanup                    ${NC}"
-echo -e "${CYAN}======================================================================${NC}"
-echo ""
-
-echo -e "${CYAN}[1/3] Uninstalling Helm release 'netvortex'...${NC}"
+echo "========================================================"
+echo " Uninstalling NetVortex v9.0 Helm Release..."
+echo "========================================================"
 helm uninstall netvortex -n netvortex-edge 2>/dev/null || true
+kubectl delete ns netvortex-edge netvortex-core netvortex-data --ignore-not-found=true || true
 
-echo -e "${CYAN}[2/3] Deleting namespaces (netvortex-edge, netvortex-core, netvortex-data)...${NC}"
-kubectl delete namespace netvortex-edge netvortex-core netvortex-data --ignore-not-found=true --timeout=60s || true
+echo "========================================================"
+echo " Destroying AKS Cluster via Terraform..."
+echo "========================================================"
+terraform -chdir="${TF_DIR}" destroy -auto-approve
 
-echo -e "${CYAN}[3/3] Cleaning orphaned resources...${NC}"
-kubectl delete pvc -l app.kubernetes.io/name=netvortex -A --ignore-not-found=true 2>/dev/null || true
-
-echo ""
-echo -e "${GREEN}✓ All NetVortex resources have been cleanly removed.${NC}"
+echo "Cleanup completed successfully."
