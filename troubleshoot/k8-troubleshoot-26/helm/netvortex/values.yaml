@@ -59,7 +59,7 @@ paymentApi:
     enabled: true
     allowEdgeGateway:
       matchNamespace: true
-      namespaceName: core
+      namespaceName: edge
       podLabel: edge-gateway
     egressBank:
       enabled: true
