@@ -27,7 +27,7 @@ edgeGateway:
     enabled: true
     ingressClassName: nginx
     host: netvortex.local
-    path: /api/v1
+    path: /
     pathType: Prefix
     useRegex: false
     rewriteTarget: ""
