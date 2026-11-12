@@ -1,0 +1,131 @@
+global:
+  ingressHost: ""
+  domain: cloudapex.local
+  environment: production
+
+namespaces:
+  edge: cloudapex-edge
+  core: cloudapex-core
+  inventory: cloudapex-inventory
+
+orderGateway:
+  replicaCount: 2
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 8080
+    targetPort: 8080
+    healthProbePath: "/api/health"
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  host: cloudapex.local
+  ordersPath: /api/orders
+  ordersPathType: Prefix
+  inventoryPath: /api/inventory
+  inventoryPathType: Prefix
+  affinity:
+    enabled: true
+    cookieName: CLOUDAPEX_AFFINITY
+
+orderService:
+  replicaCount: 2
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    sessionAffinity: None
+  dnsConfig:
+    enabled: true
+    ndots: "2"
+  networkPolicy:
+    enabled: true
+    allowImds: true
+    imdsIp: "169.254.169.254/32"
+  resources:
+    limits:
+      cpu: 300m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+inventoryService:
+  replicaCount: 2
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8081
+  containerPortName: http
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: http
+  networkPolicy:
+    enabled: true
+    allowedNamespace: cloudapex-core
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+authService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8082
+  config:
+    bindAddress: "0.0.0.0"
+  service:
+    type: ClusterIP
+    port: 8082
+    targetPort: 8082
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+inventoryCache:
+  replicas: 1
+  image:
+    repository: redis
+    tag: 7.2-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 6379
+  statefulSet:
+    serviceName: cache-headless
+  headlessService:
+    name: cache-headless
+    port: 6379
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
