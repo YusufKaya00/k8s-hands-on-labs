@@ -107,7 +107,7 @@ edgeRouter:
   replicas: 1
   image: nginx:1.25-alpine
   port: 8080
-  upstreamUrl: "http://payment-engine:8080"
+  upstreamUrl: "http://payment-engine.netpulse-core.svc.cluster.local:8080"
 
 edgeNetworkPolicy:
   allowedIngressControllerNamespace: kube-ingress
