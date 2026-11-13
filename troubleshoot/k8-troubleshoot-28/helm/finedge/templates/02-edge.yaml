@@ -128,6 +128,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.proxyBodySize | quote }}
 {{- end }}
     nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.ingress.proxyReadTimeout | quote }}
+    nginx.ingress.kubernetes.io/proxy-next-upstream-tries: "1"
 spec:
   ingressClassName: {{ .Values.ingress.ingressClassName }}
   rules:
