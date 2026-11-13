@@ -173,7 +173,7 @@ spec:
     - Ingress
     - Egress
   ingress:
-    - from: []
+    - from: 
       ports:
         - protocol: TCP
           port: 8080
