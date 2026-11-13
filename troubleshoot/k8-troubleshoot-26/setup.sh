@@ -14,6 +14,7 @@ if [[ "${SKIP_TERRAFORM}" == "false" ]]; then
   echo "========================================================"
   echo " [1/5] Provisioning AKS Cluster via Terraform..."
   echo "========================================================"
+  helm repo update > /dev/null 2>&1 || true
   terraform -chdir="${TF_DIR}" init
   terraform -chdir="${TF_DIR}" apply -auto-approve
 
