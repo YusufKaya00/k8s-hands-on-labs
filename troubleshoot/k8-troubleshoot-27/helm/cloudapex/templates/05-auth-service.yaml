@@ -15,7 +15,17 @@ data:
     PORT = int(os.environ.get("PORT", "8082"))
     BIND_HOST = os.environ.get("BIND_ADDRESS", "0.0.0.0")
 
-    class AuthHandler(http.server.SimpleHTTPRequestHandler):
+    class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    class AuthHandler(http.server.BaseHTTPRequestHandler):
+        def address_string(self):
+            return self.client_address[0]
+
+        def log_message(self, format, *args):
+            pass
+
         def do_GET(self):
             if self.path == "/healthz":
                 self.send_response(200)
@@ -34,7 +44,7 @@ data:
                 self.wfile.write(b"NotFound\n")
 
     print(f"Auth Server binding to {BIND_HOST}:{PORT}")
-    with socketserver.TCPServer((BIND_HOST, PORT), AuthHandler) as httpd:
+    with ThreadedTCPServer((BIND_HOST, PORT), AuthHandler) as httpd:
         httpd.serve_forever()
 ---
 apiVersion: apps/v1
