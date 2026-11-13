@@ -116,7 +116,7 @@ auditLogger:
     enabled: true
     vaultEgressTo:
       - ipBlock:
-          cidr: 10.0.0.0/16
+          cidr: 10.224.0.0/16
   resources:
     limits:
       cpu: 150m
