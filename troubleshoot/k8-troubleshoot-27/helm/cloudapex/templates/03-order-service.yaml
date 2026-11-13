@@ -16,7 +16,17 @@ data:
 
     PORT = int(os.environ.get("PORT", "8080"))
 
-    class OrderHandler(http.server.SimpleHTTPRequestHandler):
+    class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    class OrderHandler(http.server.BaseHTTPRequestHandler):
+        def address_string(self):
+            return self.client_address[0]
+
+        def log_message(self, format, *args):
+            pass
+
         def do_GET(self):
             client_ip = self.headers.get("X-Forwarded-For", self.client_address[0])
             pod_name = os.environ.get("HOSTNAME", "unknown-pod")
@@ -78,7 +88,7 @@ data:
                 self.end_headers()
                 self.wfile.write(b"NotFound")
 
-    with socketserver.TCPServer(("0.0.0.0", PORT), OrderHandler) as httpd:
+    with ThreadedTCPServer(("0.0.0.0", PORT), OrderHandler) as httpd:
         print(f"Order Service serving on 0.0.0.0:{PORT}")
         httpd.serve_forever()
 ---
