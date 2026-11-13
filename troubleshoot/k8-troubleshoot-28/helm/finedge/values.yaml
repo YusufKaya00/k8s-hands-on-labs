@@ -86,7 +86,7 @@ webhookDispatcher:
     repository: python
     tag: 3.11-alpine
     pullPolicy: IfNotPresent
-  hostNetwork: true
+  hostNetwork: false
   dnsPolicy: ClusterFirst
   containerPort: 18090
   service:
