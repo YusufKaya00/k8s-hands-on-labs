@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-gateway
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app.kubernetes.io/name: webhook-gateway
+spec:
+  replicas: {{ .Values.webhookGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: webhook-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: "{{ .Values.webhookGateway.image.repository }}:{{ .Values.webhookGateway.image.tag }}"
+          imagePullPolicy: {{ .Values.webhookGateway.image.pullPolicy }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import http.server, socketserver, json, socket
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class GatewayHandler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def send_json(self, code, payload):
+                      body = json.dumps(payload).encode()
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+                  def do_GET(self):
+                      if self.path == "/webhook/health":
+                          self.send_json(200, {
+                              "gateway": "webhook-gateway",
+                              "status": "online",
+                              "pod": socket.gethostname(),
+                              "client_ip": self.client_address[0]
+                          })
+                      else:
+                          self.send_json(404, {"error": "not found", "path": self.path})
+
+                  def do_POST(self):
+                      length = int(self.headers.get("Content-Length", 0))
+                      if length > 0:
+                          _ = self.rfile.read(length)
+                      self.send_json(200, {"received": True, "bytes": length})
+
+              with ThreadedTCPServer(("0.0.0.0", 8080), GatewayHandler) as httpd:
+                  print("Webhook Gateway listening on 0.0.0.0:8080", flush=True)
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.webhookGateway.service.targetPort }}
+          readinessProbe:
+            httpGet:
+              path: /webhook/health
+              port: {{ .Values.webhookGateway.service.targetPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /webhook/health
+              port: {{ .Values.webhookGateway.service.targetPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+{{- toYaml .Values.webhookGateway.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-gateway-lb
+  namespace: {{ .Values.namespaces.edge }}
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/webhook/health"
+spec:
+  type: {{ .Values.webhookGateway.service.type }}
+{{- if .Values.webhookGateway.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+{{- toYaml .Values.webhookGateway.service.loadBalancerSourceRanges | nindent 4 }}
+{{- end }}
+  selector:
+    app.kubernetes.io/name: webhook-gateway
+  ports:
+    - name: http
+      port: {{ .Values.webhookGateway.service.port }}
+      targetPort: {{ .Values.webhookGateway.service.targetPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-api
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  type: ExternalName
+  externalName: payment-api.{{ .Values.namespaces.core }}.svc.cluster.local
+  ports:
+    - name: http
+      port: {{ .Values.paymentApi.service.port }}
+---
+{{- $ingressHost := .Values.global.ingressHost | default .Values.ingress.host }}
+{{- $adminHost := $ingressHost | replace "finedge." "admin." }}
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: finedge-ingress
+  namespace: {{ .Values.namespaces.edge }}
+  annotations:
+{{- if .Values.ingress.proxyBodySize }}
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.proxyBodySize | quote }}
+{{- end }}
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.ingress.proxyReadTimeout | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ $ingressHost | quote }}
+      http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: payment-api
+                port:
+                  number: {{ .Values.paymentApi.service.port }}
+{{- end }}
+---
+{{- if .Values.adminIngress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: finedge-admin-ingress
+  namespace: {{ .Values.namespaces.edge }}
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: {{ .Values.adminIngress.backendProtocol | quote }}
+spec:
+  ingressClassName: {{ .Values.adminIngress.ingressClassName }}
+  rules:
+    - host: {{ $adminHost | quote }}
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: payment-api
+                port:
+                  number: {{ .Values.paymentApi.service.port }}
+{{- end }}
