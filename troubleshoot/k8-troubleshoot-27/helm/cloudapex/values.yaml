@@ -54,7 +54,7 @@ orderService:
     sessionAffinityTimeout: 10800
   dnsConfig:
     enabled: true
-    ndots: "5"
+    ndots: "2"
   networkPolicy:
     enabled: true
     allowImds: true
