@@ -197,7 +197,7 @@ ledgerDb:
     serviceName: ledger-headless
   headlessService:
     name: ledger-headless
-    clusterIP: ""
+    clusterIP: "None"
     port: 6379
   resources:
     limits:
