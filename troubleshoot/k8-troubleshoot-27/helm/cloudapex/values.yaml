@@ -81,7 +81,7 @@ inventoryService:
     targetPort: rpc-http
   networkPolicy:
     enabled: true
-    allowedNamespace: cloudapex-orders
+    allowedNamespace: cloudapex-core
   resources:
     limits:
       cpu: 250m
