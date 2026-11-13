@@ -33,7 +33,7 @@ ingress:
   ingressClassName: nginx
   host: finedge.local
   proxyBodySize: "10m"
-  proxyReadTimeout: "3"
+  proxyReadTimeout: "10"
 
 adminIngress:
   enabled: true
