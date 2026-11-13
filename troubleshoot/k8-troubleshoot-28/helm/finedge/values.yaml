@@ -87,7 +87,7 @@ webhookDispatcher:
     tag: 3.11-alpine
     pullPolicy: IfNotPresent
   hostNetwork: true
-  dnsPolicy: Default
+  dnsPolicy: ClusterFirst
   containerPort: 18090
   service:
     type: ClusterIP
