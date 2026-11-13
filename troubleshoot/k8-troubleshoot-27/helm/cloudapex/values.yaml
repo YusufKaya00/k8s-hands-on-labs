@@ -18,7 +18,7 @@ orderGateway:
     type: LoadBalancer
     port: 8080
     targetPort: 8080
-    healthProbePath: "api/health"
+    healthProbePath: "/api/health"
   resources:
     limits:
       cpu: 250m
