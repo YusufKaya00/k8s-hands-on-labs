@@ -57,7 +57,7 @@ orderService:
     ndots: "5"
   networkPolicy:
     enabled: true
-    allowImds: false
+    allowImds: true
     imdsIp: "169.254.169.254/32"
   resources:
     limits:
