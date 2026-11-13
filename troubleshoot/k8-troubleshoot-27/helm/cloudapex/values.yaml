@@ -119,7 +119,7 @@ inventoryCache:
     pullPolicy: IfNotPresent
   containerPort: 6379
   statefulSet:
-    serviceName: cache-db
+    serviceName: cache-headless
   headlessService:
     name: cache-headless
     port: 6379
