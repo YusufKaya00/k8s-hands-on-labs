@@ -138,7 +138,7 @@ ledgerApi:
     targetPort: 8082
   networkPolicy:
     enabled: true
-    allowedPort: 80
+    allowedPort: 8082
   resources:
     limits:
       cpu: 200m
