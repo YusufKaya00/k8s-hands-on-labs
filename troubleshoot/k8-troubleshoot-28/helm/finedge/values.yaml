@@ -158,7 +158,7 @@ settlementWorker:
     type: ClusterIP
     port: 8084
     targetPort: 8084
-    protocol: UDP
+    protocol: TCP
   resources:
     limits:
       cpu: 150m
