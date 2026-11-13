@@ -139,7 +139,7 @@ spec:
               kubernetes.io/metadata.name: {{ .Values.inventoryService.networkPolicy.allowedNamespace }}
       ports:
         - protocol: TCP
-          port: 8082
+          port: 8081
 {{- end }}
 ---
 apiVersion: v1
