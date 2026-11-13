@@ -1,0 +1,580 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: payment-api
+spec:
+  replicas: {{ .Values.paymentApi.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: payment-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: payment-api
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - fraud-service
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: api
+          image: "{{ .Values.paymentApi.image.repository }}:{{ .Values.paymentApi.image.tag }}"
+          imagePullPolicy: {{ .Values.paymentApi.image.pullPolicy }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: RECONCILE_DURATION
+              value: {{ .Values.paymentApi.reconcileDurationSec | quote }}
+            - name: CORE_NS
+              value: {{ .Values.namespaces.core | quote }}
+            - name: LEDGER_NS
+              value: {{ .Values.namespaces.ledger | quote }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import http.server, socketserver, urllib.request, urllib.error, json, os, socket, time
+
+              NODE_NAME = os.environ.get("NODE_NAME", "unknown")
+              RECONCILE_DURATION = float(os.environ.get("RECONCILE_DURATION", "4"))
+              CORE_NS = os.environ.get("CORE_NS", "finedge-core")
+              LEDGER_NS = os.environ.get("LEDGER_NS", "finedge-ledger")
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              def fetch_json(url, timeout=2.5):
+                  try:
+                      req = urllib.request.Request(url)
+                      with urllib.request.urlopen(req, timeout=timeout) as resp:
+                          return resp.status, json.loads(resp.read().decode())
+                  except urllib.error.HTTPError as e:
+                      raw = e.read().decode()
+                      try:
+                          return e.code, json.loads(raw)
+                      except Exception:
+                          return e.code, {"error": raw}
+                  except Exception as e:
+                      msg = str(e)
+                      code = 504 if "timed out" in msg.lower() else 502
+                      return code, {"error": msg, "target": url}
+
+              class PaymentHandler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def send_json(self, code, payload):
+                      body = json.dumps(payload).encode()
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          print(f"WARNING: Client closed connection early on {self.path} (BrokenPipeError)", flush=True)
+
+                  def do_POST(self):
+                      if self.path == "/api/v1/settlements/batch":
+                          length = int(self.headers.get("Content-Length", 0))
+                          remaining = length
+                          while remaining > 0:
+                              chunk = self.rfile.read(min(65536, remaining))
+                              if not chunk:
+                                  break
+                              remaining -= len(chunk)
+                          print(f"Accepted settlement batch payload: {length} bytes", flush=True)
+                          self.send_json(200, {
+                              "status": "accepted",
+                              "payload_bytes": length,
+                              "pod": socket.gethostname()
+                          })
+                      else:
+                          self.send_json(404, {"error": "not found"})
+
+                  def do_GET(self):
+                      if self.path == "/api/v1/health":
+                          self.send_json(200, {
+                              "service": "payment-api",
+                              "status": "healthy",
+                              "node": NODE_NAME,
+                              "pod": socket.gethostname()
+                          })
+                      elif self.path == "/admin/status":
+                          self.send_json(200, {
+                              "service": "payment-api",
+                              "admin": "online",
+                              "protocol": "http",
+                              "pod": socket.gethostname()
+                          })
+                      elif self.path == "/api/v1/reconcile":
+                          print(f"Starting reconciliation job ({RECONCILE_DURATION}s)...", flush=True)
+                          time.sleep(RECONCILE_DURATION)
+                          print("Reconciliation computation finished, sending HTTP 200", flush=True)
+                          self.send_json(200, {
+                              "status": "reconciled",
+                              "duration_sec": RECONCILE_DURATION,
+                              "pod": socket.gethostname()
+                          })
+                      elif self.path == "/api/v1/pay":
+                          code, data = fetch_json(f"http://fraud-service.{CORE_NS}.svc.cluster.local:8083/verify")
+                          if code == 200:
+                              self.send_json(200, {
+                                  "payment": "approved",
+                                  "caller_node": NODE_NAME,
+                                  "fraud_service": data
+                              })
+                          else:
+                              self.send_json(code, {
+                                  "payment": "failed",
+                                  "caller_node": NODE_NAME,
+                                  "upstream": "fraud-service:8083",
+                                  "detail": data
+                              })
+                      elif self.path == "/api/v1/dispatcher":
+                          code, data = fetch_json(f"http://webhook-dispatcher.{CORE_NS}.svc.cluster.local:18090/dispatch/check", timeout=3.0)
+                          out_code = 200 if data.get("dns_ok") else 502
+                          self.send_json(out_code, data)
+                      elif self.path == "/api/v1/audit":
+                          code, data = fetch_json(f"http://audit-logger.{CORE_NS}.svc.cluster.local:18091/audit/check", timeout=3.5)
+                          self.send_json(code, data)
+                      elif self.path == "/api/v1/ledger":
+                          code, data = fetch_json(f"http://ledger-api.{LEDGER_NS}.svc.cluster.local:80/ledger/balance")
+                          self.send_json(code, {
+                              "ledger_call": "ok" if code == 200 else "failed",
+                              "upstream": f"ledger-api.{LEDGER_NS}:80",
+                              "detail": data
+                          })
+                      elif self.path == "/api/v1/settle":
+                          code, data = fetch_json(f"http://settlement-worker.{LEDGER_NS}.svc.cluster.local:8084/settle")
+                          self.send_json(code, {
+                              "settlement_call": "ok" if code == 200 else "failed",
+                              "upstream": f"settlement-worker.{LEDGER_NS}:8084",
+                              "detail": data
+                          })
+                      elif self.path == "/api/v1/ledger/db-dns":
+                          target = f"ledger-db-0.ledger-headless.{LEDGER_NS}.svc.cluster.local"
+                          try:
+                              addrs = socket.getaddrinfo(target, 6379, socket.AF_INET, socket.SOCK_STREAM)
+                              resolved_ip = addrs[0][4][0]
+                              with socket.create_connection((target, 6379), timeout=2.0):
+                                  pass
+                              self.send_json(200, {
+                                  "db_dns": "ok",
+                                  "target": target,
+                                  "resolved_ip": resolved_ip
+                              })
+                          except Exception as e:
+                              self.send_json(502, {
+                                  "db_dns": "failed",
+                                  "target": target,
+                                  "error": str(e)
+                              })
+                      else:
+                          self.send_json(404, {"error": "not found", "path": self.path})
+
+              with ThreadedTCPServer(("0.0.0.0", 8080), PaymentHandler) as httpd:
+                  print(f"payment-api listening on 0.0.0.0:8080 (node={NODE_NAME})", flush=True)
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.paymentApi.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: {{ .Values.paymentApi.containerPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: {{ .Values.paymentApi.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+{{- toYaml .Values.paymentApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-api
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  type: {{ .Values.paymentApi.service.type }}
+  selector:
+    app.kubernetes.io/name: payment-api
+  ports:
+    - name: http
+      port: {{ .Values.paymentApi.service.port }}
+      targetPort: {{ .Values.paymentApi.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-service
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: fraud-service
+spec:
+  replicas: {{ .Values.fraudService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fraud-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fraud-service
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/name
+                    operator: In
+                    values:
+                      - payment-api
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: fraud
+          image: "{{ .Values.fraudService.image.repository }}:{{ .Values.fraudService.image.tag }}"
+          imagePullPolicy: {{ .Values.fraudService.image.pullPolicy }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import http.server, socketserver, json, os, socket
+
+              NODE_NAME = os.environ.get("NODE_NAME", "unknown")
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class FraudHandler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def do_GET(self):
+                      body = json.dumps({
+                          "fraud_check": "PASS",
+                          "risk_score": 0.02,
+                          "node": NODE_NAME,
+                          "pod": socket.gethostname()
+                      }).encode()
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", 8083), FraudHandler) as httpd:
+                  print(f"fraud-service listening on 0.0.0.0:8083 (node={NODE_NAME})", flush=True)
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.fraudService.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /verify
+              port: {{ .Values.fraudService.containerPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+{{- toYaml .Values.fraudService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-service
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  type: {{ .Values.fraudService.service.type }}
+  internalTrafficPolicy: {{ .Values.fraudService.service.internalTrafficPolicy }}
+  selector:
+    app.kubernetes.io/name: fraud-service
+  ports:
+    - name: http
+      port: {{ .Values.fraudService.service.port }}
+      targetPort: {{ .Values.fraudService.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhook-dispatcher
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: webhook-dispatcher
+spec:
+  replicas: {{ .Values.webhookDispatcher.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: webhook-dispatcher
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: webhook-dispatcher
+    spec:
+      hostNetwork: {{ .Values.webhookDispatcher.hostNetwork }}
+      dnsPolicy: {{ .Values.webhookDispatcher.dnsPolicy }}
+      containers:
+        - name: dispatcher
+          image: "{{ .Values.webhookDispatcher.image.repository }}:{{ .Values.webhookDispatcher.image.tag }}"
+          imagePullPolicy: {{ .Values.webhookDispatcher.image.pullPolicy }}
+          env:
+            - name: CORE_NS
+              value: {{ .Values.namespaces.core | quote }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import http.server, socketserver, urllib.request, json, os
+
+              CORE_NS = os.environ.get("CORE_NS", "finedge-core")
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              def get_nameservers():
+                  try:
+                      with open("/etc/resolv.conf") as f:
+                          return [line.strip() for line in f if line.startswith("nameserver")]
+                  except Exception as e:
+                      return [str(e)]
+
+              class DispatcherHandler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def send_json(self, code, payload):
+                      body = json.dumps(payload).encode()
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_json(200, {"status": "alive"})
+                      elif self.path == "/dispatch/check":
+                          target = f"http://payment-api.{CORE_NS}.svc.cluster.local:8080/api/v1/health"
+                          ns_list = get_nameservers()
+                          try:
+                              with urllib.request.urlopen(target, timeout=2.0) as resp:
+                                  self.send_json(200, {
+                                      "dns_ok": True,
+                                      "target": target,
+                                      "nameservers": ns_list,
+                                      "upstream_status": resp.status
+                                  })
+                          except Exception as e:
+                              print(f"Dispatcher DNS/connect check failed: {e}", flush=True)
+                              self.send_json(200, {
+                                  "dns_ok": False,
+                                  "target": target,
+                                  "nameservers": ns_list,
+                                  "error": str(e)
+                              })
+                      else:
+                          self.send_json(404, {"error": "not found"})
+
+              with ThreadedTCPServer(("0.0.0.0", 18090), DispatcherHandler) as httpd:
+                  print("webhook-dispatcher listening on 0.0.0.0:18090", flush=True)
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.webhookDispatcher.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.webhookDispatcher.containerPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+{{- toYaml .Values.webhookDispatcher.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-dispatcher
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  type: {{ .Values.webhookDispatcher.service.type }}
+  selector:
+    app.kubernetes.io/name: webhook-dispatcher
+  ports:
+    - name: http
+      port: {{ .Values.webhookDispatcher.service.port }}
+      targetPort: {{ .Values.webhookDispatcher.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-logger
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/name: audit-logger
+spec:
+  replicas: {{ .Values.auditLogger.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit-logger
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit-logger
+    spec:
+      containers:
+        - name: logger
+          image: "{{ .Values.auditLogger.image.repository }}:{{ .Values.auditLogger.image.tag }}"
+          imagePullPolicy: {{ .Values.auditLogger.image.pullPolicy }}
+          env:
+            - name: LEDGER_NS
+              value: {{ .Values.namespaces.ledger | quote }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import http.server, socketserver, urllib.request, json, os, socket
+
+              LEDGER_NS = os.environ.get("LEDGER_NS", "finedge-ledger")
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class AuditHandler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def send_json(self, code, payload):
+                      body = json.dumps(payload).encode()
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_json(200, {"status": "alive"})
+                      elif self.path == "/audit/check":
+                          host = f"compliance-vault.{LEDGER_NS}.svc.cluster.local"
+                          try:
+                              resolved_vip = socket.gethostbyname(host)
+                          except Exception as e:
+                              self.send_json(502, {"vault_status": "dns_failed", "error": str(e)})
+                              return
+                          url = f"http://{host}:8085/record"
+                          try:
+                              with urllib.request.urlopen(url, timeout=2.0) as resp:
+                                  data = json.loads(resp.read().decode())
+                                  self.send_json(200, {
+                                      "audit_status": "ok",
+                                      "resolved_vip": resolved_vip,
+                                      "vault": data
+                                  })
+                          except Exception as e:
+                              msg = str(e)
+                              code = 504 if "timed out" in msg.lower() else 502
+                              self.send_json(code, {
+                                  "audit_status": "blocked",
+                                  "resolved_vip": resolved_vip,
+                                  "target": url,
+                                  "error": msg
+                              })
+                      else:
+                          self.send_json(404, {"error": "not found"})
+
+              with ThreadedTCPServer(("0.0.0.0", 18091), AuditHandler) as httpd:
+                  print("audit-logger listening on 0.0.0.0:18091", flush=True)
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.auditLogger.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.auditLogger.containerPort }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+{{- toYaml .Values.auditLogger.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-logger
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  type: {{ .Values.auditLogger.service.type }}
+  selector:
+    app.kubernetes.io/name: audit-logger
+  ports:
+    - name: http
+      port: {{ .Values.auditLogger.service.port }}
+      targetPort: {{ .Values.auditLogger.service.targetPort }}
+---
+{{- if .Values.auditLogger.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: audit-logger-netpol
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audit-logger
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+{{- toYaml .Values.auditLogger.networkPolicy.vaultEgressTo | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: 8085
+{{- end }}
