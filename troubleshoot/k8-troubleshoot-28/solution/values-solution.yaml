@@ -46,7 +46,7 @@ paymentApi:
     tag: 3.11-alpine
     pullPolicy: IfNotPresent
   containerPort: 8080
-  reconcileDurationSec: "4"
+  reconcileDurationSec: "5"
   service:
     type: ClusterIP
     port: 8080
