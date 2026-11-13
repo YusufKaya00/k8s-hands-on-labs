@@ -1,0 +1,208 @@
+global:
+  ingressHost: ""
+  domain: finedge.local
+  environment: production
+
+namespaces:
+  edge: finedge-edge
+  core: finedge-core
+  ledger: finedge-ledger
+
+webhookGateway:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 8080
+    targetPort: 8080
+    loadBalancerSourceRanges:
+      - "203.0.113.0/24"
+  resources:
+    limits:
+      cpu: 200m
+      memory: 192Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  host: finedge.local
+  proxyBodySize: ""
+  proxyReadTimeout: "2"
+
+adminIngress:
+  enabled: true
+  ingressClassName: nginx
+  backendProtocol: "HTTPS"
+
+paymentApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  reconcileDurationSec: "4"
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+fraudService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8083
+  service:
+    type: ClusterIP
+    port: 8083
+    targetPort: 8083
+    internalTrafficPolicy: Local
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+webhookDispatcher:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  hostNetwork: true
+  dnsPolicy: Default
+  containerPort: 18090
+  service:
+    type: ClusterIP
+    port: 18090
+    targetPort: 18090
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+auditLogger:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 18091
+  service:
+    type: ClusterIP
+    port: 18091
+    targetPort: 18091
+  networkPolicy:
+    enabled: true
+    vaultEgressTo:
+      - ipBlock:
+          cidr: 10.0.0.0/16
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ledgerApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8082
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8082
+  networkPolicy:
+    enabled: true
+    allowedPort: 80
+  resources:
+    limits:
+      cpu: 200m
+      memory: 192Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+settlementWorker:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8084
+  service:
+    type: ClusterIP
+    port: 8084
+    targetPort: 8084
+    protocol: UDP
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+complianceVault:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8085
+  service:
+    type: ClusterIP
+    port: 8085
+    targetPort: 8085
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ledgerDb:
+  replicas: 1
+  image:
+    repository: redis
+    tag: 7.2-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 6379
+  statefulSet:
+    serviceName: ledger-headless
+  headlessService:
+    name: ledger-headless
+    clusterIP: ""
+    port: 6379
+  resources:
+    limits:
+      cpu: 150m
+      memory: 192Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi

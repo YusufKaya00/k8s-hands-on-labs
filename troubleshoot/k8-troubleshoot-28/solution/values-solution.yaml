@@ -1,0 +1,211 @@
+global:
+  ingressHost: ""
+  domain: finedge.local
+  environment: production
+
+namespaces:
+  edge: finedge-edge
+  core: finedge-core
+  ledger: finedge-ledger
+
+webhookGateway:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  service:
+    type: LoadBalancer
+    port: 8080
+    targetPort: 8080
+    loadBalancerSourceRanges: []
+  resources:
+    limits:
+      cpu: 200m
+      memory: 192Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  host: finedge.local
+  proxyBodySize: "10m"
+  proxyReadTimeout: "30"
+
+adminIngress:
+  enabled: true
+  ingressClassName: nginx
+  backendProtocol: "HTTP"
+
+paymentApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  reconcileDurationSec: "4"
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+fraudService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8083
+  service:
+    type: ClusterIP
+    port: 8083
+    targetPort: 8083
+    internalTrafficPolicy: Cluster
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+webhookDispatcher:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+  containerPort: 18090
+  service:
+    type: ClusterIP
+    port: 18090
+    targetPort: 18090
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+auditLogger:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 18091
+  service:
+    type: ClusterIP
+    port: 18091
+    targetPort: 18091
+  networkPolicy:
+    enabled: true
+    vaultEgressTo:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: finedge-ledger
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: compliance-vault
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ledgerApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8082
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8082
+  networkPolicy:
+    enabled: true
+    allowedPort: 8082
+  resources:
+    limits:
+      cpu: 200m
+      memory: 192Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+settlementWorker:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8084
+  service:
+    type: ClusterIP
+    port: 8084
+    targetPort: 8084
+    protocol: TCP
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+complianceVault:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8085
+  service:
+    type: ClusterIP
+    port: 8085
+    targetPort: 8085
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ledgerDb:
+  replicas: 1
+  image:
+    repository: redis
+    tag: 7.2-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 6379
+  statefulSet:
+    serviceName: ledger-headless
+  headlessService:
+    name: ledger-headless
+    clusterIP: "None"
+    port: 6379
+  resources:
+    limits:
+      cpu: 150m
+      memory: 192Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
