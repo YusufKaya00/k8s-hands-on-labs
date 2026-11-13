@@ -105,14 +105,18 @@ spec:
             httpGet:
               path: /api/health
               port: {{ .Values.orderGateway.service.port }}
-            initialDelaySeconds: 3
+            initialDelaySeconds: 2
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 5
           livenessProbe:
             httpGet:
               path: /api/health
               port: {{ .Values.orderGateway.service.port }}
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 5
           resources:
             {{- toYaml .Values.orderGateway.resources | nindent 12 }}
       volumes:
