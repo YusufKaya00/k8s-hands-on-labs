@@ -51,7 +51,7 @@ echo -e "${CYAN}[Layer 1: External Cloud LoadBalancer & NGINX Ingress — namesp
 
 # Check 1: Direct Azure LoadBalancer Public Reachability
 if [[ -n "${GATEWAY_IP}" ]]; then
-  C1_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 4 --max-time 5 "http://${GATEWAY_IP}:8080/webhook/health" || echo "000")
+  C1_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 4 --max-time 5 "http://${GATEWAY_IP}:8080/webhook/health" || true)
 else
   C1_CODE="NO_IP"
 fi
@@ -66,7 +66,7 @@ fi
 # Check 2: Ingress NGINX Large Payload Upload (1.5MB POST)
 TMP_PAYLOAD=$(mktemp)
 python3 -c 'import json; print(json.dumps({"records": ["x" * 1000 for _ in range(1500)]}))' > "${TMP_PAYLOAD}"
-C2_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST -H "Content-Type: application/json" --data-binary @"${TMP_PAYLOAD}" "http://${INGRESS_HOST}/api/v1/settlements/batch" || echo "000")
+C2_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST -H "Content-Type: application/json" --data-binary @"${TMP_PAYLOAD}" "http://${INGRESS_HOST}/api/v1/settlements/batch" || true)
 rm -f "${TMP_PAYLOAD}"
 
 if [[ "${C2_CODE}" == "200" ]]; then
@@ -76,17 +76,17 @@ else
        "Small POSTs return 200 while 1.5MB fails before reaching payment-api logs. Check ingress-nginx-controller logs and L7 body size limits on finedge-ingress."
 fi
 
-# Check 3: Ingress NGINX Upstream Read Timeout (4s backend job)
-C3_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${INGRESS_HOST}/api/v1/reconcile" || echo "000")
+# Check 3: Ingress NGINX Upstream Read Timeout (5s backend job)
+C3_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 12 "http://${INGRESS_HOST}/api/v1/reconcile" || true)
 if [[ "${C3_CODE}" == "200" ]]; then
-  pass "3. [L7 Upstream Timeout] GET /api/v1/reconcile completed 4s sync job with HTTP 200"
+  pass "3. [L7 Upstream Timeout] GET /api/v1/reconcile completed 5s sync job with HTTP 200"
 else
   fail "3. [L7 Upstream Timeout] GET /api/v1/reconcile failed with HTTP ${C3_CODE} (expected 200)" \
-       "Direct cluster curl to payment-api:8080/api/v1/reconcile succeeds in 4s, while Ingress cuts off early and payment-api logs 'BrokenPipeError'. Inspect Ingress upstream timeout annotations."
+       "Direct cluster curl to payment-api:8080/api/v1/reconcile succeeds in 5s, while Ingress cuts off early and payment-api logs 'BrokenPipeError'. Inspect Ingress upstream timeout annotations."
 fi
 
 # Check 4: Admin Ingress Backend Protocol
-C4_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${ADMIN_HOST}/admin/status" || echo "000")
+C4_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${ADMIN_HOST}/admin/status" || true)
 if [[ "${C4_CODE}" == "200" ]]; then
   pass "4. [L7 Backend Protocol] http://${ADMIN_HOST}/admin/status returned HTTP 200"
 else
@@ -102,7 +102,7 @@ echo ""
 echo -e "${CYAN}[Layer 2: Core Microservices, Service Routing & HostNet DNS — namespace: finedge-core]${NC}"
 
 # Check 5: Cross-Node Service Traffic Policy (payment-api -> fraud-service)
-C5_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/pay" || echo "000")
+C5_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/pay" || true)
 if [[ "${C5_CODE}" == "200" ]]; then
   pass "5. [Cross-Node ClusterIP] GET /api/v1/pay reached cross-node fraud-service (HTTP 200)"
 else
@@ -111,7 +111,7 @@ else
 fi
 
 # Check 6: hostNetwork Pod Cluster DNS (webhook-dispatcher)
-C6_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/dispatcher" || echo "000")
+C6_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/dispatcher" || true)
 if [[ "${C6_CODE}" == "200" ]]; then
   pass "6. [HostNet Cluster DNS] GET /api/v1/dispatcher confirmed webhook-dispatcher resolves cluster DNS (HTTP 200)"
 else
@@ -120,7 +120,7 @@ else
 fi
 
 # Check 7: Post-DNAT Egress NetworkPolicy (audit-logger -> compliance-vault)
-C7_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 6 "http://${INGRESS_HOST}/api/v1/audit" || echo "000")
+C7_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/audit" || true)
 C7_NP_EXISTS=$(kubectl get netpol audit-logger-netpol -n finedge-core -o jsonpath='{.spec.policyTypes[0]}' 2>/dev/null || echo "")
 if [[ "${C7_CODE}" == "200" && -n "${C7_NP_EXISTS}" ]]; then
   pass "7. [Post-DNAT Egress NetPol] GET /api/v1/audit reached compliance-vault with active NetworkPolicy (HTTP 200)"
@@ -137,7 +137,7 @@ echo ""
 echo -e "${CYAN}[Layer 3: Ledger Tier, Protocols & Stateful DNS — namespace: finedge-ledger]${NC}"
 
 # Check 8: Post-DNAT Ingress NetworkPolicy Port (payment-api -> ledger-api:80 -> :8082)
-C8_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/ledger" || echo "000")
+C8_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/ledger" || true)
 C8_NP_EXISTS=$(kubectl get netpol ledger-api-netpol -n finedge-ledger -o jsonpath='{.spec.policyTypes[0]}' 2>/dev/null || echo "")
 if [[ "${C8_CODE}" == "200" && -n "${C8_NP_EXISTS}" ]]; then
   pass "8. [Post-DNAT Ingress NetPol] GET /api/v1/ledger reached ledger-api with active NetworkPolicy (HTTP 200)"
@@ -147,7 +147,7 @@ else
 fi
 
 # Check 9: Service Port Protocol (settlement-worker)
-C9_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/settle" || echo "000")
+C9_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/settle" || true)
 if [[ "${C9_CODE}" == "200" ]]; then
   pass "9. [Service L4 Protocol] GET /api/v1/settle connected to settlement-worker (HTTP 200)"
 else
@@ -155,13 +155,13 @@ else
        "kubectl get endpoints settlement-worker is populated and Pod IP curl works, yet ClusterIP times out. Inspect 'kubectl get svc settlement-worker -n finedge-ledger' carefully."
 fi
 
-# Check 10: StatefulSet Headless Service DNS (ledger-db-0.ledger-headless)
-C10_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/ledger/db-dns" || echo "000")
+# Check 10: Headless Service Direct Pod IP Resolution (ledger-headless)
+C10_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${INGRESS_HOST}/api/v1/ledger/db-dns" || true)
 if [[ "${C10_CODE}" == "200" ]]; then
-  pass "10. [Headless Pod DNS] GET /api/v1/ledger/db-dns resolved ledger-db-0.ledger-headless (HTTP 200)"
+  pass "10. [Headless Pod Discovery] GET /api/v1/ledger/db-dns confirmed ledger-headless resolves directly to Pod IP (HTTP 200)"
 else
-  fail "10. [Headless Pod DNS] GET /api/v1/ledger/db-dns returned HTTP ${C10_CODE} (expected 200)" \
-       "ledger-db StatefulSet spec.serviceName matches ledger-headless, yet pod DNS record returns NXDOMAIN. Check CLUSTER-IP on 'kubectl get svc ledger-headless -n finedge-ledger'."
+  fail "10. [Headless Pod Discovery] GET /api/v1/ledger/db-dns returned HTTP ${C10_CODE} (expected 200)" \
+       "ledger-headless DNS resolves to a virtual Service ClusterIP instead of returning the backing Pod IP directly. Check CLUSTER-IP on 'kubectl get svc ledger-headless -n finedge-ledger'."
 fi
 
 echo ""
