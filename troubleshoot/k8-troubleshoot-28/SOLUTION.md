@@ -44,7 +44,7 @@ helm upgrade --install finedge ./helm/finedge \
   ```
 
 #### 3. `finedge-ingress` — Uzun Süren İşlemlerde `504 Gateway Time-out`
-* **Kök Neden:** `/api/v1/reconcile` uç noktası senkron olarak 4 saniyede tamamlanmaktadır. Ancak `ingress.proxyReadTimeout: "2"` tanımlandığı için NGINX, arka uçtan yanıt başlığı beklerken 2. saniyede soketi kapatıp istemciye `504` döner (`payment-api` loglarında `BrokenPipeError` görülür).
+* **Kök Neden:** `/api/v1/reconcile` uç noktası senkron olarak 5 saniyede tamamlanmaktadır. Ancak `ingress.proxyReadTimeout: "3"` tanımlandığı için NGINX, arka uçtan yanıt başlığı beklerken 3. saniyede soketi kapatıp istemciye `504` döner (`payment-api` loglarında `BrokenPipeError` görülür).
 * **Çözüm (`helm/finedge/values.yaml`):**
   ```yaml
   ingress:
@@ -110,8 +110,8 @@ helm upgrade --install finedge ./helm/finedge \
       protocol: TCP
   ```
 
-#### 10. `ledger-headless` — `clusterIP: None` Eksikliği ve Headless Pod DNS Hatası
-* **Kök Neden:** `ledger-db` StatefulSet'in `serviceName: ledger-headless` alanı doğru olsa da `ledgerDb.headlessService.clusterIP: ""` bırakıldığı için Kubernetes bu servise normal bir sanal ClusterIP atamıştır. CoreDNS yalnızca `clusterIP: None` olan gerçek Headless servisler için pod bazlı `<pod>.<svc>` A kaydı üretir.
+#### 10. `ledger-headless` — `clusterIP: None` Eksikliği ve Sanal VIP Yerine Doğrudan Pod IP DNS Hatası
+* **Kök Neden:** `ledger-db` StatefulSet'in `serviceName: ledger-headless` alanı doğru olsa da `ledgerDb.headlessService.clusterIP: ""` bırakıldığı için Kubernetes bu servise normal bir sanal ClusterIP (`10.0.x.x`) atamıştır. CoreDNS yalnızca `clusterIP: None` olan gerçek Headless servisler için `ledger-headless` sorgusunda doğrudan pod IP adres(ler)ini döner.
 * **Çözüm (`helm/finedge/values.yaml`):**
   ```yaml
   ledgerDb:
@@ -145,7 +145,7 @@ helm upgrade --install finedge ./helm/finedge \
 
 1. **`webhook-gateway-lb` (`loadBalancerSourceRanges`):** Remove `["203.0.113.0/24"]` (`loadBalancerSourceRanges: []`) so Azure NSG allows external clients to reach port `8080`.
 2. **`finedge-ingress` (`proxyBodySize`):** Set `ingress.proxyBodySize: "10m"` (NGINX defaults to `1m`, causing `413 Request Entity Too Large`).
-3. **`finedge-ingress` (`proxyReadTimeout`):** Set `ingress.proxyReadTimeout: "30"` so NGINX waits longer than the 4-second `/api/v1/reconcile` backend execution.
+3. **`finedge-ingress` (`proxyReadTimeout`):** Set `ingress.proxyReadTimeout: "30"` so NGINX waits longer than the 5-second `/api/v1/reconcile` backend execution.
 4. **`finedge-admin-ingress` (`backendProtocol`):** Change `adminIngress.backendProtocol` from `"HTTPS"` to `"HTTP"` to match `payment-api`'s plain HTTP listener.
 5. **`fraud-service` (`internalTrafficPolicy`):** Change `fraudService.service.internalTrafficPolicy` from `Local` to `Cluster` so cross-node ClusterIP traffic routes between nodes.
 6. **`webhook-dispatcher` (`dnsPolicy`):** Set `webhookDispatcher.dnsPolicy: ClusterFirstWithHostNet` because `hostNetwork: true` pods default to node DNS (`Default`).

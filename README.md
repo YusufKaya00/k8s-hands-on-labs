@@ -5,9 +5,9 @@
 [![DevSecOps](https://img.shields.io/badge/DevSecOps-Harbor_%7C_Trivy_%7C_Jenkins-0EA5E9?style=for-the-badge&logo=jenkins&logoColor=white)](./projects/devops-capstone-project-6/README.md)
 [![GitOps](https://img.shields.io/badge/GitOps-ArgoCD_%26_Helm-F97316?style=for-the-badge&logo=argo&logoColor=white)](https://argo-cd.readthedocs.io/)
 [![IaC](https://img.shields.io/badge/IaC-Terraform_%26_Ansible-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![SRE Troubleshooting](https://img.shields.io/badge/SRE_Practice-34_Troubleshooting_Simulations-10B981?style=for-the-badge&logo=prometheus&logoColor=white)](./troubleshoot/)
+[![SRE Troubleshooting](https://img.shields.io/badge/SRE_Practice-39_Troubleshooting_Simulations-10B981?style=for-the-badge&logo=prometheus&logoColor=white)](./troubleshoot/)
 
-Welcome to the ultimate **Kubernetes Training, Real-World Troubleshooting Simulation, Site Reliability Engineering (SRE), DevSecOps, and Chaos Engineering Practice** repository. This workspace provides **40+ hands-on labs and production capstone projects** covering foundational container orchestration, multi-node RKE2/AKS/OKE clusters, polyglot data architectures (Kafka, RabbitMQ, Cassandra, PostgreSQL, Redis), self-hosted **Harbor OCI Registry + Trivy + Jenkins CI/CD**, **34 break-and-fix incident triage simulations**, and **Chaos Mesh Game Days**.
+Welcome to the ultimate **Kubernetes Training, Real-World Troubleshooting Simulation, Site Reliability Engineering (SRE), DevSecOps, and Chaos Engineering Practice** repository. This workspace provides **54+ hands-on labs and production capstone projects** covering foundational container orchestration, multi-node RKE2/AKS/OKE clusters, polyglot data architectures (Kafka, RabbitMQ, Cassandra, PostgreSQL, Redis), self-hosted **Harbor OCI Registry + Trivy + Jenkins CI/CD**, **39 break-and-fix incident triage simulations**, and **Chaos Mesh Game Days**.
 
 All projects and troubleshooting scenarios are fully reproducible on local clusters (**Minikube**), managed cloud clusters (**Oracle Cloud OKE**, **Azure AKS**), and self-managed IaaS clusters (**Azure RKE2 & K3s via Terraform and Ansible**).
 
@@ -39,6 +39,7 @@ k8s-hands-on-labs/
     ├── chaos-troubleshooting-2/     # SRE Incident & Chaos Engineering Lab 2 (Zero-Spoiler YAML, Live Telemetry Agent, 3 Controls + 4 Multi-Layered Labs)
     ├── chaos-troubleshooting-3/     # SRE Incident & Chaos Engineering Lab 3 (Production-Grade & Zero-Flapping: Pristine Baseline, 3 Controls, 4 Deep SRE Scenarios & Workflow)
     ├── chaos-troubleshooting-4/     # SRE Incident & Chaos Engineering Lab 4 (14-Scenario Master SRE & Chaos Mesh Game Day Curriculum)
+    ├── chaos-troubleshooting-5/     # SRE Incident & Chaos Engineering Lab 5 (QuantumPay Core: Kernel-Level, Packet Corruption/Reorder, EIO & Poison Pill Game Day)
     ├── k8-troubleshoot-1/           # ShopSphere E-Commerce (11 Cascading Multi-Object Failures)
     ├── k8-troubleshoot-2/           # NovaMarket Platform (7 Deep Topology & Stateful Failures)
     ├── k8-troubleshoot-3/           # ApexPay Gateway (7 Linux Security, VFS & Socket Failures)
@@ -63,6 +64,10 @@ k8s-hands-on-labs/
     ├── k8-troubleshoot-22/          # VaultStream v6.0 Zero-Trust Payment Settlement & PCI-DSS Mesh (10 Multi-Layered K8s & Network Failures)
     ├── k8-troubleshoot-23/          # Enterprise Multi-Cluster & Workload Triage Lab 23 (10 Network & Zero-Trust Mesh Failures)
     ├── k8-troubleshoot-24/          # AegisCloud v7.0 Cascading Full-Cluster Outage (18 K8s Object Kinds, 16 Domino-Effect Failures)
+    ├── k8-troubleshoot-25/          # NetPulse v8.0 Zero-Trust Network, DNS, Service, Ingress & Core Workload Deep-Dive (16 Tasks)
+    ├── k8-troubleshoot-26/          # NetVortex v9.0 Advanced K8s Networking & Zero-Trust Mesh Outage on AKS (10 Critical Network Failures)
+    ├── k8-troubleshoot-27/          # CloudApex v10.0 Enterprise Multi-Tier Mesh & Dual Cloud LoadBalancer Outage on AKS (10 Network Failures)
+    ├── k8-troubleshoot-28/          # FinEdge v11.0 Real-World Production Networking & Live Traffic Diagnostics on AKS (10 Live HTTP/LB/Calico Tickets)
     ├── tf-troubleshoot-1/           # Terraform Lab 1 (Azure): State Drift, Import (already exists), prevent_destroy
     ├── tf-troubleshoot-2/           # Terraform Lab 2 (local): State Lock, Lost State recovery, Refactor (moved / state mv)
     ├── tf-troubleshoot-3/           # Terraform Lab 3 (local): Broken code (5 errors incl. Cycle), -replace / secret rotation

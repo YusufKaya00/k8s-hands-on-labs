@@ -194,13 +194,13 @@ helm upgrade --install finedge ./helm/finedge \
 
 ---
 
-##### 🎫 Bilet 3: Uzun Süren Mutabakat İşlemi 2. Saniyede Kesiliyor
-* **Olay Bildirimi:** `/api/v1/reconcile` uç noktası arka planda normalde 4 saniye süren bir veritabanı hesaplaması yapar. Kullanıcılar bu adresi çağırdığında hep tam 2. saniyede `504 Gateway Time-out` alıyor.
+##### 🎫 Bilet 3: Uzun Süren Mutabakat İşlemi 3. Saniyede Kesiliyor
+* **Olay Bildirimi:** `/api/v1/reconcile` uç noktası arka planda normalde 5 saniye süren bir veritabanı hesaplaması yapar. Kullanıcılar bu adresi çağırdığında hep tam 3. saniyede `504 Gateway Time-out` alıyor.
 * **1️⃣ Belirtiyi Canlı Gözlemle:**
   ```bash
   time curl -i "${FINEDGE_URL}/api/v1/reconcile"
   ```
-  *Beklenen kırık sonuç:* Yaklaşık `2.0s` sonunda **`HTTP/1.1 504 Gateway Time-out`** döner.
+  *Beklenen kırık sonuç:* Yaklaşık `3.0s` sonunda **`HTTP/1.1 504 Gateway Time-out`** döner.
 * **2️⃣ Katmanı İzole Et (Pod Yavaş mı, Proxy Sabırsız mı?):**
   1. Önce aynı isteği küme içinden doğrudan `payment-api` servisine atarak işlemin gerçekte kaç saniyede bittiğini gör:
      ```bash
@@ -212,8 +212,8 @@ helm upgrade --install finedge ./helm/finedge \
      kubectl logs -n finedge-core -l app.kubernetes.io/name=payment-api --tail=15
      kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=15 | grep -iE "timed out|reconcile"
      ```
-  *Yorumlama:* Doğrudan servis çağrısı 4 saniyede başarıyla bitiyor ve `payment-api` loglarında `BrokenPipeError` (istemci bağlantıyı erken kapattı) görünüyor! `ingress-nginx` logu ise upstream yanıt başlığını beklerken zaman aşımına uğradığını söylüyor. `finedge-ingress` üzerindeki okuma zaman aşımı (read timeout) değerini incele.
-* **3️⃣ Çözümü Canlı Doğrula:** `curl -i "${FINEDGE_URL}/api/v1/reconcile"` 4 saniye bekleyip `{"status": "reconciled", ...}` dönmelidir.
+  *Yorumlama:* Doğrudan servis çağrısı 5 saniyede başarıyla bitiyor ve `payment-api` loglarında `BrokenPipeError` (istemci bağlantıyı erken kapattı) görünüyor! `ingress-nginx` logu ise upstream yanıt başlığını beklerken zaman aşımına uğradığını söylüyor. `finedge-ingress` üzerindeki okuma zaman aşımı (read timeout) değerini incele.
+* **3️⃣ Çözümü Canlı Doğrula:** `curl -i "${FINEDGE_URL}/api/v1/reconcile"` 5 saniye bekleyip `{"status": "reconciled", ...}` dönmelidir.
 
 ---
 
@@ -354,20 +354,20 @@ helm upgrade --install finedge ./helm/finedge \
 
 ---
 
-##### 🎫 Bilet 10: `ledger-db-0` Pod DNS Kaydı `serviceName` Doğru Olduğu Halde Çözülmüyor
-* **Olay Bildirimi:** `ledger-db` StatefulSet podu çalışıyor ve `spec.serviceName` alanı `ledger-headless` ile birebir eşleşiyor. Buna rağmen `ledger-db-0.ledger-headless.finedge-ledger.svc.cluster.local` DNS sorgusu başarısız oluyor (`NXDOMAIN`).
+##### 🎫 Bilet 10: `ledger-headless` Servisi Doğrudan Pod IP Yerine Sanal ClusterIP Dönüyor
+* **Olay Bildirimi:** Dağıtık Redis kümesi (peer discovery) doğrudan pod IP'lerini bulmak için `ledger-headless.finedge-ledger.svc.cluster.local` adresini sorguluyor; ancak CoreDNS pod IP'leri yerine sanal bir ClusterIP (`10.0.x.x`) dönüyor.
 * **1️⃣ Belirtiyi Canlı Gözlemle:**
   ```bash
   curl -i "${FINEDGE_URL}/api/v1/ledger/db-dns"
   ```
-  *Beklenen kırık sonuç:* `HTTP/1.1 502` ve `"db_dns": "failed"`, `"error": "[Errno -2] Name or service not known"`.
+  *Beklenen kırık sonuç:* `HTTP/1.1 502` ve JSON içinde `"error": "Headless service resolved to virtual ClusterIP instead of direct Pod IP"` (`svc_dns_ip` ile `pod_dns_ip` değerlerinin farklı olması).
 * **2️⃣ Katmanı İzole Et (`serviceName` Doğruysa Ne Eksik?):**
-  StatefulSet'in `serviceName` alanını ve arkasındaki `ledger-headless` servisinin `CLUSTER-IP` sütununu incele:
+  StatefulSet'in `serviceName` alanını ve `ledger-headless` servisinin `CLUSTER-IP` sütununu incele:
   ```bash
   kubectl get sts ledger-db -n finedge-ledger -o jsonpath='{.spec.serviceName}{"\n"}'
   kubectl get svc ledger-headless -n finedge-ledger
   ```
-  *Yorumlama:* CoreDNS, yalnızca **Headless** (`CLUSTER-IP: None`) olan servisler için pod bazlı `<pod-0>.<servis>` A kaydı üretir! Eğer `CLUSTER-IP` sütununda `10.0.x.x` gibi sanal bir IP görüyorsan bu servis gerçek bir Headless servis değildir.
+  *Yorumlama:* Gerçek bir **Headless Service** için `CLUSTER-IP` sütununda `None` yazmalı ve DNS sorgusu doğrudan arka uçtaki pod IP'lerini (`10.224.x.x`) dönmelidir. Eğer `CLUSTER-IP` sütununda `10.0.x.x` gibi sanal bir IP görüyorsan bu servis Headless modunda değildir!
   > **Unutma:** `Service.spec.clusterIP` Kubernetes'te sonradan değiştirilemez (*immutable*). `values.yaml` dosyasını düzelttikten sonra önce eski servisi silip (`kubectl delete svc ledger-headless -n finedge-ledger`), ardından `helm upgrade` çalıştır!
 * **3️⃣ Çözümü Canlı Doğrula:** `curl -s "${FINEDGE_URL}/api/v1/ledger/db-dns"` `200 OK` ve `"db_dns": "ok"` dönmelidir.
 
@@ -454,8 +454,8 @@ helm upgrade --install finedge ./helm/finedge \
 2. **Ticket 2 — 1.5MB Settlement Upload Returns `413 Request Entity Too Large` (`POST ${FINEDGE_URL}/api/v1/settlements/batch`):**
    - *Reproduce:* Small JSON POST returns `200 OK`; 1.5MB JSON POST returns `413` from NGINX with zero lines in `payment-api` logs.
    - *Isolate:* Check `ingress-nginx-controller` logs vs `finedge-ingress` YAML for NGINX body size limits.
-3. **Ticket 3 — 4-Second Reconciliation Endpoint Drops at 2s with `504` (`GET ${FINEDGE_URL}/api/v1/reconcile`):**
-   - *Reproduce:* `time curl -i ${FINEDGE_URL}/api/v1/reconcile` aborts at 2s (`504`), while direct cluster Service call completes in 4s (`payment-api` logs `BrokenPipeError`).
+3. **Ticket 3 — 5-Second Reconciliation Endpoint Drops at 3s with `504` (`GET ${FINEDGE_URL}/api/v1/reconcile`):**
+   - *Reproduce:* `time curl -i ${FINEDGE_URL}/api/v1/reconcile` aborts at 3s (`504`), while direct cluster Service call completes in 5s (`payment-api` logs `BrokenPipeError`).
    - *Isolate:* Check `ingress-nginx` timeout logs and `finedge-ingress` upstream read timeout settings.
 4. **Ticket 4 — Admin Portal Returns Instant `502` (`GET ${ADMIN_URL}/admin/status`):**
    - *Reproduce:* Direct HTTP call inside cluster returns `200 OK`; Ingress returns `502`.
@@ -475,8 +475,8 @@ helm upgrade --install finedge ./helm/finedge \
 9. **Ticket 9 — `settlement-worker` Has Endpoints Yet ClusterIP Times Out (`GET ${FINEDGE_URL}/api/v1/settle`):**
    - *Reproduce:* `kubectl get ep settlement-worker -n finedge-ledger` is populated and Pod IP curl works, yet Service call hangs.
    - *Isolate:* Inspect `PORT(S)` protocol on `kubectl get svc settlement-worker -n finedge-ledger`.
-10. **Ticket 10 — StatefulSet Pod DNS Fails (`GET ${FINEDGE_URL}/api/v1/ledger/db-dns`):**
-    - *Reproduce:* `ledger-db-0.ledger-headless.finedge-ledger.svc.cluster.local` fails with `NXDOMAIN` despite matching `spec.serviceName`.
+10. **Ticket 10 — Headless Service Returns Virtual ClusterIP Instead of Pod IP (`GET ${FINEDGE_URL}/api/v1/ledger/db-dns`):**
+    - *Reproduce:* `ledger-headless.finedge-ledger.svc.cluster.local` resolves to a virtual `10.0.x.x` VIP instead of matching `ledger-db-0`'s Pod IP despite matching `spec.serviceName`.
     - *Isolate:* Inspect `CLUSTER-IP` on `kubectl get svc ledger-headless -n finedge-ledger` (delete the immutable Service before re-applying via Helm once fixed!).
 
 Achieving **`10 Passed / 0 Failed`** in `./check.sh` confirms every live production networking issue is resolved!
