@@ -56,7 +56,7 @@ spec:
                   allow_reuse_address = True
                   daemon_threads = True
 
-              def fetch_json(url, timeout=2.5):
+              def fetch_json(url, timeout=1.2):
                   try:
                       req = urllib.request.Request(url)
                       with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -145,11 +145,11 @@ spec:
                                   "detail": data
                               })
                       elif self.path == "/api/v1/dispatcher":
-                          code, data = fetch_json(f"http://webhook-dispatcher.{CORE_NS}.svc.cluster.local:18090/dispatch/check", timeout=3.0)
+                          code, data = fetch_json(f"http://webhook-dispatcher.{CORE_NS}.svc.cluster.local:18090/dispatch/check", timeout=2.0)
                           out_code = 200 if data.get("dns_ok") else 502
                           self.send_json(out_code, data)
                       elif self.path == "/api/v1/audit":
-                          code, data = fetch_json(f"http://audit-logger.{CORE_NS}.svc.cluster.local:18091/audit/check", timeout=3.5)
+                          code, data = fetch_json(f"http://audit-logger.{CORE_NS}.svc.cluster.local:18091/audit/check", timeout=2.0)
                           self.send_json(code, data)
                       elif self.path == "/api/v1/ledger":
                           code, data = fetch_json(f"http://ledger-api.{LEDGER_NS}.svc.cluster.local:80/ledger/balance")
@@ -166,21 +166,33 @@ spec:
                               "detail": data
                           })
                       elif self.path == "/api/v1/ledger/db-dns":
-                          target = f"ledger-db-0.ledger-headless.{LEDGER_NS}.svc.cluster.local"
+                          svc_name = f"ledger-headless.{LEDGER_NS}.svc.cluster.local"
+                          pod_fqdn = f"ledger-db-0.ledger-headless.{LEDGER_NS}.svc.cluster.local"
                           try:
-                              addrs = socket.getaddrinfo(target, 6379, socket.AF_INET, socket.SOCK_STREAM)
-                              resolved_ip = addrs[0][4][0]
-                              with socket.create_connection((target, 6379), timeout=2.0):
+                              pod_dns_ip = socket.gethostbyname(pod_fqdn)
+                              svc_dns_ip = socket.gethostbyname(svc_name)
+                              with socket.create_connection((svc_dns_ip, 6379), timeout=1.2):
                                   pass
-                              self.send_json(200, {
-                                  "db_dns": "ok",
-                                  "target": target,
-                                  "resolved_ip": resolved_ip
-                              })
+                              if svc_dns_ip != pod_dns_ip:
+                                  self.send_json(502, {
+                                      "db_dns": "failed",
+                                      "error": "Headless service resolved to virtual ClusterIP instead of direct Pod IP",
+                                      "svc_dns": svc_name,
+                                      "svc_dns_ip": svc_dns_ip,
+                                      "pod_fqdn": pod_fqdn,
+                                      "pod_dns_ip": pod_dns_ip
+                                  })
+                              else:
+                                  self.send_json(200, {
+                                      "db_dns": "ok",
+                                      "svc_dns": svc_name,
+                                      "pod_fqdn": pod_fqdn,
+                                      "resolved_ip": pod_dns_ip
+                                  })
                           except Exception as e:
                               self.send_json(502, {
                                   "db_dns": "failed",
-                                  "target": target,
+                                  "target": pod_fqdn,
                                   "error": str(e)
                               })
                       else:
@@ -499,7 +511,7 @@ spec:
                               return
                           url = f"http://{host}:8085/record"
                           try:
-                              with urllib.request.urlopen(url, timeout=2.0) as resp:
+                              with urllib.request.urlopen(url, timeout=1.0) as resp:
                                   data = json.loads(resp.read().decode())
                                   self.send_json(200, {
                                       "audit_status": "ok",
