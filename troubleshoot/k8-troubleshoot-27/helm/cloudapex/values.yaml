@@ -50,7 +50,7 @@ orderService:
     type: ClusterIP
     port: 8080
     targetPort: 8080
-    sessionAffinity: IfNotPresent
+    sessionAffinity: None
     sessionAffinityTimeout: 10800
   dnsConfig:
     enabled: true
