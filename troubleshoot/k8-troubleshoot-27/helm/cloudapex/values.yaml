@@ -32,7 +32,7 @@ ingress:
   ingressClassName: nginx
   host: cloudapex.local
   ordersPath: /api/orders
-  ordersPathType: Exact
+  ordersPathType: Prefix
   inventoryPath: /api/inventory
   inventoryPathType: Prefix
   affinity:
