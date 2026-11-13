@@ -98,7 +98,7 @@ authService:
     pullPolicy: IfNotPresent
   containerPort: 8082
   config:
-    bindAddress: "127.0.0.1"
+    bindAddress: "0.0.0.0"
   service:
     type: ClusterIP
     port: 8082
