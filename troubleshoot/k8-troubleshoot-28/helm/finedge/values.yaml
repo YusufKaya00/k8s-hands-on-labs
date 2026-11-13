@@ -19,7 +19,7 @@ webhookGateway:
     port: 8080
     targetPort: 8080
     loadBalancerSourceRanges:
-      - "203.0.113.0/24"
+      - "0.0.0.0/0"
   resources:
     limits:
       cpu: 200m
