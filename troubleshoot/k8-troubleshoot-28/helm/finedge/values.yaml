@@ -71,7 +71,7 @@ fraudService:
     type: ClusterIP
     port: 8083
     targetPort: 8083
-    internalTrafficPolicy: Local
+    internalTrafficPolicy: Cluster
   resources:
     limits:
       cpu: 150m
