@@ -53,7 +53,7 @@ orderService:
     sessionAffinity: ClientIP
     sessionAffinityTimeout: 10800
   dnsConfig:
-    enabled: false
+    enabled: true
     ndots: "5"
   networkPolicy:
     enabled: true
