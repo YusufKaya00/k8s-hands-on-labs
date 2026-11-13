@@ -38,7 +38,7 @@ ingress:
 adminIngress:
   enabled: true
   ingressClassName: nginx
-  backendProtocol: "HTTPS"
+  backendProtocol: "HTTP"
 
 paymentApi:
   replicaCount: 1
