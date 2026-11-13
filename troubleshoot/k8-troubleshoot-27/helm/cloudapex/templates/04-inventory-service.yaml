@@ -15,7 +15,17 @@ data:
 
     PORT = int(os.environ.get("PORT", "8081"))
 
-    class InventoryHandler(http.server.SimpleHTTPRequestHandler):
+    class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+
+    class InventoryHandler(http.server.BaseHTTPRequestHandler):
+        def address_string(self):
+            return self.client_address[0]
+
+        def log_message(self, format, *args):
+            pass
+
         def do_GET(self):
             if self.path == "/healthz":
                 self.send_response(200)
@@ -48,7 +58,7 @@ data:
                 self.end_headers()
                 self.wfile.write(b"NotFound")
 
-    with socketserver.TCPServer(("0.0.0.0", PORT), InventoryHandler) as httpd:
+    with ThreadedTCPServer(("0.0.0.0", PORT), InventoryHandler) as httpd:
         print(f"Inventory Service serving on 0.0.0.0:{PORT}")
         httpd.serve_forever()
 ---
