@@ -59,6 +59,8 @@ helm upgrade --install cloudapex "${HELM_DIR}" \
   --create-namespace \
   --set global.ingressHost="${INGRESS_HOST}"
 
+kubectl label namespace cloudapex-edge network.cloudapex.io/tier=edge --overwrite 2>/dev/null || true
+
 echo "Waiting for Dedicated Azure LoadBalancer IP for order-gateway-lb..."
 DIRECT_LB_IP=""
 for i in {1..30}; do
