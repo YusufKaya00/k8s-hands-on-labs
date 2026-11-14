@@ -110,7 +110,7 @@ pricingEngine:
   networkPolicy:
     enabled: true
     allowedFromPodLabels:
-      role: app.kubernetes.io/name: gateway-api
+       app.kubernetes.io/name: gateway-api
   resources:
     limits:
       cpu: 150m
