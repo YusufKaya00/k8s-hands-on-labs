@@ -41,7 +41,7 @@ webhookIngress:
   enabled: true
   ingressClassName: nginx
   path: "/webhooks"
-  servicePort: 8080
+  servicePort: 80
 
 reverseProxy:
   replicaCount: 1
