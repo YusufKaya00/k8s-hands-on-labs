@@ -53,7 +53,7 @@ reverseProxy:
   resolver: "kube-dns.kube-system.svc.cluster.local"
   catalogResolver: "kube-dns.kube-system.svc.cluster.local"
   ordersReadTimeout: "3s"
-  profileUpstreamPort: 8090
+  profileUpstreamPort: 8083
   service:
     type: ClusterIP
     port: 80
