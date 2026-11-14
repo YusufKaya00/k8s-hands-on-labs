@@ -35,7 +35,7 @@ ingress:
 catalogIngress:
   enabled: true
   ingressClassName: nginx
-  path: "/v2/catalog/items"
+  path: "/items"
   pathType: Prefix
   useRegex: "false"
   rewriteTarget: ""
