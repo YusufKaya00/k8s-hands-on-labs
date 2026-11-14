@@ -104,7 +104,11 @@ authEngine:
   networkPolicy:
     enabled: true
     ingressRules: 
-         - ports :
+       - from : 
+           podSelector :
+             matchLabels : 
+                app.kubernetes.io/name: gateway-api
+         ports :
               - protocol : TCP
                 port : 8082
              
