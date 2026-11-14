@@ -204,7 +204,10 @@ ledgerDb:
     enabled: true
     ingressRules:
       - from:
-          - podSelector:
+          - namespaceSelector:
+             matchLabels : 
+               kubernetes.io/metadata.name: stream-app
+             podSelector:
               matchLabels:
                 app.kubernetes.io/name: reverse-proxy
         ports:
