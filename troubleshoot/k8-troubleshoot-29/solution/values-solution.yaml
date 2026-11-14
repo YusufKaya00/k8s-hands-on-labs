@@ -1,0 +1,240 @@
+global:
+  ingressHost: ""
+  domain: novamesh.local
+  environment: production
+
+namespaces:
+  edge: novamesh-edge
+  api: novamesh-api
+  data: novamesh-data
+
+edgeProxy:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    type: LoadBalancer
+    port: 8080
+    targetPort: 8080
+  resources:
+    limits:
+      cpu: 200m
+      memory: 192Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  host: novamesh.local
+
+catalogIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/v2/catalog(/|$)(.*)"
+  pathType: ImplementationSpecific
+  useRegex: "true"
+  rewriteTarget: "/$2"
+
+partnerIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/partner/sync"
+  whitelistSourceRange: ""
+
+portalIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/portal"
+  forceSslRedirect: "false"
+
+reportIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/reports"
+  servicePort: 80
+
+gatewayApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+catalogApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8086
+  service:
+    type: ClusterIP
+    port: 8086
+    targetPort: 8086
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+pricingEngine:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8081
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+  networkPolicy:
+    enabled: true
+    allowedFromPodLabels:
+      app.kubernetes.io/name: gateway-api
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+riskEvaluator:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8082
+  service:
+    type: ClusterIP
+    port: 8082
+    targetPort: 8082
+  networkPolicy:
+    enabled: true
+    egressRules:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kube-system
+            podSelector:
+              matchLabels:
+                k8s-app: kube-dns
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: novamesh-data
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: report-service
+        ports:
+          - protocol: TCP
+            port: 8085
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+receiptService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8083
+  podLabels:
+    version: v1
+  service:
+    type: ClusterIP
+    port: 8083
+    targetPort: 8083
+    selector:
+      app.kubernetes.io/name: receipt-service
+      version: v1
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+reportBridge:
+  name: report-bridge
+  externalName: report-service.novamesh-data.svc.cluster.local
+  port: 80
+
+tokenVault:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8084
+  service:
+    type: ClusterIP
+    port: 8084
+    targetPort: 8084
+  networkPolicy:
+    enabled: true
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: novamesh-api
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: gateway-api
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+reportService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8085
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8085
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
