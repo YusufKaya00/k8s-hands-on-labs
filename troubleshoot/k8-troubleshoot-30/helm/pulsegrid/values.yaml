@@ -208,7 +208,7 @@ archiveService:
       - from:
           - namespaceSelector:
               matchLabels:
-                name: pulse-app
+               kubernetes.io/metadata.name: pulse-app
             podSelector:
               matchLabels:
                 app.kubernetes.io/name: gateway-api
