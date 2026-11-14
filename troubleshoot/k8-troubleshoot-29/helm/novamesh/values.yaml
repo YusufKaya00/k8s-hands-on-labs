@@ -110,7 +110,7 @@ pricingEngine:
   networkPolicy:
     enabled: true
     allowedFromPodLabels:
-      role: api-gateway
+      role: gateway-api
   resources:
     limits:
       cpu: 150m
