@@ -35,10 +35,10 @@ ingress:
 catalogIngress:
   enabled: true
   ingressClassName: nginx
-  path: "/v2/catalog/"
-  pathType: Prefix
+  path: "/v2/catalog(/|$)(.*)"
+  pathType: ImplementationSpecific
   useRegex: "true"
-  rewriteTarget: ""
+  rewriteTarget: "/$2"
 
 partnerIngress:
   enabled: true
