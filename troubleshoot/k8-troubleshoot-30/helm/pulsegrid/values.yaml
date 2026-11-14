@@ -48,7 +48,7 @@ billingIngress:
   enabled: true
   ingressClassName: nginx
   path: "/billing"
-  backendServiceName: billing-v1
+  backendServiceName: edge-telemetry-lb
 
 gatewayApi:
   replicaCount: 1
