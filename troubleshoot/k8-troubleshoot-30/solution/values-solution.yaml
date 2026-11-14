@@ -1,0 +1,223 @@
+global:
+  ingressHost: ""
+  domain: pulse.local
+  environment: production
+
+namespaces:
+  edge: pulse-edge
+  app: pulse-app
+  store: pulse-store
+
+edgeTelemetry:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    type: LoadBalancer
+    port: 8080
+    targetPort: 8080
+    healthProbePath: "/ping"
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  host: pulse.local
+
+ordersIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/orders"
+
+adminIngress:
+  enabled: true
+  ingressClassName: nginx
+  hostOverride: ""
+  path: "/admin"
+
+billingIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/billing"
+  backendServiceName: gateway-api
+
+gatewayApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  vaultHost: "vault-service.pulse-store.svc.cluster.local"
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+metricsAgent:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  bindAddress: "0.0.0.0"
+  containerPort: 8081
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+authEngine:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8082
+  service:
+    type: ClusterIP
+    port: 8082
+    targetPort: 8082
+  networkPolicy:
+    enabled: true
+    ingressRules:
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: gateway-api
+        ports:
+          - protocol: TCP
+            port: 8082
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+workerService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPortName: http
+  containerPort: 8083
+  service:
+    type: ClusterIP
+    port: 8083
+    targetPort: http
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ledgerStore:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8084
+  service:
+    type: ClusterIP
+    port: 8084
+    targetPort: 8084
+  networkPolicy:
+    enabled: true
+    ingressRules:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: pulse-app
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: gateway-api
+        ports:
+          - protocol: TCP
+            port: 8084
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+vaultService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8085
+  service:
+    type: ClusterIP
+    port: 8085
+    targetPort: 8085
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+archiveService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8086
+  service:
+    type: ClusterIP
+    port: 8086
+    targetPort: 8086
+  networkPolicy:
+    enabled: true
+    ingressRules:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: pulse-app
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: gateway-api
+        ports:
+          - protocol: TCP
+            port: 8086
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
