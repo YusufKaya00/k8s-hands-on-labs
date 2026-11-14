@@ -362,7 +362,8 @@ helm upgrade --install novamesh ./helm/novamesh \
   1. Önce `token-vault` uygulamasının kendi içinde ayakta olduğunu doğrula, sonra `gateway-api` Pod IP'sine (`-o wide`) bakıp `gateway-api` içinden `token-vault` Pod IP'sine erişmeyi dene:
      ```bash
      kubectl exec -it -n novamesh-data deploy/token-vault -- wget -qO- -T 2 http://127.0.0.1:8084/token
-     kubectl get pods -n novamesh-api -n novamesh-data -o wide
+     kubectl get pods -n novamesh-api -o wide
+     kubectl get pods -n novamesh-data -o wide
      kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
 
      # Podun içindeyken (token-vault Pod IP'si ile):
@@ -480,20 +481,23 @@ Client (curl) ──▶ [1. Azure LB (L4)] ──▶ [2. NGINX Ingress (L7)] ─
 
 ### 🧰 Field Engineer Toolbox
 
+All Pods run `python:3.11-alpine`, which includes both `wget` and `nslookup`. Step inside a Pod interactively rather than fighting complex one-liners:
+
 ```bash
-# 1. Test any Service or Pod IP from inside an application Pod:
-kubectl exec -n <namespace> deploy/<source-pod> -- python3 -c \
-  "import urllib.request; print(urllib.request.urlopen('http://<ip-or-svc>:<port>/<path>', timeout=3).read().decode())"
+# 1. List Pod IPs and labels across namespaces:
+kubectl get pods -A -o wide
 
-# 2. Test DNS lookup from inside a Pod:
-kubectl exec -n <namespace> deploy/<source-pod> -- nslookup <target-name>
+# 2. Drop into a Pod shell:
+kubectl exec -it -n <namespace> deploy/<source-pod> -- sh
 
-# 3. Inspect Ingress Controller & Pod logs:
+# (Inside the Pod) Probe a Service or Pod IP:
+wget -qO- -T 3 http://<pod-ip-or-service>:<port>/<path>
+
+# (Inside the Pod) Test DNS resolution:
+nslookup <target-name>
+
+# 3. Inspect Ingress Controller logs & Kubernetes objects:
 kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=25
-kubectl logs -n <namespace> -l app.kubernetes.io/name=<app> --tail=25
-
-# 4. Inspect Pod IPs, Labels, Endpoints & Policies:
-kubectl get pods -A -o wide --show-labels
 kubectl get svc,ep,netpol,ingress -n <namespace>
 ```
 
@@ -519,30 +523,38 @@ curl -i --max-time 4 "http://${HOST}/api/v1/health"
 
 #### 🎫 Ticket 1: External Azure LoadBalancer Unreachable
 * **Live Test:** `curl -i --connect-timeout 4 "http://${LB_IP}:8080/edge/ping"`
-* **How to Approach (Try Internally First):**
+* **How to Approach (Enter a Pod & Probe Pod IP Directly):**
   ```bash
-  EDGE_POD_IP=$(kubectl get pod -n novamesh-edge -l app.kubernetes.io/name=edge-proxy -o jsonpath='{.items[0].status.podIP}')
-  kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://${EDGE_POD_IP}:8080/edge/ping', timeout=3).read().decode())"
+  kubectl get pods -n novamesh-edge -o wide
+  kubectl exec -it -n novamesh-api deploy/catalog-api -- sh
+
+  # Inside the Pod (replace with edge-proxy Pod IP):
+  wget -qO- -T 3 http://<EDGE_PROXY_POD_IP>:8080/edge/ping
+  exit
+
   kubectl get svc edge-proxy-lb -n novamesh-edge -o yaml
   ```
-  If the Pod IP answers `200 OK` on `:8080` while the LB IP fails, compare `port`, `targetPort`, and `containerPort`.
+  If the Pod IP answers `200 OK` on `:8080` while the LB IP fails, inspect `port`, `targetPort`, and `containerPort`.
 
 #### 🎫 Ticket 2: `/v2/catalog/items` Returns `404` JSON
 * **Live Test:** `curl -i --max-time 4 "http://${HOST}/v2/catalog/items"`
-* **How to Approach:** Inspect `received_path` in the `404` JSON, test `/items` directly inside the cluster, and check Ingress path rewriting:
+* **How to Approach:** Inspect `received_path` in the `404` JSON, test `/items` inside a Pod, and check Ingress path rewriting:
   ```bash
-  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://catalog-api:8086/items', timeout=3).read().decode())"
+  kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+  wget -qO- -T 3 http://catalog-api:8086/items
+  exit
+
   kubectl get ingress novamesh-catalog-ingress -n novamesh-edge -o yaml
   ```
 
 #### 🎫 Ticket 3: `/partner/sync` Returns `403 Forbidden`
 * **Live Test:** `curl -i --max-time 4 "http://${HOST}/partner/sync"`
-* **How to Approach:** Confirm `gateway-api` returns `200 OK` internally and inspect L7 Ingress annotations + NGINX logs:
+* **How to Approach:** Confirm `gateway-api` returns `200 OK` internally and inspect L7 Ingress annotations:
   ```bash
-  kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/partner/sync', timeout=3).read().decode())"
+  kubectl exec -it -n novamesh-api deploy/catalog-api -- sh
+  wget -qO- -T 3 http://gateway-api:8080/partner/sync
+  exit
+
   kubectl get ingress novamesh-partner-ingress -n novamesh-edge -o yaml
   ```
 
@@ -550,73 +562,86 @@ curl -i --max-time 4 "http://${HOST}/api/v1/health"
 * **Live Test (without `-L`):** `curl -i --max-time 4 "http://${PORTAL_HOST}/portal/status"`
 * **How to Approach:** Read the `Location` header, prove HTTP works directly on `gateway-api`, and diff `novamesh-portal-ingress` against `novamesh-ingress`:
   ```bash
-  kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/portal/status', timeout=3).read().decode())"
+  kubectl exec -it -n novamesh-api deploy/catalog-api -- sh
+  wget -qO- -T 3 http://gateway-api:8080/portal/status
+  exit
+
   kubectl get ingress novamesh-portal-ingress novamesh-ingress -n novamesh-edge -o yaml
   ```
 
 #### 🎫 Ticket 5: Pricing Quote (`/api/v1/quote`) Times Out (`504`)
 * **Live Test:** `curl -i --max-time 5 "http://${HOST}/api/v1/quote"`
-* **How to Approach:** Test `pricing-engine` Pod IP from inside the cluster (`catalog-api` and `gateway-api`). Silent timeout means NetPol drop — compare Pod labels against `pricing-netpol` (keep the policy intact):
+* **How to Approach:** Find `pricing-engine` Pod IP, enter `gateway-api`, and probe Pod IP directly. Silent timeout means NetPol drop — compare Pod labels against `pricing-netpol` (keep the policy intact):
   ```bash
-  PRICING_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=pricing-engine -o jsonpath='{.items[0].status.podIP}')
-  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://${PRICING_POD_IP}:8081/quote', timeout=2).read().decode())"
+  kubectl get pods,endpoints -n novamesh-api -o wide
+  kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+  wget -qO- -T 2 http://<PRICING_POD_IP>:8081/quote
+  exit
+
   kubectl get pods -n novamesh-api --show-labels
   kubectl get netpol pricing-netpol -n novamesh-api -o yaml
   ```
 
 #### 🎫 Ticket 6: Risk Evaluator (`/api/v1/risk`) Fails with `502`
 * **Live Test:** `curl -i --max-time 6 "http://${HOST}/api/v1/risk"`
-* **How to Approach:** Separate DNS from TCP inside `risk-evaluator`. If direct Pod IP reaches `report-service` while `nslookup` fails, inspect `risk-netpol` Egress rules (keep the policy intact):
+* **How to Approach:** Enter `risk-evaluator` and test `nslookup` vs direct `report-service` Pod IP (`:8085`). If Pod IP works while `nslookup` fails, inspect `risk-netpol` Egress rules (keep the policy intact):
   ```bash
-  REPORT_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=report-service -o jsonpath='{.items[0].status.podIP}')
-  kubectl exec -n novamesh-api deploy/risk-evaluator -- nslookup report-service.novamesh-data.svc.cluster.local
-  kubectl exec -n novamesh-api deploy/risk-evaluator -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://${REPORT_POD_IP}:8085/reports/daily', timeout=2).read().decode())"
+  kubectl get pods -n novamesh-data -o wide
+  kubectl exec -it -n novamesh-api deploy/risk-evaluator -- sh
+  nslookup report-service.novamesh-data.svc.cluster.local
+  wget -qO- -T 2 http://<REPORT_POD_IP>:8085/reports/daily
+  exit
+
   kubectl get netpol risk-netpol -n novamesh-api -o yaml
   ```
 
 #### 🎫 Ticket 7: Receipt Service (`/api/v1/receipt`) Returns Immediate `502`
 * **Live Test:** `curl -i --max-time 4 "http://${HOST}/api/v1/receipt"`
-* **How to Approach:** Test the `receipt-service` Pod IP directly vs checking Service Endpoints and selector labels:
+* **How to Approach:** Probe `receipt-service` Pod IP from `gateway-api`, then check Endpoints and selector labels:
   ```bash
-  RECEIPT_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=receipt-service -o jsonpath='{.items[0].status.podIP}')
-  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://${RECEIPT_POD_IP}:8083/receipt', timeout=2).read().decode())"
-  kubectl get endpoints receipt-service -n novamesh-api
+  kubectl get pods,endpoints -n novamesh-api -o wide
+  kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+  wget -qO- -T 2 http://<RECEIPT_POD_IP>:8083/receipt
+  exit
+
   kubectl get pod -n novamesh-api -l app.kubernetes.io/name=receipt-service --show-labels
   kubectl get svc receipt-service -n novamesh-api -o yaml
   ```
 
 #### 🎫 Ticket 8: Token Vault (`/api/v1/token`) Times Out (`504`)
 * **Live Test:** `curl -i --max-time 5 "http://${HOST}/api/v1/token"`
-* **How to Approach:** Confirm `token-vault` responds locally on `127.0.0.1:8084`, inspect the real Pod IP of `gateway-api`, probe `token-vault` Pod IP from `gateway-api`, and check CIDR/exception rules inside `token-vault-netpol` (keep the policy intact):
+* **How to Approach:** Confirm `token-vault` responds locally, inspect `gateway-api` Pod IP (`-o wide`), try hitting `token-vault` Pod IP from `gateway-api`, and inspect `token-vault-netpol` CIDR/except rules (keep the policy intact):
   ```bash
-  kubectl exec -n novamesh-data deploy/token-vault -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8084/token', timeout=2).read().decode())"
-  TOKEN_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=token-vault -o jsonpath='{.items[0].status.podIP}')
-  kubectl get pod -n novamesh-api -l app.kubernetes.io/name=gateway-api -o wide
-  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://${TOKEN_POD_IP}:8084/token', timeout=2).read().decode())"
+  kubectl exec -it -n novamesh-data deploy/token-vault -- wget -qO- -T 2 http://127.0.0.1:8084/token
+  kubectl get pods -n novamesh-api -o wide
+  kubectl get pods -n novamesh-data -o wide
+  kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+  wget -qO- -T 2 http://<TOKEN_VAULT_POD_IP>:8084/token
+  exit
+
   kubectl get netpol token-vault-netpol -n novamesh-data -o yaml
   ```
 
 #### 🎫 Ticket 9: Report Bridge (`/api/v1/bridge`) Fails Name Resolution (`502`)
 * **Live Test:** `curl -i --max-time 4 "http://${HOST}/api/v1/bridge"`
-* **How to Approach:** Compare `nslookup report-bridge` vs `nslookup report-service.novamesh-data.svc.cluster.local` from inside `gateway-api` and inspect the `ExternalName` target:
+* **How to Approach:** Enter `gateway-api` and compare `nslookup report-bridge` vs `nslookup report-service.novamesh-data.svc.cluster.local`, then inspect the `ExternalName` Service:
   ```bash
-  kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-bridge
-  kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-service.novamesh-data.svc.cluster.local
+  kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+  nslookup report-bridge
+  nslookup report-service.novamesh-data.svc.cluster.local
+  exit
+
   kubectl get svc report-bridge -n novamesh-api -o yaml
   ```
 
 #### 🎫 Ticket 10: Direct Report Ingress (`/reports/daily`) Returns `503`
 * **Live Test:** `curl -i --max-time 4 "http://${HOST}/reports/daily"`
-* **How to Approach:** Prove `report-service` responds on `:80` internally, then compare `report-service` ports against `novamesh-report-ingress`:
+* **How to Approach:** Verify `report-service` answers on `:80` internally, then compare `report-service` ports against `novamesh-report-ingress`:
   ```bash
-  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-    "import urllib.request; print(urllib.request.urlopen('http://report-service.novamesh-data.svc.cluster.local:80/reports/daily', timeout=2).read().decode())"
+  kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+  wget -qO- -T 2 http://report-service.novamesh-data.svc.cluster.local:80/reports/daily
+  exit
+
   kubectl get svc report-service -n novamesh-data -o yaml
   kubectl get svc report-service -n novamesh-edge -o yaml
   kubectl get ingress novamesh-report-ingress -n novamesh-edge -o yaml
