@@ -104,6 +104,14 @@ reverseProxy:
         ports:
           - protocol: TCP
             port: 8086
+
+      - to: 
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: stream-store
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: audit-service
   resources:
     limits:
       cpu: 200m
