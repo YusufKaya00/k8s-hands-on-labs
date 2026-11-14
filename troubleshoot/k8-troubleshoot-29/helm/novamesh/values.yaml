@@ -37,7 +37,7 @@ catalogIngress:
   ingressClassName: nginx
   path: "/v2/catalog/"
   pathType: Prefix
-  useRegex: "false"
+  useRegex: "true"
   rewriteTarget: ""
 
 partnerIngress:
