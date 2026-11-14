@@ -155,7 +155,10 @@ ledgerStore:
     enabled: true
     ingressRules:
       - from:
-          - podSelector:
+          - namespaceSelector:
+             matchLabels : 
+                kubernetes.io/metadata.name : pulse-app
+            podSelector:
               matchLabels:
                 app.kubernetes.io/name: gateway-api
         ports:
