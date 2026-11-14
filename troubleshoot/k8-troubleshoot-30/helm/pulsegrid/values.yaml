@@ -57,7 +57,7 @@ gatewayApi:
     tag: 3.11-alpine
     pullPolicy: IfNotPresent
   containerPort: 8080
-  vaultHost: "vault-service"
+  vaultHost: "vault-service.pulse-store.svc.cluster.local"
   service:
     type: ClusterIP
     port: 8080
