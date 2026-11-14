@@ -145,7 +145,7 @@ riskEvaluator:
             port: 8085
       - to: 
           - namespaceSelector:
-            matchLabels : 
+             matchLabels : 
               kubernetes.io/metadata.name : kube-system
             podSelector:
              matchLabels: 
