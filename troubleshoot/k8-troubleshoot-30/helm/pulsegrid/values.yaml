@@ -41,7 +41,7 @@ ordersIngress:
 adminIngress:
   enabled: true
   ingressClassName: nginx
-  hostOverride: "admin.pulse.local"
+  hostOverride: ""
   path: "/admin"
 
 billingIngress:
