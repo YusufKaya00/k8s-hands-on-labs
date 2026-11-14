@@ -131,7 +131,7 @@ workerService:
   service:
     type: ClusterIP
     port: 8083
-    targetPort: rpc-http
+    targetPort: http
   resources:
     limits:
       cpu: 150m
