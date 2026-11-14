@@ -231,7 +231,7 @@ vaultService:
   service:
     type: ClusterIP
     port: 8086
-    targetPort: 9000
+    targetPort: 8086
   resources:
     limits:
       cpu: 150m
