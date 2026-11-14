@@ -182,13 +182,16 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --connect-timeout 4 "http://${LB_IP}:8080/edge/ping"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. Dışarıdan timeout alınca ilk sorun: *Acaba `edge-proxy` podu gerçekten `8080` portunu dinliyor mu ve başka poddan doğrudan Pod IP'sine ulaşılabiliyor mu?* Aşağıdaki komutla başka bir podun içinden `edge-proxy` Pod IP'sine doğrudan bağlanıp bunu doğrula:
+  1. Dışarıdan timeout alınca ilk soru: *Acaba `edge-proxy` podu gerçekten `8080` portunu dinliyor mu ve başka poddan doğrudan Pod IP'sine ulaşılabiliyor mu?* Önce podun IP adresini gör, sonra başka bir podun içine girip doğrudan Pod IP'sine istek at:
      ```bash
-     EDGE_POD_IP=$(kubectl get pod -n novamesh-edge -l app.kubernetes.io/name=edge-proxy -o jsonpath='{.items[0].status.podIP}')
-     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://${EDGE_POD_IP}:8080/edge/ping', timeout=3).read().decode())"
+     kubectl get pods -n novamesh-edge -o wide
+     kubectl exec -it -n novamesh-api deploy/catalog-api -- sh
+
+     # Podun içindeyken (yukarıdaki çıktıdan gördüğün edge-proxy IP'sini yaz):
+     wget -qO- -T 3 http://<EDGE_PROXY_POD_IP>:8080/edge/ping
+     exit
      ```
-  2. Eğer küme içinden Pod IP'sine `200 OK` alabiliyorsan, podun çalıştığı ve arada NetworkPolicy engeli olmadığı kanıtlanmış olur! O halde sorun dış LoadBalancer trafiğini pod portuna bağlayan **Service katmanındadır**; şu komutla `port`, `targetPort` ve pod `containerPort` üçlüsünü incele:
+  2. Eğer küme içinden Pod IP'sine `200 OK` alabiliyorsan, podun çalıştığı ve arada NetworkPolicy engeli olmadığı kanıtlanmış olur! O halde sorun dış LoadBalancer trafiğini pod portuna bağlayan **Service katmanındadır**; `port`, `targetPort` ve pod `containerPort` üçlüsünü incele:
      ```bash
      kubectl get svc edge-proxy-lb -n novamesh-edge -o yaml
      ```
@@ -204,12 +207,15 @@ helm upgrade --install novamesh ./helm/novamesh \
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
   1. Dönen JSON gövdesindeki `received_path` alanına bak: `catalog-api` kendisine hangi yolun geldiğini söylüyor?
-  2. Şimdi Ingress'i tamamen baypas edip küme içindeki bir poddan doğrudan `catalog-api` servisini hem `/items` hem `/v2/catalog/items` ile deneyerek uygulamanın aslında hangi yolu dinlediğini kendin gözlemle:
+  2. Şimdi Ingress'i tamamen baypas edip küme içindeki bir podun içine gir ve doğrudan `catalog-api` servisini `/items` ile deneyerek uygulamanın aslında hangi yolu dinlediğini kendin gözlemle:
      ```bash
-     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://catalog-api:8086/items', timeout=3).read().decode())"
+     kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+
+     # Podun içindeyken:
+     wget -qO- -T 3 http://catalog-api:8086/items
+     exit
      ```
-  3. Uygulama `/items` üzerinde sorunsuz yanıt veriyorsa, L7 katmanında prefix'i soymayan Ingress kuralını görmek için şu komutu incele:
+  3. Uygulama `/items` üzerinde sorunsuz yanıt veriyorsa, L7 katmanında prefix'i soymayan Ingress kuralını görmek için şuna bak:
      ```bash
      kubectl get ingress novamesh-catalog-ingress -n novamesh-edge -o yaml
      ```
@@ -224,10 +230,14 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --max-time 4 "http://${HOST}/partner/sync"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. İlk iş olarak `403` yanıtını uygulamanın mı yoksa NGINX Ingress'in mi ürettiğini ayır. Küme içinden doğrudan `gateway-api` servisini çağır ve aynı anda Ingress Controller loglarına bak:
+  1. İlk iş olarak `403` yanıtını uygulamanın mı yoksa NGINX Ingress'in mi ürettiğini ayır. Küme içindeki bir poda girip doğrudan `gateway-api` servisini çağır, ardından Ingress Controller loglarına bak:
      ```bash
-     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/partner/sync', timeout=3).read().decode())"
+     kubectl exec -it -n novamesh-api deploy/catalog-api -- sh
+
+     # Podun içindeyken:
+     wget -qO- -T 3 http://gateway-api:8080/partner/sync
+     exit
+
      kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=15
      ```
   2. İçeriden `200 OK` alıp dışarıdan `403` alıyorsan istek daha backend'e çıkmadan NGINX kapısında reddediliyor demektir. Erişim kısıtlamasını görmek için Ingress tanımını incele:
@@ -246,10 +256,14 @@ helm upgrade --install novamesh ./helm/novamesh \
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
   1. Dönen yanıttaki `Location:` başlığını oku — neden `https://` adresine yönlendiriliyorsun?
-  2. Backend uygulamanın doğrudan düz HTTP üzerinde `200 OK` verdiğini kanıtla, ardından sorunsuz çalışan `novamesh-ingress` ile `novamesh-portal-ingress` tanımlarını karşılaştır:
+  2. Pod içine girip backend uygulamanın düz HTTP üzerinde `200 OK` verdiğini kanıtla, ardından sorunsuz çalışan `novamesh-ingress` ile `novamesh-portal-ingress` tanımlarını karşılaştır:
      ```bash
-     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/portal/status', timeout=3).read().decode())"
+     kubectl exec -it -n novamesh-api deploy/catalog-api -- sh
+
+     # Podun içindeyken:
+     wget -qO- -T 3 http://gateway-api:8080/portal/status
+     exit
+
      kubectl get ingress novamesh-portal-ingress novamesh-ingress -n novamesh-edge -o yaml
      ```
 * **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${PORTAL_HOST}/portal/status"` yönlendirme olmadan doğrudan `HTTP/1.1 200 OK` dönmelidir.
@@ -265,16 +279,16 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --max-time 5 "http://${HOST}/api/v1/quote"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. Önce `pricing-engine` uygulamasının ve Endpoint'lerinin sağlıklı olup olmadığını, ayrıca **hem `catalog-api` hem `gateway-api` içinden doğrudan `pricing-engine` Pod IP'sine** gidip gidilemediğini dene:
+  1. Önce `pricing-engine` Pod IP'sini ve Endpoints durumunu gör, ardından `gateway-api` içine girip doğrudan Pod IP'sine bağlanmayı dene:
      ```bash
-     PRICING_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=pricing-engine -o jsonpath='{.items[0].status.podIP}')
-     kubectl get endpoints pricing-engine -n novamesh-api
-     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://${PRICING_POD_IP}:8081/quote', timeout=2).read().decode())"
-     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://${PRICING_POD_IP}:8081/quote', timeout=2).read().decode())"
+     kubectl get pods,endpoints -n novamesh-api -o wide
+     kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+
+     # Podun içindeyken (pricing-engine Pod IP'si ile):
+     wget -qO- -T 2 http://<PRICING_POD_IP>:8081/quote
+     exit
      ```
-  2. Doğrudan Pod IP'ye atılan bağlantı sessizce timeout yiyorsa paket **Calico NetworkPolicy** tarafından `DROP` ediliyor demektir! Şu iki çıktıyı yan yana koyup `gateway-api` etiketleriyle politikanın aradığı etiketi kıyasla *(not: `pricing-netpol` politikasını silmeden düzelt)*:
+  2. Doğrudan Pod IP'ye atılan bağlantı bile sessizce timeout yiyorsa paket **Calico NetworkPolicy** tarafından `DROP` ediliyor demektir! Şu iki çıktıyı yan yana koyup `gateway-api` etiketleriyle politikanın aradığı etiketi kıyasla *(not: `pricing-netpol` politikasını silmeden düzelt)*:
      ```bash
      kubectl get pods -n novamesh-api --show-labels
      kubectl get netpol pricing-netpol -n novamesh-api -o yaml
@@ -290,12 +304,17 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --max-time 6 "http://${HOST}/api/v1/risk"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. Sorunun hedef servise TCP bağlantısında mı yoksa **DNS çözümlemesinde mi** olduğunu ayırmak için `risk-evaluator` podunun içine girip hem `nslookup` dene hem de doğrudan hedef `report-service` **Pod IP'sine** (`8085`) bağlanmayı test et:
+  1. Sorunun hedef servise TCP bağlantısında mı yoksa **DNS çözümlemesinde mi** olduğunu ayırmak için `report-service` Pod IP'sini al, sonra `risk-evaluator` podunun içine girip önce `nslookup`, sonra doğrudan Pod IP testi yap:
      ```bash
-     REPORT_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=report-service -o jsonpath='{.items[0].status.podIP}')
-     kubectl exec -n novamesh-api deploy/risk-evaluator -- nslookup report-service.novamesh-data.svc.cluster.local
-     kubectl exec -n novamesh-api deploy/risk-evaluator -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://${REPORT_POD_IP}:8085/reports/daily', timeout=2).read().decode())"
+     kubectl get pods -n novamesh-data -o wide
+     kubectl exec -it -n novamesh-api deploy/risk-evaluator -- sh
+
+     # Podun içindeyken önce DNS'i dene:
+     nslookup report-service.novamesh-data.svc.cluster.local
+
+     # Sonra doğrudan report-service Pod IP'sine (:8085) istek at:
+     wget -qO- -T 2 http://<REPORT_POD_IP>:8085/reports/daily
+     exit
      ```
   2. Eğer **doğrudan Pod IP çalışıyor ama `nslookup` başarısız oluyorsa**, veri trafiğine izin veren Egress NetworkPolicy'nin küme DNS sunucusunu unutup unutmadığını kontrol et *(not: `risk-netpol` politikasını silmeden düzelt)*:
      ```bash
@@ -313,12 +332,14 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --max-time 4 "http://${HOST}/api/v1/receipt"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. NetworkPolicy veya uygulamanın kendisi mi bozuk? Önce `gateway-api` içinden **doğrudan `receipt-service` Pod IP'sine** istek at, ardından **Service adını** ve `Endpoints` durumunu kontrol et:
+  1. NetworkPolicy veya uygulamanın kendisi mi bozuk? `receipt-service` Pod IP'sini ve Endpoints durumunu gör, ardından `gateway-api` içine girip doğrudan Pod IP'ye istek at:
      ```bash
-     RECEIPT_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=receipt-service -o jsonpath='{.items[0].status.podIP}')
-     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://${RECEIPT_POD_IP}:8083/receipt', timeout=2).read().decode())"
-     kubectl get endpoints receipt-service -n novamesh-api
+     kubectl get pods,endpoints -n novamesh-api -o wide
+     kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+
+     # Podun içindeyken (receipt-service Pod IP'si ile):
+     wget -qO- -T 2 http://<RECEIPT_POD_IP>:8083/receipt
+     exit
      ```
   2. Pod IP `200 OK` verip `Endpoints` boş (`<none>`) geliyorsa uygulama ve ağ duvarı sağlam, **Service -> Pod eşleşmesi** kopuktur! Şu iki çıktıyı satır satır kıyasla:
      ```bash
@@ -338,16 +359,17 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --max-time 5 "http://${HOST}/api/v1/token"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. Önce `token-vault` uygulamasının kendi içinde port `8084`'te yanıt verdiğini (`127.0.0.1`) kanıtla, ardından `gateway-api` podunun gerçek IP'sine (`-o wide`) bakıp `gateway-api` içinden `token-vault` Pod IP'sine doğrudan bağlanmayı dene:
+  1. Önce `token-vault` uygulamasının kendi içinde ayakta olduğunu doğrula, sonra `gateway-api` Pod IP'sine (`-o wide`) bakıp `gateway-api` içinden `token-vault` Pod IP'sine erişmeyi dene:
      ```bash
-     kubectl exec -n novamesh-data deploy/token-vault -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8084/token', timeout=2).read().decode())"
-     TOKEN_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=token-vault -o jsonpath='{.items[0].status.podIP}')
-     kubectl get pod -n novamesh-api -l app.kubernetes.io/name=gateway-api -o wide
-     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://${TOKEN_POD_IP}:8084/token', timeout=2).read().decode())"
+     kubectl exec -it -n novamesh-data deploy/token-vault -- wget -qO- -T 2 http://127.0.0.1:8084/token
+     kubectl get pods -n novamesh-api -n novamesh-data -o wide
+     kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+
+     # Podun içindeyken (token-vault Pod IP'si ile):
+     wget -qO- -T 2 http://<TOKEN_VAULT_POD_IP>:8084/token
+     exit
      ```
-  2. `token-vault` kendi içinde `200 OK` verirken `gateway-api` Pod IP üzerinden sessizce zaman aşımına düşüyorsa arada **Calico NetworkPolicy** paketi düşürüyor demektir. `gateway-api` Pod IP adresine (`10.224.x.x` mi?) dikkatlice bak ve `novamesh-data` içindeki `token-vault-netpol` kurallarını oku *(not: `token-vault-netpol` politikasını silmeden düzelt)*:
+  2. `token-vault` kendi içinde `200 OK` verirken `gateway-api` üzerinden Pod IP'ye sessizce timeout alıyorsan arada **Calico NetworkPolicy** paketi düşürüyor demektir. `gateway-api` Pod IP adresine (`10.224.x.x` gibi) dikkatlice bak ve `token-vault-netpol` kurallarını oku *(not: `token-vault-netpol` politikasını silmeden düzelt)*:
      ```bash
      kubectl get netpol token-vault-netpol -n novamesh-data -o yaml
      ```
@@ -364,10 +386,14 @@ helm upgrade --install novamesh ./helm/novamesh \
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
   1. `gateway-api` içine girip önce `report-bridge` adını `nslookup` ile sorgula, ardından hedef namespace'deki gerçek tam FQDN (`report-service.novamesh-data.svc.cluster.local`) adını dene:
      ```bash
-     kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-bridge
-     kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-service.novamesh-data.svc.cluster.local
+     kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+
+     # Podun içindeyken ikisini yan yana test et:
+     nslookup report-bridge
+     nslookup report-service.novamesh-data.svc.cluster.local
+     exit
      ```
-  2. `report-service.novamesh-data.svc.cluster.local` çözülebiliyorken `report-bridge` çözülemiyorsa, köprü servisinin YAML tanımındaki CNAME hedefini incele:
+  2. `report-service.novamesh-data.svc.cluster.local` çözülebiliyorken `report-bridge` çözülemiyorsa, köprü servisinin YAML tanımındaki `ExternalName` hedefini incele:
      ```bash
      kubectl get svc report-bridge -n novamesh-api -o yaml
      ```
@@ -382,10 +408,13 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --max-time 4 "http://${HOST}/reports/daily"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. Önce `report-service` uygulamasının ve cross-namespace Service yapısının küme içinden gerçekten çalıştığını kanıtla:
+  1. Önce `gateway-api` içine girip `report-service` uygulamasının ve cross-namespace Service yapısının küme içinden çalıştığını doğrula:
      ```bash
-     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
-       "import urllib.request; print(urllib.request.urlopen('http://report-service.novamesh-data.svc.cluster.local:80/reports/daily', timeout=2).read().decode())"
+     kubectl exec -it -n novamesh-api deploy/gateway-api -- sh
+
+     # Podun içindeyken:
+     wget -qO- -T 2 http://report-service.novamesh-data.svc.cluster.local:80/reports/daily
+     exit
      ```
   2. Küme içinden `:80` portunda `200 OK` aldın! Şimdi neden NGINX Ingress'in `503` döndüğünü görmek için iki namespace'deki `report-service` tanımlarını ve `novamesh-report-ingress` backend portunu yan yana karşılaştır:
      ```bash
