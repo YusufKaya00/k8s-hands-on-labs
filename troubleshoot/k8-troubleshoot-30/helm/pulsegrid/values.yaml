@@ -100,10 +100,14 @@ authEngine:
   service:
     type: ClusterIP
     port: 8082
-    targetPort: 8082
+    targetPort: 8082  
   networkPolicy:
     enabled: true
-    ingressRules: []
+    ingressRules: 
+         - ports :
+              - protocol : TCP
+                port : 8082
+             
   resources:
     limits:
       cpu: 150m
