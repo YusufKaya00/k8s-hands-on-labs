@@ -1,0 +1,6 @@
+apiVersion: v2
+name: novamesh
+description: NovaMesh v12.0 - Cloud LoadBalancer, NGINX Ingress & Zero-Trust NetworkPolicy Lab
+type: application
+version: 1.0.0
+appVersion: "12.0.0"
