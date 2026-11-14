@@ -1,0 +1,257 @@
+global:
+  ingressHost: ""
+  domain: stream.local
+  environment: production
+
+namespaces:
+  edge: stream-edge
+  app: stream-app
+  store: stream-store
+
+edgeGateway:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    type: LoadBalancer
+    port: 9090
+    targetPort: 8080
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  host: stream.local
+
+paymentsIngress:
+  enabled: true
+  ingressClassName: internal-nginx
+  path: "/payments"
+
+webhookIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/webhooks"
+  servicePort: 8080
+
+reverseProxy:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: 1.27-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 80
+  resolver: "kube-dns.kube-system.svc.cluster.local"
+  catalogResolver: "1.1.1.1"
+  ordersReadTimeout: "1s"
+  profileUpstreamPort: 8090
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 80
+  networkPolicy:
+    enabled: true
+    egressRules:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kube-system
+            podSelector:
+              matchLabels:
+                k8s-app: kube-dns
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - podSelector: {}
+        ports:
+          - protocol: TCP
+            port: 8081
+          - protocol: TCP
+            port: 8082
+          - protocol: TCP
+            port: 8083
+          - protocol: TCP
+            port: 8084
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: stream-store
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: ledger-db
+        ports:
+          - protocol: TCP
+            port: 8085
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: stream-store
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: vault-service
+        ports:
+          - protocol: TCP
+            port: 8086
+  resources:
+    limits:
+      cpu: 200m
+      memory: 192Mi
+    requests:
+      cpu: 40m
+      memory: 64Mi
+
+catalogService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8081
+  service:
+    type: ClusterIP
+    port: 8081
+    targetPort: 8081
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ordersService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8082
+  service:
+    type: ClusterIP
+    port: 8082
+    targetPort: 8082
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+profileService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8083
+  service:
+    type: ClusterIP
+    port: 8083
+    targetPort: 8083
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+metricsService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  bindAddress: "127.0.0.1"
+  containerPort: 8084
+  service:
+    type: ClusterIP
+    port: 8084
+    targetPort: 8084
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+ledgerDb:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8085
+  service:
+    type: ClusterIP
+    port: 8085
+    targetPort: 8085
+  networkPolicy:
+    enabled: true
+    ingressRules:
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: reverse-proxy
+        ports:
+          - protocol: TCP
+            port: 8085
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+vaultService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8086
+  service:
+    type: ClusterIP
+    port: 8086
+    targetPort: 9000
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
+
+auditService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: 3.11-alpine
+    pullPolicy: IfNotPresent
+  containerPort: 8087
+  service:
+    type: ClusterIP
+    port: 8087
+    targetPort: 8087
+  resources:
+    limits:
+      cpu: 150m
+      memory: 128Mi
+    requests:
+      cpu: 30m
+      memory: 48Mi
