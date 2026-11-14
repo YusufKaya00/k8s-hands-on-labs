@@ -138,7 +138,7 @@ spec:
     - host: {{ $ingressHost | quote }}
       http:
         paths:
-          - path: /api/v2
+          - path: /api/v1
             pathType: Prefix
             backend:
               service:
