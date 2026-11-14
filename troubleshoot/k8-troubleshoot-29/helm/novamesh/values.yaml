@@ -189,7 +189,7 @@ receiptService:
 
 reportBridge:
   name: report-bridge
-  externalName: report-service
+  externalName: report-bridge
   port: 80
 
 tokenVault:
