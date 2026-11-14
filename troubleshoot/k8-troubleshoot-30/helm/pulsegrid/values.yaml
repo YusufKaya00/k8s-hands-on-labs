@@ -76,7 +76,7 @@ metricsAgent:
     repository: python
     tag: 3.11-alpine
     pullPolicy: IfNotPresent
-  bindAddress: "127.0.0.1"
+  bindAddress: "0.0.0.0"
   containerPort: 8081
   service:
     type: ClusterIP
