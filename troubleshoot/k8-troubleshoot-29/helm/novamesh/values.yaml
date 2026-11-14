@@ -56,7 +56,7 @@ reportIngress:
   enabled: true
   ingressClassName: nginx
   path: "/reports"
-  servicePort: 8085
+  servicePort: 80
 
 gatewayApi:
   replicaCount: 1
