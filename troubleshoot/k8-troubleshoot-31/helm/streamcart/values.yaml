@@ -34,7 +34,7 @@ ingress:
 
 paymentsIngress:
   enabled: true
-  ingressClassName: internal-nginx
+  ingressClassName: nginx
   path: "/payments"
 
 webhookIngress:
