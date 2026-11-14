@@ -23,11 +23,12 @@
 
 ### 🧠 Tüm Podlar `1/1 Running` İken Nasıl Teşhis Koyarsın? (Saha Notları)
 
-Gerçek üretimde `kubectl get pods` çıktısının yeşil olması trafiğin aktığını kanıtlamaz. Bir istek dış istemciden hedef koda kadar şu **5 kapıdan** geçer:
+Gerçek üretimde `kubectl get pods` çıktısının yeşil olması trafiğin aktığını kanıtlamaz. Bir istek dış istemciden hedef pod içindeki uygulamaya ulaşana kadar sırayla şu **6 kapıdan** geçer:
 
 ```text
-İstemci (curl) ──▶ [1. Azure LB (L4)] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. Service / Endpoints] ──▶ [4. CoreDNS] ──▶ [5. Calico NetPol / Pod]
+İstemci (curl) ──▶ [1. Azure LB (L4)] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. CoreDNS (İsim→IP)] ──▶ [4. Service / Endpoints (VIP→PodIP)] ──▶ [5. Calico NetPol] ──▶ [6. Hedef Pod Soketi]
 ```
+*(Not: Küme içi çağrılarda **3. Kapıdaki CoreDNS** sorgusu paketin yönlendirilmesinden önce yapılır; ancak kaynak poddaki bir Egress NetworkPolicy UDP/TCP `53` portunu engellerse DNS adımı henüz çıkışta takılır.)*
 
 Doğrudan YAML kurcalamak yerine önce **hangi kapıda takıldığını** şu 4 eleme notuyla daralt:
 
@@ -35,15 +36,15 @@ Doğrudan YAML kurcalamak yerine önce **hangi kapıda takıldığını** şu 4 
    * Paket L3/L4 sınırında düşüyor veya yanlış porta gidiyordur.
    * **Nasıl elersin?** Hedef **Pod IP'sine küme içindeki çalışan başka bir poddan** doğrudan istek at:
      * *Pod IP'den yanıt gelip dış LB IP'den gelmiyorsa:* Uygulama ve NetworkPolicy sağlamdır! Sorun **1. Kapıda (LoadBalancer / port eşleşmesi)** yer alır.
-     * *Başka bir poddan Pod IP'ye gidip geliyor ama tek bir belirli poddan veya hiçbir poddan Pod IP'ye bile ulaşılamıyorsa:* Sorun **5. Kapıda (Calico NetworkPolicy)** yer alır.
-     * *Pod IP çalışıp Service adı/ClusterIP çalışmıyorsa:* Sorun **3. Kapıda (Service / Endpoints)** yer alır.
+     * *Pod IP çalışıp Service adı/ClusterIP çalışmıyorsa:* Sorun **4. Kapıda (Service / Endpoints)** yer alır.
+     * *Başka bir poddan Pod IP'ye bile ulaşılamıyor (timeout) ama pod kendi içinde (`127.0.0.1`) yanıt veriyorsa:* Sorun **5. Kapıda (Calico NetworkPolicy)** yer alır.
 
 2. **Belirti: Anında HTTP `308`, `403`, yanlış `404` JSON veya `503` (`Server: nginx`):**
    * Paket **2. Kapıya (NGINX Ingress)** ulaştı ve kenar proxy seviyesinde kesildi ya da yönlendirilemedi.
    * **Nasıl elersin?** Önce **Ingress'i baypas edip küme içinden doğrudan hedef Service'e** istek at. İçeriden `200 OK` alıyorsan arka uç sağlamdır; sorunun kaynağı NGINX Ingress kuralları, path/rewrite annotasyonları veya Ingress -> Service port eşleşmesidir.
 
 3. **Belirti: `502` + `Name does not resolve` veya DNS zaman aşımı:**
-   * **Nasıl elersin?** Hedefe bir kez **doğrudan Pod IP'siyle** bağlanmayı dene, bir kez de **`nslookup`** ile isim çözümle. Pod IP çalışıyor ama `nslookup` başarısız oluyorsa ağ veri yolu açık, **4. Kapı (CoreDNS veya Egress DNS `:53` izni / `ExternalName` FQDN)** kapalı demektir.
+   * **Nasıl elersin?** Hedefe bir kez **doğrudan Pod IP'siyle** bağlanmayı dene, bir kez de **`nslookup`** ile isim çözümle. Pod IP çalışıyor ama `nslookup` başarısız oluyorsa ağ veri yolu açık, **3. Kapı (CoreDNS / `ExternalName` FQDN veya Egress DNS `:53` izni)** kapalı demektir.
 
 4. **Belirti: NetworkPolicy blokluyor gibi görünüyor — nasıl kanıtlanır?**
    * *Önemli Kural:* Bir endpoint'i çalıştırmak için **`NetworkPolicy` kaynaklarını asla silme!** Politikayı silmek üretimi savunmasız bırakır (`./check.sh` da politikaların aktif kaldığını denetler). Bunun yerine politikadaki etiketleri, portları (`targetPort` / `:53`) veya Pod IP CIDR bloklarını kaynak/hedef ile eşleştir.
@@ -463,18 +464,18 @@ Lab bittiğinde Azure maliyetlerini durdurmak için kaynakları temizle:
 ### 🧠 Field Notes: How to Diagnose When Every Pod Is `1/1 Running`
 
 ```text
-Client (curl) ──▶ [1. Azure LB (L4)] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. Service / Endpoints] ──▶ [4. CoreDNS] ──▶ [5. Calico NetPol / Pod]
+Client (curl) ──▶ [1. Azure LB (L4)] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. CoreDNS (Name→IP)] ──▶ [4. Service / Endpoints (VIP→PodIP)] ──▶ [5. Calico NetPol] ──▶ [6. Target Pod Socket]
 ```
 
 1. **External `curl` hangs / times out (`HTTP 000`):**
    * Call the target **Pod IP directly from inside another Pod**:
      * *Pod IP works internally while external LB IP hangs:* App and NetPol are healthy -> **Gate 1 (LoadBalancer port mapping)**.
-     * *Pod IP fails silently across pods or from a specific pod:* **Gate 5 (Calico NetworkPolicy)** is dropping packets.
-     * *Pod IP works while Service/ClusterIP fails:* **Gate 3 (Service / Endpoints)**.
+     * *Pod IP works while Service/ClusterIP fails:* **Gate 4 (Service / Endpoints)**.
+     * *Pod IP fails silently across pods or from a specific pod while local `127.0.0.1` works:* **Gate 5 (Calico NetworkPolicy)** is dropping packets.
 2. **Immediate `308`, `403`, wrong `404` JSON, or `503` (`Server: nginx`):**
    * Bypass Ingress and call the Service directly from inside the cluster. If internal call returns `200 OK`, inspect **Gate 2 (NGINX Ingress annotations/path/port)**.
 3. **`502` + DNS failure (`Name does not resolve`):**
-   * Test direct **Pod IP reachability** vs **`nslookup`**. If IP connects while DNS fails, inspect **Gate 4 (CoreDNS / Egress `:53` / `ExternalName` FQDN)**.
+   * Test direct **Pod IP reachability** vs **`nslookup`**. If IP connects while DNS fails, inspect **Gate 3 (CoreDNS / `ExternalName` FQDN / Egress `:53`)**.
 4. **Never delete a `NetworkPolicy` to "fix" traffic:** Keep zero-trust enforcement intact (`./check.sh` verifies all policies remain present).
 
 ---

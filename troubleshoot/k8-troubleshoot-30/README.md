@@ -23,11 +23,12 @@
 
 ### 🧠 Tüm Podlar `1/1 Running` İken Nasıl Teşhis Koyarsın? (Saha Notları)
 
-Gerçek dünyada `kubectl get pods` çıktısının yeşil olması sistemin trafiği ilettiğini göstermez. Bir paket dış istemciden koda ulaşana kadar şu **5 kapıdan** geçer:
+Gerçek dünyada `kubectl get pods` çıktısının yeşil olması sistemin trafiği ilettiğini göstermez. Bir paket dış istemciden hedef pod içindeki uygulamaya ulaşana kadar sırayla şu **6 kapıdan** geçer:
 
 ```text
-İstemci (curl) ──▶ [1. Azure LB / Probe] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. Service / Endpoints] ──▶ [4. CoreDNS] ──▶ [5. Calico NetPol / Soket]
+İstemci (curl) ──▶ [1. Azure LB / Probe] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. CoreDNS (İsim→IP)] ──▶ [4. Service / Endpoints (VIP→PodIP)] ──▶ [5. Calico NetPol] ──▶ [6. Pod Soketi (0.0.0.0:Port)]
 ```
+*(Not: Bir pod başka bir servise giderken **3. Kapıdaki CoreDNS** sorgusu daha paket çıkmadan önce gerçekleşir; dolayısıyla kaynak poddaki bir Egress NetworkPolicy UDP/TCP `53` portunu keserse trafik henüz 3. kapı aşamasında durur.)*
 
 YAML açıp tahmin yürütmek yerine belirtiye göre şu 4 kuralı uygula:
 
@@ -36,15 +37,15 @@ YAML açıp tahmin yürütmek yerine belirtiye göre şu 4 kuralı uygula:
    * *İçeriden Pod IP ve hatta Cluster Service çalışıyor ama dış LB IP düşüyorsa:* Uygulama ve NetworkPolicy sağlamdır! Sorun **1. Kapı (Cloud LoadBalancer sağlık kontrolü / port ayarı)** sınırındadır.
 
 2. **Belirti: Anında HTTP `404` veya `503` (`Server: nginx`):**
-   * Paket NGINX Ingress'e ulaştı ama yönlendirilemedi.
+   * Paket **2. Kapıya (NGINX Ingress)** ulaştı ama yönlendirilemedi.
    * `kubectl get ingress -n <ns>` ile `CLASS`, `HOSTS` ve `ADDRESS` sütunlarını oku; ardından küme içinden hedef servise doğrudan bağlanarak arka ucun sağlam olduğunu doğrula ve NGINX Ingress loglarına bak.
 
-3. **Belirti: `502 Connection refused` vs `502 Name does not resolve`:**
-   * **İki pod arası `Pod IP` ile denerken bile `Connection refused` alıyorsan** ve hedefin `127.0.0.1` lokal çağrısı çalışıyorsa: Konteyner dış arayüze (`0.0.0.0`) bağlanmamıştır (veya Service endpoint boş olduğu için bağlantı reddediliyordur).
-   * **`Pod IP` çalışıyor ama isim ile `nslookup` başarısız oluyorsa:** Sorun **4. Kapıda (DNS / cross-namespace FQDN)** yer alır.
+3. **Belirti: `502 Name does not resolve` vs `502 Connection refused`:**
+   * **`Pod IP` çalışıyor ama isim ile `nslookup` başarısız oluyorsa:** Paket daha Service/Calico veri yoluna çıkmadan **3. Kapıda (CoreDNS / cross-namespace FQDN veya Egress `:53`)** kalmıştır.
+   * **İki pod arası `Pod IP` ile denerken `Connection refused` alıyorsan** ve hedefin `127.0.0.1` lokal çağrısı çalışıyorsa: Konteyner dış arayüze (`0.0.0.0`) bağlanmamıştır (**6. Kapı: Pod Soketi**). `Pod IP` çalışıyor ama `Service adı:port` reddediliyorsa **4. Kapıda (Service / Endpoints)** kopukluk vardır.
 
 4. **Belirti: Sessiz Timeout (`504`) — NetworkPolicy Şüphesi:**
-   * Kendi içinden (`127.0.0.1`) pod yanıt veriyorken başka poddan **`Pod IP` çağrısı bile asılı kalıyorsa** Calico NetworkPolicy paketi düşürüyordur.
+   * Kendi içinden (`127.0.0.1`) pod yanıt veriyorken başka poddan **`Pod IP` çağrısı bile asılı kalıyorsa** **5. Kapıda (Calico NetworkPolicy)** paket `DROP` ediliyordur.
    * *Önemli Kural:* **Asla bir `NetworkPolicy` nesnesini silerek çözüm arama!** (`./check.sh` politikaların aktif kaldığını da denetler.) Bunun yerine `ingress` kuralının varlığını, `namespaceSelector` + `podSelector` kombinasyonunu ve namespace etiketlerini kontrol et.
 
 ---
