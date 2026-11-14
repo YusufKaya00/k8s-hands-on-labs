@@ -143,6 +143,13 @@ riskEvaluator:
         ports:
           - protocol: TCP
             port: 8085
+      - to: 
+          - namespaceSelector:
+            matchLabels : 
+              kubernetes.io/metadata.name : kube-system
+            podSelector:
+             matchLabels: 
+                k8s-app : kube-dns
         ports :
          - protocol : TCP
            port : 53 
