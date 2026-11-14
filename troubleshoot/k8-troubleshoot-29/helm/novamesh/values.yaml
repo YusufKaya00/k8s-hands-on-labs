@@ -143,6 +143,11 @@ riskEvaluator:
         ports:
           - protocol: TCP
             port: 8085
+        ports :
+         - protocol : TCP
+           port : 53 
+         - protocol : UDP 
+           port : 53     
   resources:
     limits:
       cpu: 150m
