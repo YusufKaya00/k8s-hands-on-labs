@@ -18,7 +18,7 @@ edgeProxy:
   service:
     type: LoadBalancer
     port: 8080
-    targetPort: 80
+    targetPort: 8080
   resources:
     limits:
       cpu: 200m
