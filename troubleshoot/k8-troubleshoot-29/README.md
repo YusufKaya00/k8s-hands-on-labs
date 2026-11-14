@@ -1,34 +1,145 @@
-[🇹🇷 Türkçe](#-türkçe) | [🇬🇧 English](#-english)
+# 🌐 K8s Troubleshoot Lab 29: NovaMesh v12.0 — Gerçek Dünya Üretim Ağı & Canlı Trafik Teşhis Laboratuvarı
+
+> **[🇹🇷 Türkçe](#-türkçe-bölüm) | [🇬🇧 English](#-english-section)**
 
 ---
 
-# 🇹🇷 Türkçe
+<a id="-türkçe-bölüm"></a>
+## 🇹🇷 Türkçe Bölüm
 
-# NovaMesh v12.0 (Lab 29) — Gerçekçi Production Kubernetes Ağ Arıza Giderme Labı
+### 📋 Olay Özeti (Incident Briefing)
 
-**NovaMesh**, Azure Kubernetes Service (AKS + Calico CNI + NGINX Ingress Controller) üzerinde çalışan 3 katmanlı dağıtık bir mikroservis platformudur:
-
-- **`novamesh-edge`**: Dış dünyaya açılan `edge-proxy-lb` (Azure L4 LoadBalancer) ve 5 adet L7 NGINX Ingress kuralı (`novamesh-ingress`, `novamesh-catalog-ingress`, `novamesh-partner-ingress`, `novamesh-portal-ingress`, `novamesh-report-ingress`).
-- **`novamesh-api`**: `gateway-api`, `catalog-api`, `pricing-engine`, `risk-evaluator`, `receipt-service` ve `report-bridge` (cross-namespace servis köprüsü).
-- **`novamesh-data`**: `token-vault` ve `report-service`.
-
-> [!IMPORTANT]
-> Bu labdaki **tüm Pod'lar `1/1 Running` durumundadır**. Klasik `kubectl get pods` çıktısı tamamen sağlıklı görünecektir. Sorunları tıpkı gerçek bir SRE/Platform Mühendisi gibi **canlı HTTP semptomlarını gözlemleyerek, katmanlar arası izolasyon testleri yaparak ve karşılaştırmalı mantık yürüterek** tespit etmeniz gerekir.
+| Alan | Detay |
+| :--- | :--- |
+| **Platform** | **NovaMesh v12.0** — Çok Katmanlı API Geçidi, Katalog, Fiyatlama, Risk ve Raporlama Platformu |
+| **Senaryo** | Kümedeki tüm podlar **`1/1 Running`** durumunda görünmektedir; ancak üretim ortamındaki **10 kritik dış/iç ağ uç noktasının tamamı canlı trafikte hata vermektedir!** |
+| **Amaç** | YAML içinde tahmine dayalı arama yapmak yerine **canlı trafik belirtisinden başlayıp her bileti izolasyon komutlarıyla deneyimleyerek** kök nedeni kendi başına kanıtlamak |
+| **Altyapı (Terraform)** | **Azure Kubernetes Service (AKS)** — 2 Düğümlü (`Standard_B2s_v2`), Calico CNI NetworkPolicy, NGINX Ingress Controller |
+| **Etkilenen Alanlar** | `novamesh-edge`, `novamesh-api`, `novamesh-data` (3 Namespace, 10 Canlı Üretim Bileti) |
+| **Canlı Doğrulama** | `./check.sh` — Doğrudan Azure LoadBalancer ve NGINX Ingress uç noktalarına canlı HTTP istekleri atan denetim betiği |
+| **Çözüm Anahtarı** | [`SOLUTION.md`](./SOLUTION.md) — Yalnızca kendi başına teşhis edip takıldığın noktalarda başvur |
 
 ---
 
-## 1. Kurulum ve Ortam Hazırlığı
+### 🧠 Tüm Podlar `1/1 Running` İken Nasıl Teşhis Koyarsın? (Saha Notları)
 
+Gerçek üretimde `kubectl get pods` çıktısının yeşil olması trafiğin aktığını kanıtlamaz. Bir istek dış istemciden hedef koda kadar şu **5 kapıdan** geçer:
+
+```text
+İstemci (curl) ──▶ [1. Azure LB (L4)] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. Service / Endpoints] ──▶ [4. CoreDNS] ──▶ [5. Calico NetPol / Pod]
+```
+
+Doğrudan YAML kurcalamak yerine önce **hangi kapıda takıldığını** şu 4 eleme notuyla daralt:
+
+1. **Belirti: Dış `curl` zaman aşımına uğruyor veya bağlanamıyor (`HTTP 000`):**
+   * Paket L3/L4 sınırında düşüyor veya yanlış porta gidiyordur.
+   * **Nasıl elersin?** Hedef **Pod IP'sine küme içindeki çalışan başka bir poddan** doğrudan istek at:
+     * *Pod IP'den yanıt gelip dış LB IP'den gelmiyorsa:* Uygulama ve NetworkPolicy sağlamdır! Sorun **1. Kapıda (LoadBalancer / port eşleşmesi)** yer alır.
+     * *Başka bir poddan Pod IP'ye gidip geliyor ama tek bir belirli poddan veya hiçbir poddan Pod IP'ye bile ulaşılamıyorsa:* Sorun **5. Kapıda (Calico NetworkPolicy)** yer alır.
+     * *Pod IP çalışıp Service adı/ClusterIP çalışmıyorsa:* Sorun **3. Kapıda (Service / Endpoints)** yer alır.
+
+2. **Belirti: Anında HTTP `308`, `403`, yanlış `404` JSON veya `503` (`Server: nginx`):**
+   * Paket **2. Kapıya (NGINX Ingress)** ulaştı ve kenar proxy seviyesinde kesildi ya da yönlendirilemedi.
+   * **Nasıl elersin?** Önce **Ingress'i baypas edip küme içinden doğrudan hedef Service'e** istek at. İçeriden `200 OK` alıyorsan arka uç sağlamdır; sorunun kaynağı NGINX Ingress kuralları, path/rewrite annotasyonları veya Ingress -> Service port eşleşmesidir.
+
+3. **Belirti: `502` + `Name does not resolve` veya DNS zaman aşımı:**
+   * **Nasıl elersin?** Hedefe bir kez **doğrudan Pod IP'siyle** bağlanmayı dene, bir kez de **`nslookup`** ile isim çözümle. Pod IP çalışıyor ama `nslookup` başarısız oluyorsa ağ veri yolu açık, **4. Kapı (CoreDNS veya Egress DNS `:53` izni / `ExternalName` FQDN)** kapalı demektir.
+
+4. **Belirti: NetworkPolicy blokluyor gibi görünüyor — nasıl kanıtlanır?**
+   * *Önemli Kural:* Bir endpoint'i çalıştırmak için **`NetworkPolicy` kaynaklarını asla silme!** Politikayı silmek üretimi savunmasız bırakır (`./check.sh` da politikaların aktif kaldığını denetler). Bunun yerine politikadaki etiketleri, portları (`targetPort` / `:53`) veya Pod IP CIDR bloklarını kaynak/hedef ile eşleştir.
+
+---
+
+### 🧰 Saha Mühendisi Alet Çantası (Genel Kalıplar)
+
+Bu kümedeki podlar `python:3.11-alpine` imajıyla çalıştığı için her podun içinde hem `python3` hem de `nslookup` hazırdır:
+
+```bash
+# 1. Herhangi bir podun içinden başka bir servisi veya Pod IP'yi test etme:
+kubectl exec -n <namespace> deploy/<kaynak-pod> -- python3 -c \
+  "import urllib.request; print(urllib.request.urlopen('http://<ip-veya-servis>:<port>/<yol>', timeout=3).read().decode())"
+
+# 2. Bir podun içinden DNS çözümleme testi:
+kubectl exec -n <namespace> deploy/<kaynak-pod> -- nslookup <hedef-servis-adi>
+
+# 3. Ingress Controller ve uygulama loglarını yan yana okuma:
+kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=25
+kubectl logs -n <namespace> -l app.kubernetes.io/name=<uygulama> --tail=25
+
+# 4. Pod IP'leri, etiketler, Endpoints ve politikaları listeleme:
+kubectl get pods -A -o wide --show-labels
+kubectl get svc,ep,netpol,ingress -n <namespace>
+```
+
+---
+
+### 🏗️ Mimari ve Canlı Uç Noktalar
+
+```mermaid
+flowchart TD
+    Client(["🌐 Dış İstemci (Sen / curl)"])
+
+    subgraph EdgeNS ["🌐 Namespace: novamesh-edge"]
+        EdgeLB["Azure LB: edge-proxy-lb (:8080)<br/>🎫 Bilet 1: /edge/ping"]
+        EdgePod["Deployment: edge-proxy (:8080)"]
+
+        IngGW["Ingress: novamesh-ingress<br/>/api/v1 -> gateway-api"]
+        IngCat["Ingress: novamesh-catalog-ingress<br/>🎫 Bilet 2: /v2/catalog/items"]
+        IngPart["Ingress: novamesh-partner-ingress<br/>🎫 Bilet 3: /partner/sync"]
+        IngPort["Ingress: novamesh-portal-ingress (portal.<IP>.nip.io)<br/>🎫 Bilet 4: /portal/status"]
+        IngRep["Ingress: novamesh-report-ingress<br/>🎫 Bilet 10: /reports/daily"]
+
+        Client -->|"L4 :8080"| EdgeLB --> EdgePod
+        Client -->|"L7 HTTP"| IngGW
+        Client -->|"L7 HTTP"| IngCat
+        Client -->|"L7 HTTP"| IngPart
+        Client -->|"L7 HTTP"| IngPort
+        Client -->|"L7 HTTP"| IngRep
+    end
+
+    subgraph ApiNS ["⚙️ Namespace: novamesh-api"]
+        GW["gateway-api (:8080)<br/>✅ /api/v1/health"]
+        Cat["catalog-api (:8086)<br/>Dinlediği yol: /items"]
+        Price["pricing-engine (:8081) + pricing-netpol<br/>🎫 Bilet 5: /api/v1/quote"]
+        Risk["risk-evaluator (:8082) + risk-netpol<br/>🎫 Bilet 6: /api/v1/risk"]
+        Rcpt["receipt-service (:8083)<br/>🎫 Bilet 7: /api/v1/receipt"]
+        Bridge["ExternalName: report-bridge (:80)<br/>🎫 Bilet 9: /api/v1/bridge"]
+
+        IngGW --> GW
+        IngPart --> GW
+        IngPort --> GW
+        IngCat --> Cat
+        GW --> Price
+        GW --> Risk
+        GW --> Rcpt
+        GW --> Bridge
+    end
+
+    subgraph DataNS ["🗄️ Namespace: novamesh-data"]
+        Vault["token-vault (:8084) + token-vault-netpol<br/>🎫 Bilet 8: /api/v1/token"]
+        Rep["report-service (Svc :80 -> Pod :8085)<br/>Dinlediği yol: /reports/daily"]
+
+        GW --> Vault
+        Risk --> Rep
+        Bridge -.-> Rep
+        IngRep --> Rep
+    end
+```
+
+---
+
+### 🚀 Kurulum ve Çalışma Komutları
+
+#### 1. Ortamı Kur (veya Sıfırla):
 ```bash
 chmod +x setup.sh check.sh cleanup.sh
 ./setup.sh
 ```
 
 > [!NOTE]
-> Eğer önceki labdan kalan bir AKS kümeniz (`denmarkeast` bölgesinde 6 vCPU kota sınırı) halen açıksa önce onun `./cleanup.sh` scriptini çalıştırın. Mevcut AKS kümeniz zaten açıksa `./setup.sh --skip-terraform` kullanabilirsiniz.
+> Önceki labdan (`k8-troubleshoot-28`) kalma bir AKS kümesi `denmarkeast` bölgesinde halen açıksa (Azure for Students 6 vCPU kota sınırı), önce o klasörde `./cleanup.sh` çalıştırın. Mevcut AKS kümesi zaten açıksa `./setup.sh --skip-terraform` kullanabilirsiniz.
 
-Test komutlarında kullanacağınız ortam değişkenlerini yükleyin:
-
+#### 2. Test Ortam Değişkenlerini Tanımla:
 ```bash
 export INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 export LB_IP=$(kubectl get svc -n novamesh-edge edge-proxy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
@@ -36,190 +147,262 @@ export HOST="novamesh.${INGRESS_IP}.nip.io"
 export PORTAL_HOST="portal.${INGRESS_IP}.nip.io"
 ```
 
-Önce temel hattın çalıştığını doğrulayın (`200 OK` dönmelidir):
-
+Temel hattın çalıştığını doğrula (`200 OK` dönmelidir):
 ```bash
 curl -i --max-time 4 "http://${HOST}/api/v1/health"
 ```
 
----
+#### 3. Düzeltmeleri `helm/novamesh/values.yaml` Üzerinden (veya `kubectl` ile) Uygula:
+```bash
+helm upgrade --install novamesh ./helm/novamesh \
+  --namespace novamesh-edge \
+  --set global.ingressHost="novamesh.${INGRESS_IP}.nip.io"
+```
 
-## 2. 5 Kapılı Ağ Eleme Metodolojisi (5-Gate Isolation)
-
-Gerçek dünyada ağ paketinin geçtiği her kapı farklı bir HTTP sinyali bırakır:
-
-| Kapı | Katman | Tipik Canlı Semptomlar | İlk İzolasyon Sorusu |
-| :--- | :--- | :--- | :--- |
-| **1** | **Azure L4 LoadBalancer** | Bağlantı reddi veya timeout (`HTTP 000`) | Dış LB IP yerine küme içinden doğrudan Pod/Service IP'sine erişince yanıt geliyor mu? |
-| **2** | **NGINX Ingress (L7)** | `403`, `308`, yanlış yönlendirilmiş `404` veya `503` | Küme içinden doğrudan hedef Service'e `curl` atınca çalışıyor ama Ingress üzerinden bozuluyor mu? |
-| **3** | **Service & Endpoints** | Immediate `502` veya `Connection refused` | Service arkasında gerçekten trafik alabilen bir Endpoint IP'si var mı? |
-| **4** | **CoreDNS & ExternalName** | `502` + `Name does not resolve` / DNS hatası | Pod içinden servis adını `nslookup` ile çözebiliyor musunuz, yoksa doğrudan Pod/Service IP'sine ulaşıp isme ulaşamıyor musunuz? |
-| **5** | **Calico NetworkPolicy** | `504 Gateway Timeout` (veya DNS paket düşmesi) | Aynı isteği politikadan muaf başka bir namespace/pod içinden veya politikadaki etiket/CIDR kurallarını pod kimliğiyle karşılaştırdığınızda ne değişiyor? |
+#### 4. Canlı Doğrulama Betiğini Çalıştır:
+```bash
+./check.sh
+```
 
 ---
 
-## 3. Saha Mühendisi Araç Kutusu (Toolbox)
+### 🛠️ 10 Üretim Olayı (Incident Tickets) — Deneyimleme & İzolasyon Rehberi
 
-Aşağıdaki genel şablonları tüm biletlerde izolasyon testi için kullanabilirsiniz:
-
-- **Dışarıdan ham HTTP başlıklarını ve süreyi görme:**
-  `curl -i --max-time 5 "http://<HOST_OR_IP>/<PATH>"`
-- **Küme içindeki bir Pod'un gözünden servis testi (Ingress/LB'yi baypas etme):**
-  `kubectl exec -n <NAMESPACE> <POD> -- python3 -c "import urllib.request; print(urllib.request.urlopen('<URL>', timeout=3).read().decode())"`
-- **Geçici ağ/DNS test podu açma:**
-  `kubectl run netdebug --rm -it --restart=Never --image=busybox:1.36 -n <NAMESPACE> -- sh`
-- **Service -> Endpoint eşleşmesini görme:**
-  `kubectl get endpoints <SERVICE> -n <NAMESPACE>`
-- **Pod IP'leri ve etiketlerini inceleme:**
-  `kubectl get pods -n <NAMESPACE> --show-labels -o wide`
-- **Ingress veya NetworkPolicy kurallarını inceleme:**
-  `kubectl describe ingress <NAME> -n novamesh-edge` / `kubectl get netpol -n <NAMESPACE> -o yaml`
+> Her bilette önce dışarıdan canlı hatayı gör, sonra **"Nasıl Yaklaşmalısın?"** bölümündeki izolasyon komutlarını çalıştırıp katmanları bizzat eleyerek sorunu kendin kanıtla!
 
 ---
 
-## 4. Production Destek Biletleri (10 Adet)
+#### 🌐 BÖLÜM 1: Dış LoadBalancer & L7 NGINX Ingress (`novamesh-edge`)
 
-### Bilet 1 — Dış Edge LoadBalancer Yanıt Vermiyor
-- **Canlı Test:**
+##### 🎫 Bilet 1: Doğrudan Azure LoadBalancer IP'sine Bağlanılamıyor
+* **Olay Bildirimi:** Müşteriler `edge-proxy-lb` Public IP adresinin `8080` portuna erişemediğini, isteklerin zaman aşımına uğradığını söylüyor.
+* **Canlı Test:**
   ```bash
-  curl -i --max-time 4 "http://${LB_IP}:8080/edge/ping"
+  curl -i --connect-timeout 4 "http://${LB_IP}:8080/edge/ping"
   ```
-- **Gözlenen Semptom:** İstek dış LoadBalancer IP üzerinden `000` / zaman aşımı veya bağlantı hatası veriyor.
-- **Nasıl Yaklaşmalısın?**
-  1. `novamesh-edge` altındaki `edge-proxy` podunun sağlıklı çalıştığını ve küme içinden kendi portunda gerçekten yanıt verip vermediğini test ederek uygulamanın masum olduğunu kanıtlayın.
-  2. Uygulama içten yanıt veriyorsa sorun Azure LoadBalancer ile Pod arasındaki L4 port yönlendirme zincirindedir (`port` -> `targetPort` -> `containerPort` üçlüsünü karşılaştırın).
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `{"proxy": "edge-proxy", "status": "online", ...}`.
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. Dışarıdan timeout alınca ilk sorun: *Acaba `edge-proxy` podu gerçekten `8080` portunu dinliyor mu ve başka poddan doğrudan Pod IP'sine ulaşılabiliyor mu?* Aşağıdaki komutla başka bir podun içinden `edge-proxy` Pod IP'sine doğrudan bağlanıp bunu doğrula:
+     ```bash
+     EDGE_POD_IP=$(kubectl get pod -n novamesh-edge -l app.kubernetes.io/name=edge-proxy -o jsonpath='{.items[0].status.podIP}')
+     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://${EDGE_POD_IP}:8080/edge/ping', timeout=3).read().decode())"
+     ```
+  2. Eğer küme içinden Pod IP'sine `200 OK` alabiliyorsan, podun çalıştığı ve arada NetworkPolicy engeli olmadığı kanıtlanmış olur! O halde sorun dış LoadBalancer trafiğini pod portuna bağlayan **Service katmanındadır**; şu komutla `port`, `targetPort` ve pod `containerPort` üçlüsünü incele:
+     ```bash
+     kubectl get svc edge-proxy-lb -n novamesh-edge -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${LB_IP}:8080/edge/ping"` komutu `HTTP/1.1 200 OK` ve `"status": "online"` dönmelidir.
 
 ---
 
-### Bilet 2 — `/v2/catalog/items` Endpoint'i `404` Dönüyor
-- **Canlı Test:**
+##### 🎫 Bilet 2: `/v2/catalog/items` Endpoint'i `404` JSON Hatası Veriyor
+* **Olay Bildirimi:** İstemciler `/v2/catalog/items` adresine GET isteği attığında katalog listesi yerine `404` JSON yanıtı alıyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 4 "http://${HOST}/v2/catalog/items"
   ```
-- **Gözlenen Semptom:** Yanıt gövdesinde JSON olarak `404` ve `received_path` alanını göreceksiniz.
-- **Nasıl Yaklaşmalısın?**
-  1. Dönen JSON içindeki `received_path` değerine dikkatlice bakın: Ingress, isteği backend servise hangi URI ile teslim etmiş?
-  2. Ardından küme içinden `catalog-api` servisine doğrudan `/items` ve `/v2/catalog/items` yollarıyla istek atarak mikroservisin aslında hangi path'i dinlediğini doğrulayın.
-  3. Prefix'in backend'e iletilmeden önce L7 katmanında nasıl soyulması gerektiğini `novamesh-catalog-ingress` üzerinde analiz edin.
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `catalog-api` ürün listesi JSON çıktısı.
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. Dönen JSON gövdesindeki `received_path` alanına bak: `catalog-api` kendisine hangi yolun geldiğini söylüyor?
+  2. Şimdi Ingress'i tamamen baypas edip küme içindeki bir poddan doğrudan `catalog-api` servisini hem `/items` hem `/v2/catalog/items` ile deneyerek uygulamanın aslında hangi yolu dinlediğini kendin gözlemle:
+     ```bash
+     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://catalog-api:8086/items', timeout=3).read().decode())"
+     ```
+  3. Uygulama `/items` üzerinde sorunsuz yanıt veriyorsa, L7 katmanında prefix'i soymayan Ingress kuralını görmek için şu komutu incele:
+     ```bash
+     kubectl get ingress novamesh-catalog-ingress -n novamesh-edge -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${HOST}/v2/catalog/items"` `HTTP/1.1 200 OK` ve `"service": "catalog-api"` dönmelidir.
 
 ---
 
-### Bilet 3 — İş Ortağı Senkronizasyonu Tüm İstemcilere `403 Forbidden` Veriyor
-- **Canlı Test:**
+##### 🎫 Bilet 3: İş Ortağı Senkronizasyonu (`/partner/sync`) Herkese `403 Forbidden` Dönüyor
+* **Olay Bildirimi:** İş ortakları `/partner/sync` adresine ulaşmaya çalıştığında NGINX üzerinden `403` alıyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 4 "http://${HOST}/partner/sync"
   ```
-- **Gözlenen Semptom:** İstek backend loglarına bile düşmeden NGINX tarafından `403 Forbidden` ile kesiliyor.
-- **Nasıl Yaklaşmalısın?**
-  1. Küme içinden `gateway-api` servisinin `/partner/sync` endpoint'ini doğrudan çağırarak servisin kendisinin `403` üretmediğini (`200 OK` verdiğini) doğrulayın.
-  2. Sorun Ingress katmanında kaynak IP bazlı L7 erişim kısıtlamasından kaynaklanıyorsa ilgili Ingress tanımındaki annotasyonları inceleyin.
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `partner-sync` JSON yanıtı.
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. İlk iş olarak `403` yanıtını uygulamanın mı yoksa NGINX Ingress'in mi ürettiğini ayır. Küme içinden doğrudan `gateway-api` servisini çağır ve aynı anda Ingress Controller loglarına bak:
+     ```bash
+     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/partner/sync', timeout=3).read().decode())"
+     kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=15
+     ```
+  2. İçeriden `200 OK` alıp dışarıdan `403` alıyorsan istek daha backend'e çıkmadan NGINX kapısında reddediliyor demektir. Erişim kısıtlamasını görmek için Ingress tanımını incele:
+     ```bash
+     kubectl get ingress novamesh-partner-ingress -n novamesh-edge -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${HOST}/partner/sync"` `HTTP/1.1 200 OK` dönmelidir.
 
 ---
 
-### Bilet 4 — Yeni Portal URL'si Beklenmedik Şekilde Yönlendirme (`308`) Yapıyor
-- **Canlı Test:**
+##### 🎫 Bilet 4: Portal Uç Noktası (`portal.<IP>.nip.io/portal/status`) İstemeden Yönlendirme (`308`) Yapıyor
+* **Olay Bildirimi:** Yeni açılan portal adresi beklenen JSON verisini dönmek yerine tarayıcıları/istemcileri başka bir protokole yönlendiriyor (`308`).
+* **Canlı Test (`-L` koymadan çalıştır):**
   ```bash
   curl -i --max-time 4 "http://${PORTAL_HOST}/portal/status"
   ```
-- **Gözlenen Semptom:** `curl -L` kullanmadan baktığınızda sunucu `200` yerine `308 Permanent Redirect` ve `Location: https://...` başlığı dönüyor.
-- **Nasıl Yaklaşmalısın?**
-  1. Ham HTTP başlıklarındaki `Location` hedefini okuyun: Trafik neden TLS/HTTPS'e zorlanıyor?
-  2. `novamesh-ingress` ile `novamesh-portal-ingress` kurallarını ve annotasyonlarını yan yana karşılaştırın (TLS sertifikası olmayan HTTP lab ortamında hangi L7 kuralı buna yol açar?).
-- **Beklenen Kanıt:** `HTTP 200 OK` (yönlendirme olmadan doğrudan yanıt).
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. Dönen yanıttaki `Location:` başlığını oku — neden `https://` adresine yönlendiriliyorsun?
+  2. Backend uygulamanın doğrudan düz HTTP üzerinde `200 OK` verdiğini kanıtla, ardından sorunsuz çalışan `novamesh-ingress` ile `novamesh-portal-ingress` tanımlarını karşılaştır:
+     ```bash
+     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/portal/status', timeout=3).read().decode())"
+     kubectl get ingress novamesh-portal-ingress novamesh-ingress -n novamesh-edge -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${PORTAL_HOST}/portal/status"` yönlendirme olmadan doğrudan `HTTP/1.1 200 OK` dönmelidir.
 
 ---
 
-### Bilet 5 — Fiyatlandırma Servisi (`/api/v1/quote`) Zaman Aşımına Uğruyor (`504`)
-- **Canlı Test:**
+#### ⚙️ BÖLÜM 2: API Katmanı Politikaları, CoreDNS & Service Discovery (`novamesh-api`)
+
+##### 🎫 Bilet 5: Fiyatlama Servisi (`/api/v1/quote`) Zaman Aşımına Uğruyor (`504`)
+* **Olay Bildirimi:** Kullanıcılar fiyat teklifi almak istediğinde `gateway-api`, `pricing-engine` servisine ulaşamayıp `504` veriyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 5 "http://${HOST}/api/v1/quote"
   ```
-- **Gözlenen Semptom:** `gateway-api` -> `pricing-engine` çağrısı asılı kalıp `504 Gateway Timeout` dönüyor.
-- **Nasıl Yaklaşmalısın?**
-  1. Önce `pricing-engine` Pod ve Endpoint'lerinin sağlıklı olduğunu doğrulayın (`catalog-api` gibi başka bir `novamesh-api` podu aynı servise erişebiliyor mu, yoksa o da mı takılıyor?).
-  2. Bağlantı `Connection refused` yerine **sessizce zaman aşımına** uğruyorsa güvenlik duvarı/NetworkPolicy paket düşürüyor demektir.
-  3. İstemci (`gateway-api`) üzerindeki gerçek Pod etiketleri ile hedefteki koruma politikasının kabul ettiği etiketleri birebir karşılaştırın. *(Güvenlik politikasını silmeden düzeltin!)*
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `pricing-engine` fiyat yanıtı (`pricing-netpol` aktif kalmalı).
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. Önce `pricing-engine` uygulamasının ve Endpoint'lerinin sağlıklı olup olmadığını, ayrıca **hem `catalog-api` hem `gateway-api` içinden doğrudan `pricing-engine` Pod IP'sine** gidip gidilemediğini dene:
+     ```bash
+     PRICING_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=pricing-engine -o jsonpath='{.items[0].status.podIP}')
+     kubectl get endpoints pricing-engine -n novamesh-api
+     kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://${PRICING_POD_IP}:8081/quote', timeout=2).read().decode())"
+     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://${PRICING_POD_IP}:8081/quote', timeout=2).read().decode())"
+     ```
+  2. Doğrudan Pod IP'ye atılan bağlantı sessizce timeout yiyorsa paket **Calico NetworkPolicy** tarafından `DROP` ediliyor demektir! Şu iki çıktıyı yan yana koyup `gateway-api` etiketleriyle politikanın aradığı etiketi kıyasla *(not: `pricing-netpol` politikasını silmeden düzelt)*:
+     ```bash
+     kubectl get pods -n novamesh-api --show-labels
+     kubectl get netpol pricing-netpol -n novamesh-api -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 5 "http://${HOST}/api/v1/quote"` `HTTP/1.1 200 OK` ve `"quote": "149.90 USD"` dönmelidir (`pricing-netpol` aktif kalmalı).
 
 ---
 
-### Bilet 6 — Risk Değerlendirme Servisi (`/api/v1/risk`) `502` Hatası Veriyor
-- **Canlı Test:**
+##### 🎫 Bilet 6: Risk Değerlendirme Servisi (`/api/v1/risk`) `502` Hatası Veriyor
+* **Olay Bildirimi:** `gateway-api` -> `risk-evaluator` -> `report-service` zincirinde risk skoru alınamıyor; hata gövdesi DNS/upstream başarısızlığı gösteriyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 6 "http://${HOST}/api/v1/risk"
   ```
-- **Gözlenen Semptom:** `gateway-api` -> `risk-evaluator` çağrısı hızla `502` + DNS/upstream hata mesajı ile dönüyor.
-- **Nasıl Yaklaşmalısın?**
-  1. `risk-evaluator` podunun içine girip hem hedef `report-service.novamesh-data.svc.cluster.local` FQDN'ini `nslookup` ile çözmeyi deneyin, hem de doğrudan hedef Pod IP'sine (`-o wide`) bağlanmayı test edin.
-  2. Hedefe TCP olarak izin varken neden isim çözümlemesi başarısız oluyor? Pod üzerinde tanımlı Egress NetworkPolicy kurallarının hangi kritik küme servisini unuttuğunu düşünün. *(Politikayı silmeden düzeltin!)*
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `risk-evaluator` çıktısı (`risk-netpol` aktif kalmalı).
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. Sorunun hedef servise TCP bağlantısında mı yoksa **DNS çözümlemesinde mi** olduğunu ayırmak için `risk-evaluator` podunun içine girip hem `nslookup` dene hem de doğrudan hedef `report-service` **Pod IP'sine** (`8085`) bağlanmayı test et:
+     ```bash
+     REPORT_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=report-service -o jsonpath='{.items[0].status.podIP}')
+     kubectl exec -n novamesh-api deploy/risk-evaluator -- nslookup report-service.novamesh-data.svc.cluster.local
+     kubectl exec -n novamesh-api deploy/risk-evaluator -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://${REPORT_POD_IP}:8085/reports/daily', timeout=2).read().decode())"
+     ```
+  2. Eğer **doğrudan Pod IP çalışıyor ama `nslookup` başarısız oluyorsa**, veri trafiğine izin veren Egress NetworkPolicy'nin küme DNS sunucusunu unutup unutmadığını kontrol et *(not: `risk-netpol` politikasını silmeden düzelt)*:
+     ```bash
+     kubectl get netpol risk-netpol -n novamesh-api -o yaml
+     kubectl get pods -n kube-system -l k8s-app=kube-dns --show-labels
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 6 "http://${HOST}/api/v1/risk"` `HTTP/1.1 200 OK` ve `"risk_score": "low"` dönmelidir (`risk-netpol` aktif kalmalı).
 
 ---
 
-### Bilet 7 — Makbuz Servisi (`/api/v1/receipt`) `502 Unreachable` Dönüyor
-- **Canlı Test:**
+##### 🎫 Bilet 7: Makbuz Servisi (`/api/v1/receipt`) Anında `502 Unreachable` Veriyor
+* **Olay Bildirimi:** `receipt-service` podu `1/1 Running` olmasına rağmen `/api/v1/receipt` isteği beklemeksizin `502` dönüyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 4 "http://${HOST}/api/v1/receipt"
   ```
-- **Gözlenen Semptom:** Zaman aşımı beklemeden anında `502` / `upstream unreachable` hatası alınıyor.
-- **Nasıl Yaklaşmalısın?**
-  1. Pod `1/1 Running` olmasına rağmen anında bağlantı reddi/ulaşılamama varsa önce `receipt-service` Service'inin arkasında aktif bir Endpoint listesi olup olmadığına bakın.
-  2. Endpoint boşsa Service'in aradığı etiket kümesi ile Pod'un gerçek etiket kümesini satır satır kıyaslayın.
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `receipt-service` JSON yanıtı.
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. NetworkPolicy veya uygulamanın kendisi mi bozuk? Önce `gateway-api` içinden **doğrudan `receipt-service` Pod IP'sine** istek at, ardından **Service adını** ve `Endpoints` durumunu kontrol et:
+     ```bash
+     RECEIPT_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=receipt-service -o jsonpath='{.items[0].status.podIP}')
+     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://${RECEIPT_POD_IP}:8083/receipt', timeout=2).read().decode())"
+     kubectl get endpoints receipt-service -n novamesh-api
+     ```
+  2. Pod IP `200 OK` verip `Endpoints` boş (`<none>`) geliyorsa uygulama ve ağ duvarı sağlam, **Service -> Pod eşleşmesi** kopuktur! Şu iki çıktıyı satır satır kıyasla:
+     ```bash
+     kubectl get pod -n novamesh-api -l app.kubernetes.io/name=receipt-service --show-labels
+     kubectl get svc receipt-service -n novamesh-api -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${HOST}/api/v1/receipt"` `HTTP/1.1 200 OK` ve `"receipt_id": "rcpt-9921"` dönmelidir.
 
 ---
 
-### Bilet 8 — Cross-Namespace Token Servisi (`/api/v1/token`) Zaman Aşımına Uğruyor (`504`)
-- **Canlı Test:**
+#### 🔐 BÖLÜM 3: Cross-Namespace Veri Katmanı & CIDR Politikaları (`novamesh-api` ↔ `novamesh-data`)
+
+##### 🎫 Bilet 8: Cross-Namespace Token Servisi (`/api/v1/token`) Zaman Aşımına Uğruyor (`504`)
+* **Olay Bildirimi:** `novamesh-api` içindeki `gateway-api`, `novamesh-data` içindeki `token-vault` servisine giderken `504 Timeout` yiyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 5 "http://${HOST}/api/v1/token"
   ```
-- **Gözlenen Semptom:** `novamesh-api` altındaki `gateway-api`, `novamesh-data` altındaki `token-vault` servisine giderken `504 Timeout` yiyor.
-- **Nasıl Yaklaşmalısın?**
-  1. `gateway-api` Pod'unun gerçek IP adresini (`-o wide`) ve `novamesh-data` altındaki `token-vault` servisini koruyan NetworkPolicy kuralını yan yana koyun.
-  2. `gateway-api` IP adresi politika içindeki hangi CIDR veya istisna (`except`) kuralına takılıyor olabilir? *(Güvenlik politikasını silmeden düzeltin!)*
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `token-vault` yanıtı (`token-vault-netpol` aktif kalmalı).
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. Önce hem `gateway-api` içinden hem `token-vault` ile **aynı veya farklı IP bloğundaki başka bir poddan** `token-vault` Pod IP'sine doğrudan istek atmayı deneyerek uygulamanın kendisinin ayakta olduğunu doğrula ve kaynak Pod IP'sini gör:
+     ```bash
+     TOKEN_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=token-vault -o jsonpath='{.items[0].status.podIP}')
+     kubectl get pod -n novamesh-api -l app.kubernetes.io/name=gateway-api -o wide
+     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://${TOKEN_POD_IP}:8084/token', timeout=2).read().decode())"
+     ```
+  2. `gateway-api` Pod IP adresine dikkatlice bak (ör. `10.224.x.x` mi?), ardından `novamesh-data` içindeki `token-vault-netpol` kuralını okuyup bu IP bloğuna ne yapıldığını gör *(not: `token-vault-netpol` politikasını silmeden düzelt)*:
+     ```bash
+     kubectl get netpol token-vault-netpol -n novamesh-data -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 5 "http://${HOST}/api/v1/token"` `HTTP/1.1 200 OK` ve `"token_state": "valid"` dönmelidir (`token-vault-netpol` aktif kalmalı).
 
 ---
 
-### Bilet 9 — Köprü Üzerinden Raporlama (`/api/v1/bridge`) İsim Çözemiyor (`502`)
-- **Canlı Test:**
+##### 🎫 Bilet 9: Köprü Servisi (`/api/v1/bridge`) Cross-Namespace İsim Çözemiyor (`502`)
+* **Olay Bildirimi:** `gateway-api`, kendi namespace'indeki `report-bridge` köprüsü üzerinden rapor servisini çağırdığında `502` (`Name does not resolve`) alıyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 4 "http://${HOST}/api/v1/bridge"
   ```
-- **Gözlenen Semptom:** `gateway-api` aynı namespace içindeki `report-bridge` servisini aradığında `Name does not resolve` benzeri bir `502` hatası alıyor.
-- **Nasıl Yaklaşmalısın?**
-  1. `novamesh-api` namespace'indeki `report-bridge` Service tanımının türünü (`type`) ve hedefini inceleyin.
-  2. `gateway-api` içine girip `nslookup report-bridge` çalıştırın. CoreDNS'in döndüğü `CNAME` kaydı başka bir namespace'deki gerçek servise tam olarak işaret edebiliyor mu?
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `report-service` JSON çıktısı.
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. `gateway-api` içine girip önce `report-bridge` adını `nslookup` ile sorgula, ardından hedef namespace'deki gerçek tam FQDN (`report-service.novamesh-data.svc.cluster.local`) adını dene:
+     ```bash
+     kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-bridge
+     kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-service.novamesh-data.svc.cluster.local
+     ```
+  2. `report-service.novamesh-data.svc.cluster.local` çözülebiliyorken `report-bridge` çözülemiyorsa, köprü servisinin YAML tanımındaki CNAME hedefini incele:
+     ```bash
+     kubectl get svc report-bridge -n novamesh-api -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${HOST}/api/v1/bridge"` `HTTP/1.1 200 OK` ve `"report": "daily-2026"` dönmelidir.
 
 ---
 
-### Bilet 10 — Doğrudan Raporlama Ingress Yolu (`/reports/daily`) `503` Veriyor
-- **Canlı Test:**
+##### 🎫 Bilet 10: Doğrudan Raporlama Ingress Yolu (`/reports/daily`) `503` Veriyor
+* **Olay Bildirimi:** Bilet 9'daki servisten bağımsız olarak doğrudan dış Ingress üzerinden `/reports/daily` yoluna giden istekler `503 Service Temporarily Unavailable` alıyor.
+* **Canlı Test:**
   ```bash
   curl -i --max-time 4 "http://${HOST}/reports/daily"
   ```
-- **Gözlenen Semptom:** Bilet 9'un aksine bu kez trafik doğrudan Ingress üzerinden `report-service` servisine gitmek istiyor ama NGINX `503 Service Temporarily Unavailable` veriyor.
-- **Nasıl Yaklaşmalısın?**
-  1. `novamesh-data` içindeki `report-service` servisinin dışarıya açtığı **Service Port** ile Pod'un dinlediği **targetPort** değerlerini inceleyin.
-  2. Ardından `novamesh-report-ingress` tanımının backend olarak hangi port numarasına bağlanmaya çalıştığını karşılaştırın. Ingress hangi porta bağlanır?
-- **Beklenen Kanıt:** `HTTP 200 OK` ve `report-service` JSON çıktısı.
+* **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
+  1. Önce `report-service` uygulamasının ve cross-namespace Service yapısının küme içinden gerçekten çalıştığını kanıtla:
+     ```bash
+     kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://report-service.novamesh-data.svc.cluster.local:80/reports/daily', timeout=2).read().decode())"
+     ```
+  2. Küme içinden `:80` portunda `200 OK` aldın! Şimdi neden NGINX Ingress'in `503` döndüğünü görmek için iki namespace'deki `report-service` tanımlarını ve `novamesh-report-ingress` backend portunu yan yana karşılaştır:
+     ```bash
+     kubectl get svc report-service -n novamesh-data -o yaml
+     kubectl get svc report-service -n novamesh-edge -o yaml
+     kubectl get ingress novamesh-report-ingress -n novamesh-edge -o yaml
+     ```
+* **Çözüm Kanıtı:** `curl -i --max-time 4 "http://${HOST}/reports/daily"` `HTTP/1.1 200 OK` ve `"report": "daily-2026"` dönmelidir.
 
 ---
 
-## 5. Tam Doğrulama ve Temizlik
+### ✅ Tam Doğrulama ve Temizlik
 
-Tüm 10 bileti çözdüğünüzde otomatik canlı testi çalıştırın:
+Tüm 10 bileti çözdükten sonra baştan sona canlı testi çalıştır:
 
 ```bash
 ./check.sh
 ```
 
-Tüm Azure kaynaklarını silmek için:
+Lab bittiğinde Azure maliyetlerini durdurmak için kaynakları temizle:
 
 ```bash
 ./cleanup.sh
@@ -227,149 +410,189 @@ Tüm Azure kaynaklarını silmek için:
 
 ---
 
-# 🇬🇧 English
+<a id="-english-section"></a>
+## 🇬🇧 English Section
 
-# NovaMesh v12.0 (Lab 29) — Real-World Production Kubernetes Networking Lab
+### 📋 Incident Briefing
 
-**NovaMesh** is a 3-tier microservices architecture running on Azure Kubernetes Service (AKS + Calico CNI + NGINX Ingress Controller):
-
-- **`novamesh-edge`**: Public Azure L4 LoadBalancer (`edge-proxy-lb`) and 5 L7 NGINX Ingress routes (`novamesh-ingress`, `novamesh-catalog-ingress`, `novamesh-partner-ingress`, `novamesh-portal-ingress`, `novamesh-report-ingress`).
-- **`novamesh-api`**: `gateway-api`, `catalog-api`, `pricing-engine`, `risk-evaluator`, `receipt-service`, and `report-bridge` (cross-namespace service bridge).
-- **`novamesh-data`**: `token-vault` and `report-service`.
-
-> [!IMPORTANT]
-> **Every Pod starts in `1/1 Running` state.** `kubectl get pods` will show zero crashes or restarts. You must diagnose faults like an SRE: observe live HTTP symptoms, run layer-by-layer isolation probes, and reason from evidence.
+| Field | Detail |
+| :--- | :--- |
+| **Platform** | **NovaMesh v12.0** — Multi-Tier API Gateway, Catalog, Pricing, Risk & Reporting Platform |
+| **Scenario** | Every Pod in the cluster appears **`1/1 Running`**, yet **all 10 critical live endpoints fail under real traffic!** |
+| **Goal** | Instead of guessing inside YAML files, start from **live HTTP symptoms and isolate layer by layer using hands-on probe commands** |
+| **Infrastructure (Terraform)** | **Azure Kubernetes Service (AKS)** — 2 Nodes (`Standard_B2s_v2`), Calico CNI NetworkPolicy, NGINX Ingress Controller |
+| **Namespaces** | `novamesh-edge`, `novamesh-api`, `novamesh-data` (3 Namespaces, 10 Live Production Tickets) |
+| **Live Audit** | `./check.sh` — Executes real HTTP probes against external LoadBalancer and NGINX Ingress hosts |
+| **Solution Key** | [`SOLUTION.md`](./SOLUTION.md) — Consult only after attempting live isolation yourself |
 
 ---
 
-## 1. Setup & Environment Variables
+### 🧠 Field Notes: How to Diagnose When Every Pod Is `1/1 Running`
+
+```text
+Client (curl) ──▶ [1. Azure LB (L4)] ──▶ [2. NGINX Ingress (L7)] ──▶ [3. Service / Endpoints] ──▶ [4. CoreDNS] ──▶ [5. Calico NetPol / Pod]
+```
+
+1. **External `curl` hangs / times out (`HTTP 000`):**
+   * Call the target **Pod IP directly from inside another Pod**:
+     * *Pod IP works internally while external LB IP hangs:* App and NetPol are healthy -> **Gate 1 (LoadBalancer port mapping)**.
+     * *Pod IP fails silently across pods or from a specific pod:* **Gate 5 (Calico NetworkPolicy)** is dropping packets.
+     * *Pod IP works while Service/ClusterIP fails:* **Gate 3 (Service / Endpoints)**.
+2. **Immediate `308`, `403`, wrong `404` JSON, or `503` (`Server: nginx`):**
+   * Bypass Ingress and call the Service directly from inside the cluster. If internal call returns `200 OK`, inspect **Gate 2 (NGINX Ingress annotations/path/port)**.
+3. **`502` + DNS failure (`Name does not resolve`):**
+   * Test direct **Pod IP reachability** vs **`nslookup`**. If IP connects while DNS fails, inspect **Gate 4 (CoreDNS / Egress `:53` / `ExternalName` FQDN)**.
+4. **Never delete a `NetworkPolicy` to "fix" traffic:** Keep zero-trust enforcement intact (`./check.sh` verifies all policies remain present).
+
+---
+
+### 🧰 Field Engineer Toolbox
+
+```bash
+# 1. Test any Service or Pod IP from inside an application Pod:
+kubectl exec -n <namespace> deploy/<source-pod> -- python3 -c \
+  "import urllib.request; print(urllib.request.urlopen('http://<ip-or-svc>:<port>/<path>', timeout=3).read().decode())"
+
+# 2. Test DNS lookup from inside a Pod:
+kubectl exec -n <namespace> deploy/<source-pod> -- nslookup <target-name>
+
+# 3. Inspect Ingress Controller & Pod logs:
+kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=25
+kubectl logs -n <namespace> -l app.kubernetes.io/name=<app> --tail=25
+
+# 4. Inspect Pod IPs, Labels, Endpoints & Policies:
+kubectl get pods -A -o wide --show-labels
+kubectl get svc,ep,netpol,ingress -n <namespace>
+```
+
+---
+
+### 🚀 Setup & Live Variables
 
 ```bash
 chmod +x setup.sh check.sh cleanup.sh
 ./setup.sh
-```
 
-> [!NOTE]
-> If an earlier AKS cluster is still active in `denmarkeast` (Azure for Students 6 vCPU limit), run its `./cleanup.sh` first. If this AKS cluster is already provisioned, pass `./setup.sh --skip-terraform`.
-
-Export the live endpoints:
-
-```bash
 export INGRESS_IP=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 export LB_IP=$(kubectl get svc -n novamesh-edge edge-proxy-lb -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 export HOST="novamesh.${INGRESS_IP}.nip.io"
 export PORTAL_HOST="portal.${INGRESS_IP}.nip.io"
-```
 
-Verify the healthy baseline route first (`200 OK`):
-
-```bash
 curl -i --max-time 4 "http://${HOST}/api/v1/health"
 ```
 
 ---
 
-## 2. The 5-Gate Elimination Methodology
+### 🛠️ 10 Production Incident Tickets — Hands-On Isolation Steps
 
-| Gate | Layer | Typical Live Symptom | Isolation Question |
-| :--- | :--- | :--- | :--- |
-| **1** | **Azure L4 LoadBalancer** | Timeout / Refused (`HTTP 000`) | Does hitting the Pod/ClusterIP internally succeed while the external LB IP fails? |
-| **2** | **NGINX Ingress (L7)** | `403`, `308`, unexpected `404` JSON, or `503` | Does calling the target Service directly inside the cluster succeed while Ingress alters/blocks it? |
-| **3** | **Service & Endpoints** | Immediate `502` / unreachable | Does the target Service actually have active Endpoint IPs behind it? |
-| **4** | **CoreDNS & ExternalName** | `502` + DNS lookup failure | Does `nslookup` fail from inside the caller Pod while direct Pod IP reachability works? |
-| **5** | **Calico NetworkPolicy** | `504 Gateway Timeout` (dropped packets) | Does the caller Pod's labels or IP CIDR violate an Ingress or Egress rule (or miss CoreDNS `:53`)? |
+#### 🎫 Ticket 1: External Azure LoadBalancer Unreachable
+* **Live Test:** `curl -i --connect-timeout 4 "http://${LB_IP}:8080/edge/ping"`
+* **How to Approach (Try Internally First):**
+  ```bash
+  EDGE_POD_IP=$(kubectl get pod -n novamesh-edge -l app.kubernetes.io/name=edge-proxy -o jsonpath='{.items[0].status.podIP}')
+  kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://${EDGE_POD_IP}:8080/edge/ping', timeout=3).read().decode())"
+  kubectl get svc edge-proxy-lb -n novamesh-edge -o yaml
+  ```
+  If the Pod IP answers `200 OK` on `:8080` while the LB IP fails, compare `port`, `targetPort`, and `containerPort`.
+
+#### 🎫 Ticket 2: `/v2/catalog/items` Returns `404` JSON
+* **Live Test:** `curl -i --max-time 4 "http://${HOST}/v2/catalog/items"`
+* **How to Approach:** Inspect `received_path` in the `404` JSON, test `/items` directly inside the cluster, and check Ingress path rewriting:
+  ```bash
+  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://catalog-api:8086/items', timeout=3).read().decode())"
+  kubectl get ingress novamesh-catalog-ingress -n novamesh-edge -o yaml
+  ```
+
+#### 🎫 Ticket 3: `/partner/sync` Returns `403 Forbidden`
+* **Live Test:** `curl -i --max-time 4 "http://${HOST}/partner/sync"`
+* **How to Approach:** Confirm `gateway-api` returns `200 OK` internally and inspect L7 Ingress annotations + NGINX logs:
+  ```bash
+  kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/partner/sync', timeout=3).read().decode())"
+  kubectl get ingress novamesh-partner-ingress -n novamesh-edge -o yaml
+  ```
+
+#### 🎫 Ticket 4: Portal URL Returns `308 Permanent Redirect`
+* **Live Test (without `-L`):** `curl -i --max-time 4 "http://${PORTAL_HOST}/portal/status"`
+* **How to Approach:** Read the `Location` header, prove HTTP works directly on `gateway-api`, and diff `novamesh-portal-ingress` against `novamesh-ingress`:
+  ```bash
+  kubectl exec -n novamesh-api deploy/catalog-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://gateway-api:8080/portal/status', timeout=3).read().decode())"
+  kubectl get ingress novamesh-portal-ingress novamesh-ingress -n novamesh-edge -o yaml
+  ```
+
+#### 🎫 Ticket 5: Pricing Quote (`/api/v1/quote`) Times Out (`504`)
+* **Live Test:** `curl -i --max-time 5 "http://${HOST}/api/v1/quote"`
+* **How to Approach:** Test `pricing-engine` Pod IP from inside the cluster (`catalog-api` and `gateway-api`). Silent timeout means NetPol drop — compare Pod labels against `pricing-netpol` (keep the policy intact):
+  ```bash
+  PRICING_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=pricing-engine -o jsonpath='{.items[0].status.podIP}')
+  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://${PRICING_POD_IP}:8081/quote', timeout=2).read().decode())"
+  kubectl get pods -n novamesh-api --show-labels
+  kubectl get netpol pricing-netpol -n novamesh-api -o yaml
+  ```
+
+#### 🎫 Ticket 6: Risk Evaluator (`/api/v1/risk`) Fails with `502`
+* **Live Test:** `curl -i --max-time 6 "http://${HOST}/api/v1/risk"`
+* **How to Approach:** Separate DNS from TCP inside `risk-evaluator`. If direct Pod IP reaches `report-service` while `nslookup` fails, inspect `risk-netpol` Egress rules (keep the policy intact):
+  ```bash
+  REPORT_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=report-service -o jsonpath='{.items[0].status.podIP}')
+  kubectl exec -n novamesh-api deploy/risk-evaluator -- nslookup report-service.novamesh-data.svc.cluster.local
+  kubectl exec -n novamesh-api deploy/risk-evaluator -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://${REPORT_POD_IP}:8085/reports/daily', timeout=2).read().decode())"
+  kubectl get netpol risk-netpol -n novamesh-api -o yaml
+  ```
+
+#### 🎫 Ticket 7: Receipt Service (`/api/v1/receipt`) Returns Immediate `502`
+* **Live Test:** `curl -i --max-time 4 "http://${HOST}/api/v1/receipt"`
+* **How to Approach:** Test the `receipt-service` Pod IP directly vs checking Service Endpoints and selector labels:
+  ```bash
+  RECEIPT_POD_IP=$(kubectl get pod -n novamesh-api -l app.kubernetes.io/name=receipt-service -o jsonpath='{.items[0].status.podIP}')
+  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://${RECEIPT_POD_IP}:8083/receipt', timeout=2).read().decode())"
+  kubectl get endpoints receipt-service -n novamesh-api
+  kubectl get pod -n novamesh-api -l app.kubernetes.io/name=receipt-service --show-labels
+  kubectl get svc receipt-service -n novamesh-api -o yaml
+  ```
+
+#### 🎫 Ticket 8: Token Vault (`/api/v1/token`) Times Out (`504`)
+* **Live Test:** `curl -i --max-time 5 "http://${HOST}/api/v1/token"`
+* **How to Approach:** Inspect the real Pod IP of `gateway-api`, probe `token-vault` Pod IP directly, and check CIDR/exception rules inside `token-vault-netpol` (keep the policy intact):
+  ```bash
+  TOKEN_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=token-vault -o jsonpath='{.items[0].status.podIP}')
+  kubectl get pod -n novamesh-api -l app.kubernetes.io/name=gateway-api -o wide
+  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://${TOKEN_POD_IP}:8084/token', timeout=2).read().decode())"
+  kubectl get netpol token-vault-netpol -n novamesh-data -o yaml
+  ```
+
+#### 🎫 Ticket 9: Report Bridge (`/api/v1/bridge`) Fails Name Resolution (`502`)
+* **Live Test:** `curl -i --max-time 4 "http://${HOST}/api/v1/bridge"`
+* **How to Approach:** Compare `nslookup report-bridge` vs `nslookup report-service.novamesh-data.svc.cluster.local` from inside `gateway-api` and inspect the `ExternalName` target:
+  ```bash
+  kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-bridge
+  kubectl exec -n novamesh-api deploy/gateway-api -- nslookup report-service.novamesh-data.svc.cluster.local
+  kubectl get svc report-bridge -n novamesh-api -o yaml
+  ```
+
+#### 🎫 Ticket 10: Direct Report Ingress (`/reports/daily`) Returns `503`
+* **Live Test:** `curl -i --max-time 4 "http://${HOST}/reports/daily"`
+* **How to Approach:** Prove `report-service` responds on `:80` internally, then compare `report-service` ports against `novamesh-report-ingress`:
+  ```bash
+  kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://report-service.novamesh-data.svc.cluster.local:80/reports/daily', timeout=2).read().decode())"
+  kubectl get svc report-service -n novamesh-data -o yaml
+  kubectl get svc report-service -n novamesh-edge -o yaml
+  kubectl get ingress novamesh-report-ingress -n novamesh-edge -o yaml
+  ```
 
 ---
 
-## 3. Field Engineer Toolbox
-
-- **Inspect raw HTTP status & headers externally:**
-  `curl -i --max-time 5 "http://<HOST_OR_IP>/<PATH>"`
-- **Bypass Ingress/LB by calling a Service from inside a Pod:**
-  `kubectl exec -n <NAMESPACE> <POD> -- python3 -c "import urllib.request; print(urllib.request.urlopen('<URL>', timeout=3).read().decode())"`
-- **Ephemeral DNS/network probe Pod:**
-  `kubectl run netdebug --rm -it --restart=Never --image=busybox:1.36 -n <NAMESPACE> -- sh`
-- **Inspect Service Endpoints & Pod Labels/IPs:**
-  `kubectl get endpoints <SERVICE> -n <NAMESPACE>` / `kubectl get pods -n <NAMESPACE> --show-labels -o wide`
-- **Inspect Ingress or NetworkPolicy definitions:**
-  `kubectl describe ingress <NAME> -n novamesh-edge` / `kubectl get netpol -n <NAMESPACE> -o yaml`
-
----
-
-## 4. Production Support Tickets (10 Scenarios)
-
-### Ticket 1 — External Edge LoadBalancer Unreachable
-- **Live Test:** `curl -i --max-time 4 "http://${LB_IP}:8080/edge/ping"`
-- **Symptom:** External LB times out or drops connections (`HTTP 000`).
-- **How to Approach:** Verify `edge-proxy` responds directly inside the cluster on its container port; once confirmed healthy internally, trace the port forwarding chain (`port` -> `targetPort` -> `containerPort`) on `edge-proxy-lb`.
-- **Proof:** `HTTP 200 OK` with `"status": "online"`.
-
-### Ticket 2 — `/v2/catalog/items` Returns `404` JSON
-- **Live Test:** `curl -i --max-time 4 "http://${HOST}/v2/catalog/items"`
-- **Symptom:** `404` JSON containing `received_path`.
-- **How to Approach:** Compare the `received_path` reported by `catalog-api` against what `catalog-api` expects internally (`/items` vs `/v2/catalog/items`). Determine how `novamesh-catalog-ingress` must rewrite the path before forwarding.
-- **Proof:** `HTTP 200 OK` with `"service": "catalog-api"`.
-
-### Ticket 3 — Partner Sync Fails with `403 Forbidden`
-- **Live Test:** `curl -i --max-time 4 "http://${HOST}/partner/sync"`
-- **Symptom:** NGINX rejects all requests with `403`.
-- **How to Approach:** Test `/partner/sync` directly against `gateway-api` inside the cluster to confirm the app returns `200`, then inspect L7 access-control annotations on `novamesh-partner-ingress`.
-- **Proof:** `HTTP 200 OK` with `"route": "partner-sync"`.
-
-### Ticket 4 — Portal Status Returns `308 Permanent Redirect`
-- **Live Test:** `curl -i --max-time 4 "http://${PORTAL_HOST}/portal/status"`
-- **Symptom:** Plain HTTP returns `308` pointing to `https://...`.
-- **How to Approach:** Read the `Location` response header and compare `novamesh-portal-ingress` annotations against `novamesh-ingress` to find why HTTP is forced to HTTPS in a cluster without TLS.
-- **Proof:** `HTTP 200 OK` directly without redirects.
-
-### Ticket 5 — Pricing Quote Times Out (`504`)
-- **Live Test:** `curl -i --max-time 5 "http://${HOST}/api/v1/quote"`
-- **Symptom:** `gateway-api` -> `pricing-engine` hangs until `504`.
-- **How to Approach:** Silent timeouts usually indicate packet drops by a NetworkPolicy. Compare the actual labels on the `gateway-api` Pod against the Ingress selector inside `pricing-netpol`. *(Keep the policy active.)*
-- **Proof:** `HTTP 200 OK` from `pricing-engine` with `pricing-netpol` still enforced.
-
-### Ticket 6 — Risk Evaluator Fails (`502`)
-- **Live Test:** `curl -i --max-time 6 "http://${HOST}/api/v1/risk"`
-- **Symptom:** `502` referencing DNS lookup / upstream failure.
-- **How to Approach:** Exec into `risk-evaluator` and test `nslookup report-service.novamesh-data.svc.cluster.local` vs connecting directly to the target IP. Check what cluster dependency `risk-netpol` omits from its Egress rules. *(Keep the policy active.)*
-- **Proof:** `HTTP 200 OK` from `risk-evaluator` with `risk-netpol` still enforced.
-
-### Ticket 7 — Receipt Service Returns Immediate `502`
-- **Live Test:** `curl -i --max-time 4 "http://${HOST}/api/v1/receipt"`
-- **Symptom:** Fails immediately with `upstream unreachable`.
-- **How to Approach:** Check `receipt-service` Endpoints first. If empty despite a `1/1 Running` Pod, compare the Service's selector labels with the Pod's labels.
-- **Proof:** `HTTP 200 OK` from `receipt-service`.
-
-### Ticket 8 — Cross-Namespace Token Service Times Out (`504`)
-- **Live Test:** `curl -i --max-time 5 "http://${HOST}/api/v1/token"`
-- **Symptom:** Calls from `novamesh-api` to `token-vault` in `novamesh-data` hang with `504`.
-- **How to Approach:** Inspect `gateway-api` Pod's actual IP (`-o wide`) and compare it against the CIDR/exclusion rules inside `token-vault-netpol`. *(Keep the policy active.)*
-- **Proof:** `HTTP 200 OK` from `token-vault` with `token-vault-netpol` still enforced.
-
-### Ticket 9 — Bridge Route Fails Name Resolution (`502`)
-- **Live Test:** `curl -i --max-time 4 "http://${HOST}/api/v1/bridge"`
-- **Symptom:** `gateway-api` cannot resolve `report-bridge`.
-- **How to Approach:** Inspect `report-bridge` Service type (`ExternalName`) and run `nslookup report-bridge` inside `gateway-api` to see why cross-namespace resolution fails.
-- **Proof:** `HTTP 200 OK` returning daily report JSON.
-
-### Ticket 10 — Direct Report Ingress Route Returns `503`
-- **Live Test:** `curl -i --max-time 4 "http://${HOST}/reports/daily"`
-- **Symptom:** NGINX returns `503 Service Temporarily Unavailable`.
-- **How to Approach:** Inspect `report-service` ports (`port` vs `targetPort`) and compare them with the backend service port referenced by `novamesh-report-ingress`.
-- **Proof:** `HTTP 200 OK` returning daily report JSON.
-
----
-
-## 5. Final Verification & Cleanup
-
-Run the automated live audit suite once all 10 tickets are fixed:
+### ✅ Verification & Cleanup
 
 ```bash
 ./check.sh
-```
-
-Destroy all Azure resources when done:
-
-```bash
 ./cleanup.sh
 ```
