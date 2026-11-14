@@ -337,14 +337,16 @@ helm upgrade --install novamesh ./helm/novamesh \
   curl -i --max-time 5 "http://${HOST}/api/v1/token"
   ```
 * **Nasıl Yaklaşmalısın? (İzolasyon Deneyi)**
-  1. Önce hem `gateway-api` içinden hem `token-vault` ile **aynı veya farklı IP bloğundaki başka bir poddan** `token-vault` Pod IP'sine doğrudan istek atmayı deneyerek uygulamanın kendisinin ayakta olduğunu doğrula ve kaynak Pod IP'sini gör:
+  1. Önce `token-vault` uygulamasının kendi içinde port `8084`'te yanıt verdiğini (`127.0.0.1`) kanıtla, ardından `gateway-api` podunun gerçek IP'sine (`-o wide`) bakıp `gateway-api` içinden `token-vault` Pod IP'sine doğrudan bağlanmayı dene:
      ```bash
+     kubectl exec -n novamesh-data deploy/token-vault -- python3 -c \
+       "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8084/token', timeout=2).read().decode())"
      TOKEN_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=token-vault -o jsonpath='{.items[0].status.podIP}')
      kubectl get pod -n novamesh-api -l app.kubernetes.io/name=gateway-api -o wide
      kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
        "import urllib.request; print(urllib.request.urlopen('http://${TOKEN_POD_IP}:8084/token', timeout=2).read().decode())"
      ```
-  2. `gateway-api` Pod IP adresine dikkatlice bak (ör. `10.224.x.x` mi?), ardından `novamesh-data` içindeki `token-vault-netpol` kuralını okuyup bu IP bloğuna ne yapıldığını gör *(not: `token-vault-netpol` politikasını silmeden düzelt)*:
+  2. `token-vault` kendi içinde `200 OK` verirken `gateway-api` Pod IP üzerinden sessizce zaman aşımına düşüyorsa arada **Calico NetworkPolicy** paketi düşürüyor demektir. `gateway-api` Pod IP adresine (`10.224.x.x` mi?) dikkatlice bak ve `novamesh-data` içindeki `token-vault-netpol` kurallarını oku *(not: `token-vault-netpol` politikasını silmeden düzelt)*:
      ```bash
      kubectl get netpol token-vault-netpol -n novamesh-data -o yaml
      ```
@@ -559,8 +561,10 @@ curl -i --max-time 4 "http://${HOST}/api/v1/health"
 
 #### 🎫 Ticket 8: Token Vault (`/api/v1/token`) Times Out (`504`)
 * **Live Test:** `curl -i --max-time 5 "http://${HOST}/api/v1/token"`
-* **How to Approach:** Inspect the real Pod IP of `gateway-api`, probe `token-vault` Pod IP directly, and check CIDR/exception rules inside `token-vault-netpol` (keep the policy intact):
+* **How to Approach:** Confirm `token-vault` responds locally on `127.0.0.1:8084`, inspect the real Pod IP of `gateway-api`, probe `token-vault` Pod IP from `gateway-api`, and check CIDR/exception rules inside `token-vault-netpol` (keep the policy intact):
   ```bash
+  kubectl exec -n novamesh-data deploy/token-vault -- python3 -c \
+    "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8084/token', timeout=2).read().decode())"
   TOKEN_POD_IP=$(kubectl get pod -n novamesh-data -l app.kubernetes.io/name=token-vault -o jsonpath='{.items[0].status.podIP}')
   kubectl get pod -n novamesh-api -l app.kubernetes.io/name=gateway-api -o wide
   kubectl exec -n novamesh-api deploy/gateway-api -- python3 -c \
