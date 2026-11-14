@@ -189,7 +189,7 @@ receiptService:
 
 reportBridge:
   name: report-bridge
-  externalName: report-bridge
+  externalName: report-service.novamesh-data.svc.cluster.local
   port: 80
 
 tokenVault:
