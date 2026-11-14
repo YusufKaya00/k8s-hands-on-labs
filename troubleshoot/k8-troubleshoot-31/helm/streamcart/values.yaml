@@ -17,7 +17,7 @@ edgeGateway:
   containerPort: 8080
   service:
     type: LoadBalancer
-    port: 9090
+    port: 8080
     targetPort: 8080
   resources:
     limits:
