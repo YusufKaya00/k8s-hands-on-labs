@@ -44,7 +44,7 @@ partnerIngress:
   enabled: true
   ingressClassName: nginx
   path: "/partner/sync"
-  whitelistSourceRange: "198.51.100.0/24"
+  whitelistSourceRange: "198.51.100.0/16"
 
 portalIngress:
   enabled: true
