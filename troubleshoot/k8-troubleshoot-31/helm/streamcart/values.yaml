@@ -50,7 +50,7 @@ reverseProxy:
     tag: 1.27-alpine
     pullPolicy: IfNotPresent
   containerPort: 80
-  resolver: "kube-dns.kube-system.svc.cluster.local"
+  resolver: "catalog-service.stream-app.svc.cluster.local"
   catalogResolver: "1.1.1.1"
   ordersReadTimeout: "1s"
   profileUpstreamPort: 8090
