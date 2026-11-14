@@ -52,22 +52,23 @@ Doğrudan YAML kurcalamak yerine önce **hangi kapıda takıldığını** şu 4 
 
 ### 🧰 Saha Mühendisi Alet Çantası (Genel Kalıplar)
 
-Bu kümedeki podlar `python:3.11-alpine` imajıyla çalıştığı için her podun içinde hem `python3` hem de `nslookup` hazırdır:
+Bu kümedeki tüm podlarda (`alpine` tabanlı) hem `wget` hem `nslookup` hazırdır. Karmaşık tek satırlar yazmak yerine podların içine girip normal terminal gibi kullanabilirsin:
 
 ```bash
-# 1. Herhangi bir podun içinden başka bir servisi veya Pod IP'yi test etme:
-kubectl exec -n <namespace> deploy/<kaynak-pod> -- python3 -c \
-  "import urllib.request; print(urllib.request.urlopen('http://<ip-veya-servis>:<port>/<yol>', timeout=3).read().decode())"
+# 1. Önce tüm Pod IP adreslerini ve etiketleri gör:
+kubectl get pods -A -o wide
 
-# 2. Bir podun içinden DNS çözümleme testi:
-kubectl exec -n <namespace> deploy/<kaynak-pod> -- nslookup <hedef-servis-adi>
+# 2. İstediğin bir podun içine terminal ile gir:
+kubectl exec -it -n <namespace> deploy/<kaynak-pod> -- sh
 
-# 3. Ingress Controller ve uygulama loglarını yan yana okuma:
+# (Podun içindeyken) HTTP / Pod IP / Servis testi yap:
+wget -qO- -T 3 http://<pod-ip-veya-servis>:<port>/<yol>
+
+# (Podun içindeyken) DNS testi yap:
+nslookup <hedef-servis-adi>
+
+# 3. Ingress Controller loglarını veya kaynak YAML'ını oku:
 kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx --tail=25
-kubectl logs -n <namespace> -l app.kubernetes.io/name=<uygulama> --tail=25
-
-# 4. Pod IP'leri, etiketler, Endpoints ve politikaları listeleme:
-kubectl get pods -A -o wide --show-labels
 kubectl get svc,ep,netpol,ingress -n <namespace>
 ```
 
