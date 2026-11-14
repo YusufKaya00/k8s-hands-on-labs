@@ -19,7 +19,7 @@ edgeTelemetry:
     type: LoadBalancer
     port: 8080
     targetPort: 8080
-    healthProbePath: "/healthz"
+    healthProbePath: "/ping"
   resources:
     limits:
       cpu: 150m
