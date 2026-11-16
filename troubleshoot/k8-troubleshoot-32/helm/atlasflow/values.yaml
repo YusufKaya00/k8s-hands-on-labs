@@ -11,7 +11,7 @@ namespaces:
 ingress:
   enabled: true
   ingressClassName: nginx
-  catalogPathType: Exact
+  catalogPathType: Prefix
 
 edgeProxy:
   replicaCount: 1
