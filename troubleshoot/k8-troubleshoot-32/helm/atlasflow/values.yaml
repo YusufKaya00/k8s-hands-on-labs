@@ -203,6 +203,9 @@ nodeGuardian:
 
 networkPolicies:
   pricingFrom:
-    - podSelector:
+    - namespaceselector:
+          matchLabels : 
+          kubernetes.io/metadata.name: atlas-edge
+      podSelector:
         matchLabels:
           app: edge-proxy
