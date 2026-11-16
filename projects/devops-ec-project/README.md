@@ -165,14 +165,22 @@ helm template erasmus ./helm/erasmus-connect -s templates/express-service.yaml
 
 **a) Görev Tanımı:**
 - [values.yaml](./helm/erasmus-connect/values.yaml) içindeki `nextjs` alanlarını (image, service, containerPort) doldur.
-- [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) içine `ports:` ve `env:` bloklarını (`[Bilet 4]`) ekle (`HOSTNAME=0.0.0.0`, `INTERNAL_API_URL` için Express Service DNS adı `http://erasmus-express-svc:<PORT>`).
+- [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) içine `ports:` ve `env:` bloklarını (`[Bilet 4]`) ekle (`HOSTNAME=0.0.0.0`, `PORT`).
 - [nextjs-service.yaml](./helm/erasmus-connect/templates/nextjs-service.yaml) içindeki `[Bilet 4]` `# TODO` kısımlarını doldur.
+- **Frontend imajını lokal URL'lerle yeniden build et.** Docker Hub'daki `erasmus-connect-frontend:latest` imajı `NEXT_PUBLIC_API_URL=https://api.erasmusconnect.net` ile build edildi. Bu değer JS paketine gömülü olduğu için lokalde tarayıcın **canlı API'ye** gider, senin kümene değil.
+
+> [!WARNING]
+> **`NEXT_PUBLIC_*` = Build-time, Secret değil.** Bu değişkenler `next build` sırasında JavaScript'e yazılır ve tarayıcıda herkes görebilir. Pod'a `env:` olarak vermek **hiçbir şeyi değiştirmez**. Bu yüzden Secret/ConfigMap'e değil, [.env.frontend-build](./.env.frontend-build) dosyasından `docker build --build-arg` ile verilirler.
 
 **b) İpucu ve Referans:**
 - Terminalde çalıştır:
   `kubectl explain deployment.spec.template.spec.containers.env`
 - `env` bir `<[]Object>` listesidir (`- name: ...` ve `value: "..."` alır).
-- Next.js SSR (Server-Side Rendering) istekleri tarayıcıdan değil Next.js podunun içinden çıkar; bu yüzden dış domain yerine cluster-internal Service DNS'ini (`http://erasmus-express-svc`) kullanması gerekir. Tarayıcıdan gelen istekler ise Bilet 9'daki Ingress `/api` yolunu kullanır.
+- **Build-arg akışı (frontend repo'nda):**
+  1. `Dockerfile`'ı aç. Her `NEXT_PUBLIC_*` için bir `ARG` satırı ve onu `ENV`'e aktaran satır, `RUN npm run build` satırından **önce** var mı? Yoksa ekle. Build sırasında sadece `ENV`'deki değerleri Next.js görür.
+  2. `.env.frontend-build` içindeki her satırı `--build-arg` olarak ver. `docker build --help | grep build-arg` ile sözdizimine bak. Bash'te dosyadan otomatik üretmek için: `sed 's/^/--build-arg /' .env.frontend-build | grep -v '^--build-arg #' | xargs`
+  3. İmajı Minikube'un içinde build et, Docker Hub'a pushlamana gerek kalmaz: `minikube image build --help` ya da `eval $(minikube docker-env)`.
+  4. Lokal imaja farklı bir tag ver (ör. `local`) ve `values.yaml`'da `nextjs.image.tag` değerini ona çevir. `pullPolicy: Never` ya da `IfNotPresent` kullan.
 
 <details>
 <summary>🆘 Takılırsan Aç (Reveal): `env` Bloğu Yazım Kalıbı</summary>
@@ -181,7 +189,7 @@ helm template erasmus ./helm/erasmus-connect -s templates/express-service.yaml
 - `env:` (10 boşluk)
 - `  - name: <DEĞİŞKEN_ADI>` (12 boşluk + tire)
 - `    value: "<DEĞER>"` (14 boşluk)
-Dikkat: Sayı veya boolean bile olsa Kubernetes `env.value` alanı `<string>` tipindedir; tırnak (`"..."`) içinde yaz!
+Dikkat: Sayı veya boolean bile olsa Kubernetes `env.value` alanı `<string>` tipindedir; tırnak (`"..."`) içinde yaz! Helm'de sayıyı string yapmak için: `{{ .Values.nextjs.containerPort | quote }}`
 
 </details>
 
@@ -189,7 +197,13 @@ Dikkat: Sayı veya boolean bile olsa Kubernetes `env.value` alanı `<string>` ti
 ```bash
 helm template erasmus ./helm/erasmus-connect -s templates/nextjs-deployment.yaml
 helm template erasmus ./helm/erasmus-connect -s templates/nextjs-service.yaml
+
+# İmaja gerçekten lokal URL gömüldü mü? (canlı domain ÇIKMAMALI)
+minikube image ls | grep frontend
+kubectl exec deploy/erasmus-erasmus-connect-nextjs -- sh -c "grep -rl 'erasmus.local' .next/ | head -3"
+kubectl exec deploy/erasmus-erasmus-connect-nextjs -- sh -c "grep -rl 'api.erasmusconnect.net' .next/ | head -3"
 ```
+- İlk `grep` dosya bulmalı, ikincisi boş dönmeli.
 
 ---
 
