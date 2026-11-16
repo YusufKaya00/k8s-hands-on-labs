@@ -1,26 +1,27 @@
 # ==============================================================================
-# Erasmus Connect - Helm Values İskeleti
-# KURAL: Bu dosyadaki TODO alanlarını README'deki Bilet sırasına göre doldur.
+# Erasmus Connect - Helm Values Dosyası
+# KURAL: Gerçek şifreler (DATABASE_URL, JWT_SECRET vb.) BURAYA YAZILMAZ!
+# Şifreler .env.backend-secrets dosyasındadır ve kümeye `kubectl create secret` ile yüklenir.
 # ==============================================================================
 
 express:
   replicaCount: 1
-  image: 
+  image:
     repository: "yusufk00/erasmus-connect-backend"
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
-    type : ClusterIP
+    type: ClusterIP
     port: 8080
-  containerPort: 4000 
+  containerPort: 4000
   healthPath: /health
   resources:
-     limits:
-       cpu: 150m
-       memory: 1280mi
-     requests:
+    requests:
       cpu: 100m
-      memory: 512m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
 
 nextjs:
   replicaCount: 1
@@ -29,40 +30,36 @@ nextjs:
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
-   type: ClusterIP
-   port: 8090
-   targetport: 3000
+    type: ClusterIP
+    port: 8090
   containerPort: 3000
   resources:
-     limits : 
-      cpu: 150m
-      memory: 1000m
-     requests:
+    requests:
       cpu: 100m
-      memory: 512m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
 
 redis:
   image:
     repository: redis
     tag: "7-alpine"
     pullPolicy: IfNotPresent
-  containerPorts:
-     redis: 6379
-  # TODO: [Bilet 5] Redis portunu (6379) ve kalıcı disk (PVC) boyutunu tanımla
+  port: 6379
+  storage: 1Gi
   resources:
-    # TODO: [Bilet 7] Redis için CPU ve RAM requests/limits değerlerini tanımla
+    # TODO: [Bilet 7] Redis için CPU ve RAM requests/limits değerlerini tanımla (ör. 50m/100m CPU, 64Mi/128Mi RAM)
 
 ingress:
   enabled: true
-  # TODO: [Bilet 9] ingressClassName (ör. nginx) ve host (ör. erasmus.local) bilgilerini buraya tanımla
+  # TODO: [Bilet 9] className (nginx) ve host (erasmus.local) bilgilerini buraya tanımla
 
 # ==============================================================================
-# Secret & ConfigMap REFERANSLARI (deger DEGIL, sadece ISIM!)
-# Helm bu nesneleri OLUSTURMAZ. Onlari sen `.env.*` dosyalarindan kubectl ile olusturursun (Bilet 6).
-# Azure'a gecince ayni isimdeki Secret'i Key Vault CSI Driver olusturacak; chart DEGISMEYECEK.
+# Secret & ConfigMap İSİM Referansları (Şifre DEĞİL, sadece kümedeki objenin ADI!)
+# .env.backend-secrets -> kubectl create secret generic erasmus-backend-secrets ...
+# .env.backend-config  -> kubectl create configmap erasmus-backend-config ...
 # ==============================================================================
 envFrom:
-  # TODO: [Bilet 6] Backend Secret'inin adini yaz (ör. erasmus-backend-secrets) -> .env.backend-secrets'tan olusturulacak
-  backendSecretName: ""
-  # TODO: [Bilet 6] Backend ConfigMap'inin adini yaz (ör. erasmus-backend-config) -> .env.backend-config'ten olusturulacak
-  backendConfigMapName: ""
+  backendSecretName: "erasmus-backend-secrets"
+  backendConfigMapName: "erasmus-backend-config"
