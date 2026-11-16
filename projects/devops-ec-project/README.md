@@ -279,15 +279,32 @@ Bu fazda hassas bağlantı dizelerini açık metinden çıkaracak, podların kay
 - `.env` formatı: `--from-env-file` tırnakları **silmez**, değerin parçası olarak alır. Bu yüzden dosyalarda değerler tırnaksız yazıldı (`KEY=value`). Railway'den tırnaklı kopyalarsan dikkat.
 
 <details>
-<summary>🆘 Takılırsan Aç (Reveal): `envFrom` Yazım Kalıbı</summary>
+<summary>🆘 Takılırsan Aç (Reveal): Terminalden Secret Oluşturma ve `express-deployment.yaml` (`env` + `envFrom`) Yazım Kalıbı</summary>
 
-Container içinde `env:` ile aynı hizada (10 boşluk):
-- `envFrom:` → `[]Object`, yani altındaki her eleman `-` ile başlar
-- `  - configMapRef:` (12 boşluk + tire)
-- `      name: {{ .Values.envFrom.backendConfigMapName }}` (16 boşluk)
-- `  - secretRef:`
-- `      name: {{ .Values.envFrom.backendSecretName }}`
+**Adım 1 — Terminalde `.env` dosyalarından Secret ve ConfigMap'i kümeye yükle (`values.yaml` içine şifre YAZILMAZ!):**
+```bash
+kubectl create secret generic erasmus-backend-secrets \
+  --from-env-file=.env.backend-secrets \
+  --dry-run=client -o yaml | kubectl apply -f -
 
+kubectl create configmap erasmus-backend-config \
+  --from-env-file=.env.backend-config \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**Adım 2 — `express-deployment.yaml` içinde `imagePullPolicy:` ile aynı hizada (10 boşluk) `env:` ve `envFrom:` yaz:**
+```yaml
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.express.containerPort | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.envFrom.backendConfigMapName }}
+            - secretRef:
+                name: {{ .Values.envFrom.backendSecretName }}
+```
 Sıra önemlidir: aynı key iki yerde varsa **listede sonra gelen kazanır**. `env:` ile verilen değerler ise `envFrom`'un hepsini ezer.
 
 </details>
