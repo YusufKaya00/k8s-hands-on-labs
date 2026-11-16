@@ -12,6 +12,6 @@ spec:
  ports: 
   - port: {{.Values.express.service.port}}
     targetPort: {{.Values.express.containerPort}}    
- protocol: TCP
- name: http
+    protocol: TCP
+    name: http
 
