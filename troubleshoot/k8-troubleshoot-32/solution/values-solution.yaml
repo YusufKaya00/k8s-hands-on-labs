@@ -1,0 +1,49 @@
+ingress:
+  catalogPathType: "Prefix"
+
+edgeProxy:
+  analyticsUpstream: "analytics-api.atlas-data.svc.cluster.local:8088"
+
+catalogApi:
+  resources:
+    requestsCpu: "30m"
+  pdb:
+    minAvailable: 1
+
+checkoutApi:
+  readinessPath: "/healthz"
+
+settlementWorker:
+  secretKeyRef: "auth-token"
+
+reportExporter:
+  storage:
+    storageClassName: "managed-csi"
+
+topologyWatcher:
+  rbac:
+    allowedResources:
+      - "pods"
+      - "services"
+
+vaultApi:
+  bindHost: "0.0.0.0"
+
+auditStore:
+  nodeSelectorEnabled: false
+
+nodeGuardian:
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "guardian"
+      effect: "NoSchedule"
+
+networkPolicies:
+  pricingFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: atlas-edge
+      podSelector:
+        matchLabels:
+          app: edge-proxy
