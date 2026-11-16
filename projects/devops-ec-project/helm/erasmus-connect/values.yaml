@@ -12,7 +12,6 @@ express:
   service:
     type : ClusterIP
     port: 8080
-    targetport : 4000  
   containerPort: 4000 
   healthPath: /health
   resources:
@@ -49,7 +48,6 @@ redis:
     pullPolicy: IfNotPresent
   containerPorts:
      redis: 6379
-     
   # TODO: [Bilet 5] Redis portunu (6379) ve kalıcı disk (PVC) boyutunu tanımla
   resources:
     # TODO: [Bilet 7] Redis için CPU ve RAM requests/limits değerlerini tanımla
