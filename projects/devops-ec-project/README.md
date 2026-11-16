@@ -23,7 +23,7 @@ Bu proje, **Erasmus Connect** uygulamasını (**Next.js** frontend, **Express** 
                           (Calico NetPol) ──────┘      │       └──────► [ Harici: MongoDB Atlas & Supabase ]
                                   │                    │
                                   ▼                    ▼
-                     [ Redis Headless Svc ]    [ Secret: erasmus-app-secrets ]
+                     [ Redis Headless Svc ]    [ Secret + ConfigMap (envFrom) ]
                                   │
                                   ▼
                        [ Redis StatefulSet (:6379) ]
@@ -249,40 +249,69 @@ Bu fazda hassas bağlantı dizelerini açık metinden çıkaracak, podların kay
 
 ---
 
-### Bilet 6: `secrets.yaml` ve `secretKeyRef` — Veritabanı Anahtarlarını Koruma
+### Bilet 6: `.env` → Secret + ConfigMap → `envFrom` (Secret'lar Git'e Girmeden)
 
 **a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `secrets:` altına `MONGODB_URI`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL` ve `JWT_SECRET` için boş anahtar şemasını tanımla.
-- [secrets.yaml](./helm/erasmus-connect/templates/secrets.yaml) dosyasını tamamla (`type: Opaque` ve `stringData:` veya `b64enc` ile `data:`).
-- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki `[Bilet 6]` `# TODO` bölümünde ortam değişkenlerini düz `value:` olarak değil `valueFrom.secretKeyRef` ile bağla!
+- Railway'den aldığın değişkenler 3 dosyaya ayrıldı (hepsi `.gitignore`'da, Git'e sadece değer içermeyen [.env.example](./.env.example) girer):
+
+| Dosya | Kümede neye dönüşür? | Kural |
+| :--- | :--- | :--- |
+| `.env.backend-secrets` | **Secret** `erasmus-backend-secrets` | Sızarsa zarar verir (DB şifresi, JWT, API key) |
+| `.env.backend-config` | **ConfigMap** `erasmus-backend-config` | Sızsa da sorun olmaz (log level, URL, port) |
+| `.env.frontend-build` | Kümeye **gitmez**, `docker build --build-arg` | `NEXT_PUBLIC_*` build-time değerler (Bilet 4) |
+
+- Bu Secret ve ConfigMap'i **Helm değil, sen** terminalden oluşturacaksın. Chart sadece onların **adını** bilir.
+- [values.yaml](./helm/erasmus-connect/values.yaml) içindeki `envFrom.backendSecretName` ve `envFrom.backendConfigMapName` `# TODO`'larını doldur.
+- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki iki `[Bilet 6]` `# TODO`'yu doldur: küçük bir `env:` (`HOST`, `PORT`) ve `envFrom:`.
+
+**Neden böyle?** Azure'a geçtiğinde (Faz 4) aynı isimli Secret'ı Azure Key Vault CSI Driver oluşturacak. Chart'ta tek satır değişmeyecek, sadece Secret'ı oluşturan şey değişecek.
 
 **b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain secret`
-  `kubectl explain deployment.spec.template.spec.containers.env.valueFrom.secretKeyRef`
-- `secretKeyRef` iki alan ister: `name` (`erasmus-app-secrets`) ve `key` (Secret içindeki anahtar adı, ör. `MONGODB_URI`).
-- **Güvenlik Kuralı:** Gerçek MongoDB/Supabase şifrelerini `values.yaml` dosyasına yazıp Git'e atma! Yerel testte `.gitignore` içindeki `values-secret.yaml` dosyasını oluşturup `-f values-secret.yaml` ile ver.
+- Secret ve ConfigMap'i dosyadan oluşturmanın bayrağını kendin bul:
+  `kubectl create secret generic --help | grep -A3 "from-env-file"`
+  `kubectl create configmap --help | grep -A3 "from-env-file"`
+- `envFrom` yapısını incele:
+  `kubectl explain pod.spec.containers.envFrom`
+  `kubectl explain pod.spec.containers.envFrom.secretRef`
+- `env` + `secretKeyRef` farkı: `secretKeyRef` her key için 5 satır ister (30 değişken için 150 satır). `envFrom` ise Secret'taki **tüm** key'leri tek seferde env değişkeni yapar.
+- **Tekrar çalıştırma tuzağı:** `kubectl create` ikinci kez çalışınca `AlreadyExists` hatası verir. `.env` değişince güncellemek için standart kalıp: `kubectl create ... --dry-run=client -o yaml | kubectl apply -f -`
+- **Değişiklik pod'a otomatik yansımaz:** Secret/ConfigMap'i güncelledikten sonra `envFrom` ile okunan değerler ancak pod yeniden başlayınca değişir: `kubectl rollout restart deploy/<ad>`.
+- `.env` formatı: `--from-env-file` tırnakları **silmez**, değerin parçası olarak alır. Bu yüzden dosyalarda değerler tırnaksız yazıldı (`KEY=value`). Railway'den tırnaklı kopyalarsan dikkat.
 
 <details>
-<summary>🆘 Takılırsan Aç (Reveal): `secretKeyRef` Yazım Kalıbı</summary>
+<summary>🆘 Takılırsan Aç (Reveal): `envFrom` Yazım Kalıbı</summary>
 
-`env:` listesi içinde bir gizli değişkeni çekmek için `value:` yerine şunu yaz:
-- `- name: MONGODB_URI`
-- `  valueFrom:`
-- `    secretKeyRef:`
-- `      name: <SECRET_METADATA_NAME>`
-- `      key: <SECRET_ICINDEKI_ANAHTAR>`
+Container içinde `env:` ile aynı hizada (10 boşluk):
+- `envFrom:` → `[]Object`, yani altındaki her eleman `-` ile başlar
+- `  - configMapRef:` (12 boşluk + tire)
+- `      name: {{ .Values.envFrom.backendConfigMapName }}` (16 boşluk)
+- `  - secretRef:`
+- `      name: {{ .Values.envFrom.backendSecretName }}`
+
+Sıra önemlidir: aynı key iki yerde varsa **listede sonra gelen kazanır**. `env:` ile verilen değerler ise `envFrom`'un hepsini ezer.
 
 </details>
 
 **c) Çözüm Kanıtı:**
 ```bash
-helm template erasmus ./helm/erasmus-connect \
-  --set secrets.MONGODB_URI="mongodb+srv://test" \
-  --set secrets.REDIS_URL="redis://erasmus-redis-headless:6379" \
-  -s templates/secrets.yaml -s templates/express-deployment.yaml
+# 1. Git'e secret girmiyor mu?
+git status --short          # .env.backend-secrets görünMEMELİ
+git check-ignore -v .env.backend-secrets
+
+# 2. Secret ve ConfigMap kümede mi? (describe değerleri GÖSTERMEZ, sadece key ve byte sayısı)
+kubectl describe secret erasmus-backend-secrets
+kubectl describe configmap erasmus-backend-config
+
+# 3. Render edilen YAML'da hiç gerçek değer yok, sadece isimler var mı?
+helm template erasmus ./helm/erasmus-connect -s templates/express-deployment.yaml | grep -A6 envFrom
+helm template erasmus ./helm/erasmus-connect | grep -i "mongodb+srv"   # BOŞ dönmeli
+
+# 4. Pod içinde değişkenler gerçekten yüklendi mi? (değeri basma, sadece varlığını kontrol et)
+kubectl exec deploy/erasmus-erasmus-connect-express -- sh -c 'env | cut -d= -f1 | sort'
 ```
-- `express-deployment.yaml` çıktısında hiçbir gerçek şifrenin/URI'nin açıkça geçmediğini, sadece `secretKeyRef` referanslarının göründüğünü doğrula.
+
+> [!NOTE]
+> `kubectl get secret erasmus-backend-secrets -o yaml` çıktısındaki değerler base64'tür, **şifreli değildir**. `echo <değer> | base64 -d` ile herkes çözer. Kümede de Secret'ları kimin okuyabileceğini RBAC ile sınırlamak gerekir.
 
 ---
 
@@ -356,7 +385,7 @@ helm template erasmus ./helm/erasmus-connect | grep -A 8 "resources:"
 **c) Çözüm Kanıtı:**
 Kümeye yüklediğinde tüm podlar `1/1 Running` olmalı ve `kubectl describe pod <pod-adi>` çıktısında `Readiness` / `Liveness` hatası olmamalıdır:
 ```bash
-helm upgrade --install erasmus ./helm/erasmus-connect -f values-secret.yaml
+helm upgrade --install erasmus ./helm/erasmus-connect
 kubectl get pods -w
 kubectl get endpoints
 ```
@@ -611,7 +640,7 @@ curl -i -H "Host: <DOMAIN>" http://<AKS_INGRESS_EXTERNAL_IP>/api/health
 
 ## Kontrol Listesi (Kendini Değerlendir)
 
-- [ ] Hiçbir şifre/connection string Git'e veya `values.yaml` içine açıkça yazılmadı.
+- [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
 - [ ] `express-deployment.yaml` ve `nextjs-deployment.yaml` podları `0.0.0.0` dinliyor ve `containerPort` ile Service `targetPort` eşleşiyor.
 - [ ] Redis `StatefulSet` ve `Headless Service` (`clusterIP: None`) kararlı DNS ile çalışıyor.
 - [ ] Tüm podların `requests` ve `limits` değerleri tek `Standard_B2s` node kapasitesine sığıyor.
