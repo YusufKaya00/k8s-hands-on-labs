@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "erasmus-connect.fullname" . }}-nextjs
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+    app: erasmus-nextjs
+spec:
+  replicas: {{ .Values.nextjs.replicaCount }}
+  selector:
+    matchLabels:
+      app: erasmus-nextjs
+  template:
+    metadata:
+      labels:
+        app: erasmus-nextjs
+    spec:
+      containers:
+        - name: nextjs-web
+          image: "{{ .Values.nextjs.image.repository }}:{{ .Values.nextjs.image.tag }}"
+          imagePullPolicy: {{ .Values.nextjs.image.pullPolicy }}
+          # TODO: [Bilet 4] `ports` bloğunu ekle ve Next.js `containerPort` değerini .Values.nextjs.containerPort ile tanımla
+          # TODO: [Bilet 4] `env` bloğunu ekle:
+          #   - HOSTNAME="0.0.0.0" (Next.js standalone modda localhost'a bağlanırsa Service yönlendiremez!)
+          #   - Sunucu tarafı (SSR) backend istekleri için INTERNAL_API_URL değerini Express Service DNS adına yönlendir
+          #   - İstemci tarafı (Browser) için NEXT_PUBLIC_API_URL / Supabase public değişkenlerini tanımla (dikkat: NEXT_PUBLIC_* build-time veya runtime stratejini kontrol et)
+          # TODO: [Bilet 7] `resources` bloğunu ekle (requests ve limits)
+          # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (Next.js ana sayfasına `/` veya `/api/health` endpoint'ine httpGet)

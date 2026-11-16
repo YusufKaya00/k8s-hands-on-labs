@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "erasmus-connect.fullname" . }}-express
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+    app: erasmus-express
+spec:
+  replicas: {{ .Values.express.replicaCount }}
+  selector:
+    matchLabels:
+      app: erasmus-express
+  template:
+    metadata:
+      labels:
+        app: erasmus-express
+    spec:
+      containers:
+        - name: express-api
+          image: "{{ .Values.express.image.repository }}:{{ .Values.express.image.tag }}"
+          imagePullPolicy: {{ .Values.express.image.pullPolicy }}
+          # TODO: [Bilet 2] `ports` bloğunu ekle ve containerPort değerini .Values.express.containerPort üzerinden bağla (uygulamanın 0.0.0.0 üzerinde dinlediğinden emin ol)
+          # TODO: [Bilet 6] `env` bloğunu ekle:
+          #   - HOST="0.0.0.0" ve PORT değerini ayarla
+          #   - MONGODB_URI, SUPABASE_URL, SUPABASE_KEY, REDIS_URL, JWT_SECRET değişkenlerini düz metin yerine `valueFrom.secretKeyRef` kullanarak Secret kaynağından çek!
+          # TODO: [Bilet 7] `resources` bloğunu ekle ve requests/limits değerlerini .Values.express.resources üzerinden bağla
+          # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` bloklarını ekle (httpGet ile healthPath ve containerPort kullan)

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erasmus-express-svc
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+    app: erasmus-express
+spec:
+  # TODO: [Bilet 3] Service `type` alanını belirle (Cluster içinden erişim için hangi tip kullanılmalı?)
+  # TODO: [Bilet 3] `selector` bloğunu yaz (Deployment pod'larındaki hangi label ile birebir eşleşmeli?)
+  # TODO: [Bilet 3] `ports` listesini yaz:
+  #   - `port`: Service'in cluster içinde sunduğu port
+  #   - `targetPort`: Express container'ının içeride dinlediği gerçek `containerPort` ile birebir aynı olmalı!

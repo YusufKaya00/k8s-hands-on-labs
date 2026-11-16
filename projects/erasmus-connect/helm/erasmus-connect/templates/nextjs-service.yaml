@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erasmus-nextjs-svc
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+    app: erasmus-nextjs
+spec:
+  # TODO: [Bilet 4] Service `type` alanını belirle
+  # TODO: [Bilet 4] `selector` bloğunu yaz (Next.js Deployment pod etiketleriyle eşleştir)
+  # TODO: [Bilet 4] `ports` bloğunu yaz (`port` ve `targetPort` eşleşmesine dikkat et)
