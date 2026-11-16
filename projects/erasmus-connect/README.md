@@ -3,7 +3,7 @@
 Bu proje, **Erasmus Connect** uygulamasını (**Next.js** frontend, **Express** backend, **Redis** önbellek/oturum katmanı, harici **MongoDB Atlas** ve **Supabase**) sıfır kopyala-yapıştır ile, her satırın mühendislik gerekçesini anlayarak **Kubernetes (Helm)** ve **Azure AKS (Terraform)** üzerine taşıman için hazırlanmış bilet tabanlı (ticket-driven) bir uygulama labıdır.
 
 > [!IMPORTANT]
-> **Lab Kuralı:** Bu repodaki [helm/erasmus-connect/](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/Chart.yaml) ve [terraform/](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/terraform/main.tf) dosyaları **bilerek eksik (`# TODO`)** bırakılmıştır. Amacın kodu AI'a yazdırmak değil; kendi terminalindeki `kubectl explain`, `helm template`, `editor.networkpolicy.io` ve `registry.terraform.io` kaynaklarını okuyarak her bileti tek tek çözmektir.
+> **Lab Kuralı:** Bu repodaki [helm/erasmus-connect/](./helm/erasmus-connect/Chart.yaml) ve [terraform/](./terraform/main.tf) dosyaları **bilerek eksik (`# TODO`)** bırakılmıştır. Amacın kodu AI'a yazdırmak değil; kendi terminalindeki `kubectl explain`, `helm template`, `editor.networkpolicy.io` ve `registry.terraform.io` kaynaklarını okuyarak her bileti tek tek çözmektir.
 
 ---
 
@@ -100,8 +100,8 @@ kubectl get pods -n ingress-nginx
 ### Bilet 2: Express Backend (`values.yaml` ve `express-deployment.yaml`)
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içinde `express.image` (`repository`, `tag`) ve `express.containerPort` değerlerini doldur.
-- [express-deployment.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/express-deployment.yaml) içindeki `[Bilet 2]` `# TODO` satırını kaldırıp `ports:` bloğunu yaz.
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `express.image` (`repository`, `tag`) ve `express.containerPort` değerlerini doldur.
+- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki `[Bilet 2]` `# TODO` satırını kaldırıp `ports:` bloğunu yaz.
 - **Kritik Mühendislik Kontrolü:** Express kodun içinde `app.listen(PORT, '127.0.0.1')` yazıyorsa Kubernetes Service trafiği pod içine **ulaşamaz**. Uygulamanın `0.0.0.0` (tüm arayüzler) dinlediğinden emin ol.
 
 **b) İpucu ve Referans:**
@@ -131,8 +131,8 @@ helm template erasmus ./helm/erasmus-connect -s templates/express-deployment.yam
 ### Bilet 3: Express Service (`express-service.yaml`) — `port` vs `targetPort` Eşleşmesi
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içindeki `express.service` altını (`type`, `port`) doldur.
-- [express-service.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/express-service.yaml) içindeki tüm `[Bilet 3]` `# TODO` bloklarını (`type`, `selector`, `ports`) yaz.
+- [values.yaml](./helm/erasmus-connect/values.yaml) içindeki `express.service` altını (`type`, `port`) doldur.
+- [express-service.yaml](./helm/erasmus-connect/templates/express-service.yaml) içindeki tüm `[Bilet 3]` `# TODO` bloklarını (`type`, `selector`, `ports`) yaz.
 - **Neden Önemli?** `port`, Service'in küme içinde sunduğu porttur (ör. `80` veya `8080`); `targetPort` ise trafiği podun içindeki gerçek `containerPort`'a yönlendirir. Bu ikisi uyuşmazsa `Connection Refused` alırsın!
 
 **b) İpucu ve Referans:**
@@ -164,9 +164,9 @@ helm template erasmus ./helm/erasmus-connect -s templates/express-service.yaml
 ### Bilet 4: Next.js Frontend (`nextjs-deployment.yaml` & `nextjs-service.yaml`)
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içindeki `nextjs` alanlarını (image, service, containerPort) doldur.
-- [nextjs-deployment.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/nextjs-deployment.yaml) içine `ports:` ve `env:` bloklarını (`[Bilet 4]`) ekle (`HOSTNAME=0.0.0.0`, `INTERNAL_API_URL` için Express Service DNS adı `http://erasmus-express-svc:<PORT>`).
-- [nextjs-service.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/nextjs-service.yaml) içindeki `[Bilet 4]` `# TODO` kısımlarını doldur.
+- [values.yaml](./helm/erasmus-connect/values.yaml) içindeki `nextjs` alanlarını (image, service, containerPort) doldur.
+- [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) içine `ports:` ve `env:` bloklarını (`[Bilet 4]`) ekle (`HOSTNAME=0.0.0.0`, `INTERNAL_API_URL` için Express Service DNS adı `http://erasmus-express-svc:<PORT>`).
+- [nextjs-service.yaml](./helm/erasmus-connect/templates/nextjs-service.yaml) içindeki `[Bilet 4]` `# TODO` kısımlarını doldur.
 
 **b) İpucu ve Referans:**
 - Terminalde çalıştır:
@@ -196,9 +196,9 @@ helm template erasmus ./helm/erasmus-connect -s templates/nextjs-service.yaml
 ### Bilet 5: Redis StatefulSet ve Headless Service (`clusterIP: None`)
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içinde `redis` portu (`6379`) ve PVC boyutunu (ör. `1Gi`) tanımla.
-- [redis-service.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/redis-service.yaml) içinde bu Service'i **Headless Service** yapacak kritik `clusterIP` ayarını, `selector` ve `ports` alanlarını yaz.
-- [redis-statefulset.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/redis-statefulset.yaml) içinde `serviceName`, `ports`, `volumeMounts` (`/data`) ve `volumeClaimTemplates` alanlarını tamamla.
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `redis` portu (`6379`) ve PVC boyutunu (ör. `1Gi`) tanımla.
+- [redis-service.yaml](./helm/erasmus-connect/templates/redis-service.yaml) içinde bu Service'i **Headless Service** yapacak kritik `clusterIP` ayarını, `selector` ve `ports` alanlarını yaz.
+- [redis-statefulset.yaml](./helm/erasmus-connect/templates/redis-statefulset.yaml) içinde `serviceName`, `ports`, `volumeMounts` (`/data`) ve `volumeClaimTemplates` alanlarını tamamla.
 
 **b) İpucu ve Referans:**
 - Terminalde çalıştır:
@@ -238,9 +238,9 @@ Bu fazda hassas bağlantı dizelerini açık metinden çıkaracak, podların kay
 ### Bilet 6: `secrets.yaml` ve `secretKeyRef` — Veritabanı Anahtarlarını Koruma
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içinde `secrets:` altına `MONGODB_URI`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL` ve `JWT_SECRET` için boş anahtar şemasını tanımla.
-- [secrets.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/secrets.yaml) dosyasını tamamla (`type: Opaque` ve `stringData:` veya `b64enc` ile `data:`).
-- [express-deployment.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/express-deployment.yaml) içindeki `[Bilet 6]` `# TODO` bölümünde ortam değişkenlerini düz `value:` olarak değil `valueFrom.secretKeyRef` ile bağla!
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `secrets:` altına `MONGODB_URI`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL` ve `JWT_SECRET` için boş anahtar şemasını tanımla.
+- [secrets.yaml](./helm/erasmus-connect/templates/secrets.yaml) dosyasını tamamla (`type: Opaque` ve `stringData:` veya `b64enc` ile `data:`).
+- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki `[Bilet 6]` `# TODO` bölümünde ortam değişkenlerini düz `value:` olarak değil `valueFrom.secretKeyRef` ile bağla!
 
 **b) İpucu ve Referans:**
 - Terminalde çalıştır:
@@ -275,8 +275,8 @@ helm template erasmus ./helm/erasmus-connect \
 ### Bilet 7: Kaynak Sınırları (`resources`: `requests` ve `limits`)
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içinde `express`, `nextjs` ve `redis` için `resources:` altında `requests` ve `limits` değerlerini belirle.
-- [express-deployment.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/express-deployment.yaml), [nextjs-deployment.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/nextjs-deployment.yaml) ve [redis-statefulset.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/redis-statefulset.yaml) içindeki `[Bilet 7]` `# TODO` kısımlarına `resources:` bloğunu ekle.
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `express`, `nextjs` ve `redis` için `resources:` altında `requests` ve `limits` değerlerini belirle.
+- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml), [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) ve [redis-statefulset.yaml](./helm/erasmus-connect/templates/redis-statefulset.yaml) içindeki `[Bilet 7]` `# TODO` kısımlarına `resources:` bloğunu ekle.
 - **Kısıt Hesabı:** Faz 4'te Azure'da `Standard_B2s` (2 vCPU, 4 GB RAM) tek node kullanacaksın. Sistem podları (`kube-system`, `calico`, `ingress-nginx`) da bu RAM/CPU'dan yiyecektir! Toplam `requests` değerlerin tek bir node'a sığmayacak kadar büyük olursa podlar `Pending` kalır.
 
 **b) İpucu ve Referans:**
@@ -307,8 +307,8 @@ helm template erasmus ./helm/erasmus-connect | grep -A 8 "resources:"
 ### Bilet 8: Sağlık Kontrolleri (`readinessProbe` & `livenessProbe`)
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içinde `express.healthPath` alanını doldur (uygulaman `/health` veya `/api/health` dönmüyorsa Express koduna 200 OK dönen bir endpoint ekle!).
-- [express-deployment.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/express-deployment.yaml), [nextjs-deployment.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/nextjs-deployment.yaml) ve [redis-statefulset.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/redis-statefulset.yaml) içindeki `[Bilet 8]` `# TODO` kısımlarını doldur.
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `express.healthPath` alanını doldur (uygulaman `/health` veya `/api/health` dönmüyorsa Express koduna 200 OK dönen bir endpoint ekle!).
+- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml), [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) ve [redis-statefulset.yaml](./helm/erasmus-connect/templates/redis-statefulset.yaml) içindeki `[Bilet 8]` `# TODO` kısımlarını doldur.
 - **Karar:** `readinessProbe` başarısız olursa Service bu poda trafik göndermeyi keser (restart etmez). `livenessProbe` başarısız olursa Kubelet container'ı öldürüp yeniden başlatır. Next.js/Express geç açılıyorsa `initialDelaySeconds` değerini kısa tutarsan CrashLoopBackOff yaşarsın!
 
 **b) İpucu ve Referans:**
@@ -359,8 +359,8 @@ Bu faz projenin ağ ve güvenlik omurgasıdır. Özellikle Calico altında **Pos
 ### Bilet 9: NGINX Ingress ile Path Routing (`ingress.yaml`)
 
 **a) Görev Tanımı:**
-- [values.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/values.yaml) içinde `ingress.className` (`nginx`) ve `ingress.host` (ör. `erasmus.local`) alanlarını doldur.
-- [ingress.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/ingress.yaml) dosyasındaki `[Bilet 9]` `# TODO` kısımlarını tamamla:
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `ingress.className` (`nginx`) ve `ingress.host` (ör. `erasmus.local`) alanlarını doldur.
+- [ingress.yaml](./helm/erasmus-connect/templates/ingress.yaml) dosyasındaki `[Bilet 9]` `# TODO` kısımlarını tamamla:
   - `/api` yolu -> `erasmus-express-svc`
   - `/` yolu -> `erasmus-nextjs-svc`
 - **Mimari Soru:** Express uygulaman route'ları `/api/auth`, `/api/users` şeklinde tanımlıyorsa `rewrite-target: /$2` annotation'ı **KOYMAMALISIN** (yoksa `/api` kırpılır ve Express `404` döner). Eğer Express route'ların `/auth`, `/users` ise o zaman rewrite annotation'ı gerekir. Kendi backend koduna göre karar ver!
@@ -406,7 +406,7 @@ curl -i -H "Host: erasmus.local" http://<INGRESS_IP>/api/health
 ### Bilet 10: Redis Zero-Trust İzolasyonu (`networkpolicy-redis.yaml`)
 
 **a) Görev Tanımı:**
-- [networkpolicy-redis.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/networkpolicy-redis.yaml) dosyasındaki `[Bilet 10]` `# TODO` kısımlarını doldur.
+- [networkpolicy-redis.yaml](./helm/erasmus-connect/templates/networkpolicy-redis.yaml) dosyasındaki `[Bilet 10]` `# TODO` kısımlarını doldur.
 - Kural amacı: Redis poduna (`app: erasmus-redis`) **SADECE** Express podları (`app: erasmus-express`) ve **SADECE** TCP `6379` portundan bağlanabilsin. Next.js podu veya kümedeki başka herhangi bir pod Redis'e erişemesin!
 
 **b) İpucu ve Referans:**
@@ -452,7 +452,7 @@ kubectl exec deploy/erasmus-erasmus-connect-express -- sh -c "nc -zv -w 3 erasmu
 ### Bilet 11: Post-DNAT Calico NetworkPolicy (`networkpolicy-express.yaml`)
 
 **a) Görev Tanımı:**
-- [networkpolicy-express.yaml](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/helm/erasmus-connect/templates/networkpolicy-express.yaml) dosyasındaki `[Bilet 11]` `# TODO` kısımlarını doldur.
+- [networkpolicy-express.yaml](./helm/erasmus-connect/templates/networkpolicy-express.yaml) dosyasındaki `[Bilet 11]` `# TODO` kısımlarını doldur.
 - **Post-DNAT Gerçeğini Uygula:**
   1. Dışarıdan gelen trafik önce NGINX Ingress Controller poduna, oradan `erasmus-express-svc` Service'ine (ör. port `80`) gider. `kube-proxy` (veya eBPF) paketi Express poduna iletmeden **önce DNAT** yapar; yani hedef IP pod IP'sine, hedef port ise Express'in **`containerPort`** değerine dönüşür.
   2. Bu yüzden Calico NetworkPolicy pod seviyesinde değerlendirme yaparken Service portunu (`80`) DEĞİL, **`containerPort`** değerini görür! `ports:` kısmına Express'in `containerPort` değerini yazmalısın.
@@ -505,8 +505,8 @@ Yerel kümede Helm chart'ın kusursuz çalıştıktan sonra şimdi bulut altyap�
 ### Bilet 12: Terraform Provider ve Öğrenci Bütçesi Değişkenleri (`versions.tf` & `variables.tf`)
 
 **a) Görev Tanımı:**
-- [versions.tf](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/terraform/versions.tf) içinde `required_version`, `azurerm` provider kaynağı ve boş `features {}` bloğunu yaz.
-- [variables.tf](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/terraform/variables.tf) içindeki tüm değişkenlere `description`, `type` ve öğrenci bütçesine uygun `default` değerlerini tanımla (`node_count = 1`, `vm_size = "Standard_B2s"`).
+- [versions.tf](./terraform/versions.tf) içinde `required_version`, `azurerm` provider kaynağı ve boş `features {}` bloğunu yaz.
+- [variables.tf](./terraform/variables.tf) içindeki tüm değişkenlere `description`, `type` ve öğrenci bütçesine uygun `default` değerlerini tanımla (`node_count = 1`, `vm_size = "Standard_B2s"`).
 
 **b) İpucu ve Referans:**
 - Resmi dokümantasyon: `registry.terraform.io/providers/hashicorp/azurerm/latest/docs`
@@ -527,13 +527,13 @@ terraform validate
 ### Bilet 13: Azure AKS Kümesi ve Calico `network_profile` (`main.tf` & `outputs.tf`)
 
 **a) Görev Tanımı:**
-- [main.tf](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/terraform/main.tf) içindeki `[Bilet 13]` `# TODO` kısımlarını tamamla:
+- [main.tf](./terraform/main.tf) içindeki `[Bilet 13]` `# TODO` kısımlarını tamamla:
   - `azurerm_resource_group` argümanları
   - `azurerm_kubernetes_cluster` temel argümanları (`name`, `location`, `resource_group_name`, `dns_prefix`)
   - `default_node_pool` (`name`, `node_count`, `vm_size`, `os_disk_size_gb`)
   - `identity` (`type = "SystemAssigned"`)
   - `network_profile` (`network_plugin` ve `network_policy = "calico"`)
-- [outputs.tf](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/terraform/outputs.tf) içinde küme adı, resource group adı ve `kube_config_raw` (`sensitive = true`) çıktılarını yaz.
+- [outputs.tf](./terraform/outputs.tf) içinde küme adı, resource group adı ve `kube_config_raw` (`sensitive = true`) çıktılarını yaz.
 
 **b) İpucu ve Referans:**
 - Resmi dokümantasyon: Google'da `azurerm_kubernetes_cluster terraform` ara ve `registry.terraform.io` sayfasındaki **Example Usage** ve **Argument Reference** bölümlerini incele.
@@ -565,7 +565,7 @@ terraform validate
 ### Bilet 14: `terraform plan`, Canlıya Çıkış, AKS'e Helm Deploy ve Uyku Modu
 
 **a) Görev Tanımı:**
-- [terraform.tfvars.example](file:///home/ysf/k8s-hands-on-labs/projects/erasmus-connect/terraform/terraform.tfvars.example) dosyasını `terraform.tfvars` olarak kopyalayıp değerlerini doldur.
+- [terraform.tfvars.example](./terraform/terraform.tfvars.example) dosyasını `terraform.tfvars` olarak kopyalayıp değerlerini doldur.
 - `terraform plan` çıktısını **satır satır oku**: Oluşacak ücretli kaynakları (VM, Managed Disk, LoadBalancer / Public IP) gör ve `terraform apply` ile kümeyi kur.
 - AKS kubeconfig'i al, NGINX Ingress Controller'ı AKS'e kur ve Faz 1-3'te hazırladığın Helm chart'ını canlı AKS kümesine deploy et.
 - Çalışman bittiğinde öğrenci kredini korumak için kümeyi durdur.
