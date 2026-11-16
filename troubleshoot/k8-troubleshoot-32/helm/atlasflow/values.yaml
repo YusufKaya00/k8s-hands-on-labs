@@ -88,7 +88,7 @@ settlementWorker:
   port: 8084
   secretName: "settlement-credentials"
   actualSecretKey: "auth-token"
-  secretKeyRef: "api-token"
+  secretKeyRef: "auth-token"
   resources:
     requests:
       cpu: 30m
