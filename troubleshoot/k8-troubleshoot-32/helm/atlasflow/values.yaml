@@ -175,8 +175,8 @@ auditStore:
     pullPolicy: IfNotPresent
   port: 8089
   nodeSelectorEnabled: true
-  nodeSelectorKey: "hardware-profile"
-  nodeSelectorValue: "dedicated-nvme"
+  nodeSelectorKey: "tier"
+  nodeSelectorValue: "data"
   resources:
     requests:
       cpu: 30m
