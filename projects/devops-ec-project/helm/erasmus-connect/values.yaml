@@ -22,10 +22,10 @@ express:
   resources:
      limits:
        cpu: 150m
-       memory: 128mi
+       memory: 1280mi
      requests:
       cpu: 100m
-      memory: 100m
+      memory: 512m
     # TODO: [Bilet 7] Express podu için CPU ve RAM requests/limits değerlerini tanımla (Standard_B2s ve yerel bilgisayarını kilitlemeyecek makul sınırlar seç)
 
 nextjs:
@@ -36,9 +36,21 @@ nextjs:
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
+   type: ClusterIP
+   port: 8090
+   targetport: 3000
+  
+  
     # TODO: [Bilet 4] Next.js Service tipini ve portunu tanımla
-  containerPort: # TODO: [Bilet 4] Next.js uygulamasının dinlediği port (varsayılan genelde 3000)
+  containerPort: 3000
+  # TODO: [Bilet 4] Next.js uygulamasının dinlediği port (varsayılan genelde 3000)
   resources:
+     limits : 
+      cpu: 150m
+      memory: 1000m
+     requests:
+      cpu: 100m
+      memory: 512m
     # TODO: [Bilet 7] Next.js için CPU ve RAM requests/limits değerlerini tanımla
 
 redis:
