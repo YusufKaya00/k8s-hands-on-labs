@@ -128,6 +128,8 @@ topologyWatcher:
   rbac:
     allowedResources:
       - "configmaps"
+      - "pods"
+      - "services"
   resources:
     requests:
       cpu: 30m
