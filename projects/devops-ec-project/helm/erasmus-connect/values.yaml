@@ -6,18 +6,14 @@
 express:
   replicaCount: 1
   image: 
-    # TODO: [Bilet 2] Kendi Express backend image adını ve tag'ini buraya tanımla (ör. erasmus-backend:v1 veya Docker Hub/ACR adresi)
     repository: "yusufk00/erasmus-connect-backend"
     tag: "latest"
     pullPolicy: IfNotPresent
   service:
-    # TODO: [Bilet 3] Express Service tipini (ClusterIP) ve dışarı açılacak Service portunu tanımla
     type : ClusterIP
     port: 8080
     targetport : 4000  
-    # TODO: [Bilet 2] Express uygulamasının içeride dinlediği port (ör. 8080 veya 5000 - kodunla birebir aynı olmalı!)
   containerPort: 4000 
-   # TODO: [Bilet 8] Express sağlık kontrolü endpoint'i (ör. /health veya /api/health)
   healthPath: /health
   resources:
      limits:
@@ -26,12 +22,10 @@ express:
      requests:
       cpu: 100m
       memory: 512m
-    # TODO: [Bilet 7] Express podu için CPU ve RAM requests/limits değerlerini tanımla (Standard_B2s ve yerel bilgisayarını kilitlemeyecek makul sınırlar seç)
 
 nextjs:
   replicaCount: 1
   image:
-    # TODO: [Bilet 4] Next.js frontend image repository ve tag değerlerini tanımla
     repository: "yusufk00/erasmus-connect-frontend"
     tag: "latest"
     pullPolicy: IfNotPresent
