@@ -11,7 +11,7 @@ spec:
      app: erasmus-express
  ports: 
   - port: {{.Values.express.service.port}}
- targetPort: {{.Values.exppres.containerPort}}    
+ targetPort: {{.Values.express.containerPort}}    
  protocol: TCP
  name: http
 
