@@ -32,8 +32,8 @@ nextjs:
   replicaCount: 1
   image:
     # TODO: [Bilet 4] Next.js frontend image repository ve tag değerlerini tanımla
-    repository: ""
-    tag: ""
+    repository: "yusufk00/erasmus-connect-frontend"
+    tag: "latest"
     pullPolicy: IfNotPresent
   service:
     # TODO: [Bilet 4] Next.js Service tipini ve portunu tanımla
