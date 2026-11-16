@@ -20,8 +20,12 @@ spec:
           image: "{{ .Values.express.image.repository }}:{{ .Values.express.image.tag }}"
           imagePullPolicy: {{ .Values.express.image.pullPolicy }}
           # TODO: [Bilet 2] `ports` bloğunu ekle ve containerPort değerini .Values.express.containerPort üzerinden bağla (uygulamanın 0.0.0.0 üzerinde dinlediğinden emin ol)
-          # TODO: [Bilet 6] `env` bloğunu ekle:
-          #   - HOST="0.0.0.0" ve PORT değerini ayarla
-          #   - MONGODB_URI, SUPABASE_URL, SUPABASE_KEY, REDIS_URL, JWT_SECRET değişkenlerini düz metin yerine `valueFrom.secretKeyRef` kullanarak Secret kaynağından çek!
+          # TODO: [Bilet 6] `env` bloğunu ekle (sadece pod'a özel 2 değer, düz `value:` ile):
+          #   - HOST="0.0.0.0"  (127.0.0.1 dinlerse Service ulaşamaz)
+          #   - PORT -> .Values.express.containerPort (tırnak içinde! env.value <string> ister -> `quote` fonksiyonu)
+          # TODO: [Bilet 6] `envFrom` bloğunu ekle (kubectl explain pod.spec.containers.envFrom):
+          #   - Bir eleman `configMapRef` ile .Values.envFrom.backendConfigMapName'i bağlasın
+          #   - Bir eleman `secretRef` ile .Values.envFrom.backendSecretName'i bağlasın
+          #   (envFrom, Secret/ConfigMap içindeki TÜM key'leri tek seferde env değişkeni yapar -> 30 satır secretKeyRef yazmazsın)
           # TODO: [Bilet 7] `resources` bloğunu ekle ve requests/limits değerlerini .Values.express.resources üzerinden bağla
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` bloklarını ekle (httpGet ile healthPath ve containerPort kullan)
