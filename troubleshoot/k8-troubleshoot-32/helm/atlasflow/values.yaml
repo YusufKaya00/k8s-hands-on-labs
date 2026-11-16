@@ -203,7 +203,8 @@ nodeGuardian:
 
 networkPolicies:
   pricingFrom:
-    - namespaceselector:
+  
+    - namespaceSelector:
           matchLabels : 
           kubernetes.io/metadata.name: atlas-edge
       podSelector:
