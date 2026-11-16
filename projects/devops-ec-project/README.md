@@ -77,7 +77,7 @@ Bu fazda yerel kümeni kuracak, Express, Next.js ve Redis iş yüklerini (Deploy
 **a) Görev Tanımı:**
 - Kendi bilgisayarında NetworkPolicy destekleyen bir yerel Kubernetes kümesi (Calico CNI ile Minikube veya k3d) ayağa kaldır.
 - `helm` aracının yerel iskeletimizi okuyabildiğini doğrula ve `--dry-run=client -o yaml` ile ham Kubernetes manifestosu üretme alışkanlığını test et.
-- Bu aşamada `projects/erasmus-connect/helm/erasmus-connect/` içindeki `# TODO` dosyalarını incele, henüz eksikler olduğu için neden hata/boşluk çıktığını gözlemle.
+- Bu aşamada `projects/devops-ec-project/helm/erasmus-connect/` içindeki `# TODO` dosyalarını incele, henüz eksikler olduğu için neden hata/boşluk çıktığını gözlemle.
 
 **b) İpucu ve Referans:**
 - Minikube ile Calico başlatma: `minikube start --network-plugin=cni --cni=calico` (veya `k3d` kullanıyorsan Calico CNI kurulumlu küme).

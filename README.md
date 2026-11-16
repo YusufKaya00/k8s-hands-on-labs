@@ -32,7 +32,8 @@ k8s-hands-on-labs/
 │   ├── terraform-ansible-2/         # IaC Multi-Node: Azure 1 Master + 1 Worker (Terraform) + K3s cluster join (Ansible) + Helm
 │   ├── devops-capstone-project-4/   # StreamForge: Production GitOps, RKE2, Rancher, Multi-DB & CI/CD Pipeline
 │   ├── devops-capstone-project-5/   # ResilienceStream: Polyglot SRE Platform (Kafka, RabbitMQ, Cassandra, Postgres, Redis, Chaos Mesh)
-│   └── devops-capstone-project-6/   # SupplyShield: Enterprise DevSecOps Platform (Harbor OCI Registry, Trivy, Jenkins K8s Agents, Kaniko, ArgoCD)
+│   ├── devops-capstone-project-6/   # SupplyShield: Enterprise DevSecOps Platform (Harbor OCI Registry, Trivy, Jenkins K8s Agents, Kaniko, ArgoCD)
+│   └── devops-ec-project/           # Erasmus Connect: Zero-Copy-Paste Ticket-Driven Lab (Next.js, Express, Redis, Calico NetPol, Helm & Terraform AKS)
 │
 └── troubleshoot/
     ├── chaos-troubleshooting-1/     # SRE Incident & Chaos Engineering Lab 1 (Web UI, 3 Resilient Checks, 3 Break-and-Fix Labs & Workflow)
@@ -142,6 +143,7 @@ k8s-hands-on-labs/
 * [**devops-capstone-project-4:** StreamForge Enterprise GitOps Platform](./projects/devops-capstone-project-4/README.md) — End-to-end multi-service DevOps capstone: Azure IaaS (Terraform), Ansible multi-node RKE2 bootstrap, Rancher Server, ArgoCD GitOps, `kube-prometheus-stack` (5s scrape), multi-DB (Postgres, Mongo, Redis), and GitLab CI 4-stage pipeline.
 * [**devops-capstone-project-5:** ResilienceStream SRE & Chaos Engineering Platform](./projects/devops-capstone-project-5/README.md) — Production-grade polyglot microservice ecosystem: Apache Kafka KRaft event streaming, RabbitMQ DLQ task queues, Apache Cassandra LSM-tree storage, PostgreSQL ACID store, Redis caching, Prometheus SLO burn-rate alerts, k6 Black Friday load testing, and 9 Chaos Mesh Game Days.
 * [**devops-capstone-project-6:** SupplyShield Enterprise DevSecOps Platform](./projects/devops-capstone-project-6/README.md) — Self-hosted **Harbor OCI Registry**, automated **Trivy** CVE scanning & admission gates, Docker Hub proxy cache, **Jenkins + JCasC + Kubernetes Dynamic Agent Pods**, **Kaniko** rootless container builds, OCI Helm charts, and **ArgoCD** GitOps sync.
+* [**devops-ec-project:** Erasmus Connect — Zero-Copy-Paste Helm & Azure AKS Lab](./projects/devops-ec-project/README.md) — Ticket-driven `# TODO` scaffolding lab for deploying a full-stack app (**Next.js**, **Express**, **Redis StatefulSet + Headless Service**, external MongoDB Atlas & Supabase) using `kubectl explain`, `helm template`, **NGINX Ingress**, **Post-DNAT Calico NetworkPolicies**, and **Terraform Azure AKS** (`Standard_B2s` + Calico).
 
 ---
 
@@ -224,6 +226,7 @@ Tüm projeler ve sorun giderme laboratuvarları hem yerel kümelerde (**Minikube
 * [**devops-capstone-project-4:** StreamForge Kurumsal GitOps & DevOps Bitirme Projesi](./projects/devops-capstone-project-4/README.md) — Azure IaaS (Terraform), Ansible multi-node RKE2 kurulumu, Rancher Server, ArgoCD GitOps, 5s kazımalı `kube-prometheus-stack`, çoklu veritabanı (PostgreSQL, MongoDB, Redis) ve 4 aşamalı GitLab CI DevSecOps hattı.
 * [**devops-capstone-project-5:** ResilienceStream SRE ve Kaos Mühendisliği Platformu](./projects/devops-capstone-project-5/README.md) — Apache Kafka KRaft olay akışı, RabbitMQ DLQ görev kuyruğu, Apache Cassandra LSM-tree zaman serisi, PostgreSQL ACID kayıt sistemi, Redis önbellek, Prometheus SLO alarmları, k6 Black Friday yük testi ve 9 Kaos Deneyi (Chaos Mesh Game Days).
 * [**devops-capstone-project-6:** SupplyShield Kurumsal DevSecOps Platformu (Harbor + Trivy + Jenkins + Kaniko + ArgoCD)](./projects/devops-capstone-project-6/README.md) — Self-Hosted **Harbor OCI Registry**, **Trivy** otomatik CVE zafiyet taraması ve dağıtım engelleme kapısı, Docker Hub **Proxy Cache**, **Jenkins + JCasC + Kubernetes Dynamic Agent Pod** mimarisi, **Kaniko** rootless imaj derleme, OCI Helm Chart push ve **ArgoCD** GitOps senkronizasyonu.
+* [**devops-ec-project:** Erasmus Connect — Sıfır Kopyala-Yapıştır Helm & Azure AKS Uygulama Labı](./projects/devops-ec-project/README.md) — **Next.js**, **Express**, **Redis (StatefulSet + Headless Service)** ve harici MongoDB Atlas/Supabase mimarisini `kubectl explain`, `helm template`, **NGINX Ingress**, **Post-DNAT Calico NetworkPolicy** ve **Terraform Azure AKS** (`Standard_B2s` + Calico) kullanarak `# TODO` iskeletleri üzerinden adım adım sıfırdan kurma rehberi (14 Bilet).
 
 ---
 
