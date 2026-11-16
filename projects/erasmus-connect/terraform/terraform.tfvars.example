@@ -1,0 +1,10 @@
+# Bu dosyayı `terraform.tfvars` olarak kopyalayıp kendi ortamına göre düzenle.
+# `terraform.tfvars` dosyası .gitignore içindedir.
+
+# TODO: [Bilet 14] Aşağıdaki değerleri kendi Azure öğrenci aboneliğine göre doldur:
+# resource_group_name = "..."
+# location            = "..."
+# cluster_name        = "..."
+# dns_prefix          = "..."
+# node_count          = 1
+# vm_size             = "Standard_B2s"
