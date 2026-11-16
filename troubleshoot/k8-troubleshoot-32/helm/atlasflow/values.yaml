@@ -192,7 +192,8 @@ nodeGuardian:
     repository: python
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
-  tolerations: 
+  tolerations:  
+   dedicated=guardian:NoSchedule
   resources:
     requests:
       cpu: 20m
