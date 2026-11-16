@@ -1,0 +1,6 @@
+apiVersion: v2
+name: erasmus-connect
+description: Erasmus Connect (Next.js + Express + Redis) Kubernetes Helm Chart İskeleti
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
