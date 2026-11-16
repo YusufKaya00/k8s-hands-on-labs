@@ -37,7 +37,7 @@ catalogApi:
     pullPolicy: IfNotPresent
   port: 8081
   resources:
-    requestsCpu: ""
+    requestsCpu: "50m"
     requestsMemory: "48Mi"
     limitsCpu: "150m"
     limitsMemory: "128Mi"
