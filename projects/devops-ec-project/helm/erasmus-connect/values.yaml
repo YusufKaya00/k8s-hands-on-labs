@@ -33,11 +33,7 @@ nextjs:
    type: ClusterIP
    port: 8090
    targetport: 3000
-  
-  
-    # TODO: [Bilet 4] Next.js Service tipini ve portunu tanımla
   containerPort: 3000
-  # TODO: [Bilet 4] Next.js uygulamasının dinlediği port (varsayılan genelde 3000)
   resources:
      limits : 
       cpu: 150m
@@ -45,7 +41,6 @@ nextjs:
      requests:
       cpu: 100m
       memory: 512m
-    # TODO: [Bilet 7] Next.js için CPU ve RAM requests/limits değerlerini tanımla
 
 redis:
   image:
