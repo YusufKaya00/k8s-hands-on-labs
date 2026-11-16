@@ -70,7 +70,7 @@ checkoutApi:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8083
-  readinessPath: "/readyz"
+  readinessPath: "/ready"
   resources:
     requests:
       cpu: 30m
