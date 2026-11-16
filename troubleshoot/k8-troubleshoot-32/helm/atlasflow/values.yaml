@@ -106,7 +106,7 @@ reportExporter:
   port: 8087
   storage:
     pvcName: "report-archive-pvc"
-    storageClassName: "atlas-nvme-fast"
+    storageClassName: "managed-csi"
     accessMode: "ReadWriteOnce"
     size: "1Gi"
   resources:
