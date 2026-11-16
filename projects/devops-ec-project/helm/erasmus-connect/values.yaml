@@ -56,7 +56,13 @@ ingress:
   enabled: true
   # TODO: [Bilet 9] ingressClassName (ör. nginx) ve host (ör. erasmus.local) bilgilerini buraya tanımla
 
-secrets:
-  # DİKKAT: Gerçek şifreleri ve connection string'leri kesinlikle Git'e commit'leme!
-  # Yerel test için `helm install --set` veya ayrı bir gitignore'lu `values-secret.yaml` kullan.
-  # TODO: [Bilet 6] MongoDB Atlas, Supabase URL/Key, Redis URL ve JWT_SECRET için boş anahtar yapısını oluştur
+# ==============================================================================
+# Secret & ConfigMap REFERANSLARI (deger DEGIL, sadece ISIM!)
+# Helm bu nesneleri OLUSTURMAZ. Onlari sen `.env.*` dosyalarindan kubectl ile olusturursun (Bilet 6).
+# Azure'a gecince ayni isimdeki Secret'i Key Vault CSI Driver olusturacak; chart DEGISMEYECEK.
+# ==============================================================================
+envFrom:
+  # TODO: [Bilet 6] Backend Secret'inin adini yaz (ör. erasmus-backend-secrets) -> .env.backend-secrets'tan olusturulacak
+  backendSecretName: ""
+  # TODO: [Bilet 6] Backend ConfigMap'inin adini yaz (ör. erasmus-backend-config) -> .env.backend-config'ten olusturulacak
+  backendConfigMapName: ""
