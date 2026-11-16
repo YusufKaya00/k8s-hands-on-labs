@@ -193,7 +193,10 @@ nodeGuardian:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   tolerations:  
-   dedicated=guardian:NoSchedule
+   - key: "dedicated"
+     operator : "Equal"
+     value: "guardian"
+     effect: "NoSchedule"
   resources:
     requests:
       cpu: 20m
