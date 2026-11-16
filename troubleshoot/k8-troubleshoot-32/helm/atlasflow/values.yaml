@@ -145,7 +145,7 @@ vaultApi:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8085
-  bindHost: "127.0.0.1"
+  bindHost: "0.0.0.0"
   resources:
     requests:
       cpu: 30m
