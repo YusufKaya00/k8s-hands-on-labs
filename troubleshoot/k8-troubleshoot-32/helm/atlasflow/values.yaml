@@ -20,7 +20,7 @@ edgeProxy:
     tag: "1.27-alpine"
     pullPolicy: IfNotPresent
   port: 80
-  analyticsUpstream: "analytics-api:8088"
+  analyticsUpstream: "analytics-api.atlas-data.svc.cluster.local:8088"
   resources:
     requests:
       cpu: 40m
