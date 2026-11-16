@@ -5,6 +5,11 @@ terraform/*.tfstate.*
 terraform/terraform.tfvars
 terraform/.terraform.lock.hcl
 
+# Lokal ortam degiskenleri (Railway'den alinan secret'lar)
+.env
+.env.*
+!.env.example
+
 # Helm gizli values dosyalari
 helm/**/values-secret.yaml
 helm/**/*.tgz
