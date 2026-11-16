@@ -1,0 +1,8 @@
+# Helm ignore
+.DS_Store
+.git/
+.gitignore
+*.swp
+*.bak
+*.tmp
+values-secret.yaml

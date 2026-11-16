@@ -1,0 +1,15 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erasmus-express-post-dnat
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+spec:
+  # TODO: [Bilet 11] `podSelector` ile bu kuralı Express podlarına (`app: erasmus-express`) bağla
+  # TODO: [Bilet 11] `policyTypes` alanını tanımla
+  # TODO: [Bilet 11] Post-DNAT Calico NetworkPolicy kuralını (`ingress`) yaz:
+  #   1) Trafik Service (ClusterIP:80) üzerinden gelse bile DNAT sonrası Express podu kendi `containerPort` değerini görür! `ports` kısmına Service portu değil, Express `containerPort` yazmalısın.
+  #   2) `from` kaynakları olarak:
+  #      - Next.js podlarından (`podSelector` -> `app: erasmus-nextjs`) gelen SSR isteklerine izin ver
+  #      - NGINX Ingress Controller podlarından (`namespaceSelector` + `podSelector`) gelen dış isteklere izin ver!
+  #        (İpucu: Ingress Controller başka bir namespace'te çalışıyorsa sadece `podSelector` yetmez!)

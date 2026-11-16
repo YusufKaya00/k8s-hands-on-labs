@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erasmus-redis-headless
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+    app: erasmus-redis
+spec:
+  # TODO: [Bilet 5] Bu Service'i Headless (Başsız) yapmak için `clusterIP` alanına hangi özel değeri vermelisin?
+  # TODO: [Bilet 5] `selector` bloğunu yaz (StatefulSet pod'larındaki etiketle eşleştir)
+  # TODO: [Bilet 5] `ports` bloğunu yaz (Redis portu: 6379)

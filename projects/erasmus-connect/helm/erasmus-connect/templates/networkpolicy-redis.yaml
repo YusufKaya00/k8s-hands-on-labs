@@ -1,0 +1,13 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erasmus-redis-isolation
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+spec:
+  # TODO: [Bilet 10] `podSelector` ile bu kuralın SADECE Redis poduna (`app: erasmus-redis`) uygulanmasını sağla!
+  # TODO: [Bilet 10] `policyTypes` listesine hangi trafik yönünü yazmalısın? (Gelen trafiği kısıtlamak için Ingress)
+  # TODO: [Bilet 10] `ingress` kurallarını yaz:
+  #   - `from` altında SADECE Express podunun (`app: erasmus-express`) erişimine izin ver
+  #   - `ports` altında SADECE Redis TCP 6379 portuna izin ver
+  #   (DİKKAT: `from` ve `ports` aynı kural objesi içinde mi, ayrı `-` maddeleri olarak mı yazılmalı? Farkını Bilet 10'da incele!)

@@ -1,0 +1,10 @@
+# Terraform local state ve hassas dosyalar
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/.terraform.lock.hcl
+
+# Helm gizli values dosyalari
+helm/**/values-secret.yaml
+helm/**/*.tgz

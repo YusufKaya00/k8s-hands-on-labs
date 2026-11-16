@@ -1,0 +1,18 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "erasmus-connect.fullname" . }}-ingress
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+  annotations:
+    # TODO: [Bilet 9] NGINX Ingress için gerekiyorsa `nginx.ingress.kubernetes.io/...` annotation'larını değerlendir (ör. Express `/api` prefix'ini backend'de olduğu gibi bekliyorsa rewrite koyma; strip gerekiyorsa neden gerektiğini düşün!)
+spec:
+  # TODO: [Bilet 9] `ingressClassName` değerini .Values.ingress üzerinden tanımla (ör. nginx)
+  # TODO: [Bilet 9] `rules` listesini yaz:
+  #   - `host` alanını belirle
+  #   - `http.paths` altında:
+  #     1) `/api` yolunu (`pathType: Prefix`) Express Service adına ve portuna yönlendir
+  #     2) `/` yolunu (`pathType: Prefix`) Next.js Service adına ve portuna yönlendir
+  #   (Dikkat: Sıralama ve pathType NGINX tarafından nasıl değerlendirilir?)
+{{- end }}
