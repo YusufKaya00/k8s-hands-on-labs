@@ -22,14 +22,14 @@ spec:
           # --------------------------------------------------------------------
           # 1) TODO [Bilet 2] - PORTS:
           # imagePullPolicy ile aynı hizada (10 boşluk) `ports:` aç,
-          # altına `- name: http`, `containerPort: {{ .Values.express.containerPort }}` ve `protocol: TCP` yaz.
+          # altına `- name: http`, `containerPort` (.Values.express.containerPort) ve `protocol: TCP` yaz.
           # --------------------------------------------------------------------
 
           # --------------------------------------------------------------------
           # 2) TODO [Bilet 6] - ENV (Pod'a özel sabit 2 değişken):
           # `env:` aç ve iki liste elemanı (`- name: ...` / `value: ...`) ekle:
-          #   - HOST: "0.0.0.0"
-          #   - PORT: {{ .Values.express.containerPort | quote }}
+          #   - HOST -> "0.0.0.0"
+          #   - PORT -> .Values.express.containerPort | quote
           # --------------------------------------------------------------------
 
           # --------------------------------------------------------------------
@@ -37,22 +37,22 @@ spec:
           # Tek tek 30 tane secret yazmak yerine `envFrom:` kullan!
           # `envFrom:` altında 2 liste elemanı (`-`) olacak:
           #   - configMapRef:
-          #       name: {{ .Values.envFrom.backendConfigMapName }}
+          #       name: .Values.envFrom.backendConfigMapName
           #   - secretRef:
-          #       name: {{ .Values.envFrom.backendSecretName }}
+          #       name: .Values.envFrom.backendSecretName
           # --------------------------------------------------------------------
 
           # --------------------------------------------------------------------
           # 4) TODO [Bilet 7] - RESOURCES:
-          # `resources:` aç, altına `{{- toYaml .Values.express.resources | nindent 12 }}` yaz.
+          # `resources:` aç, altına toYaml ile .Values.express.resources (nindent 12) bağla.
           # --------------------------------------------------------------------
 
           # --------------------------------------------------------------------
           # 5) TODO [Bilet 8] - PROBES (Sağlık Kontrolleri):
           # `readinessProbe:` ve `livenessProbe:` bloklarını ekle:
           #   httpGet:
-          #     path: {{ .Values.express.healthPath }}
-          #     port: {{ .Values.express.containerPort }}
+          #     path: .Values.express.healthPath
+          #     port: .Values.express.containerPort
           #   initialDelaySeconds: 10
           #   periodSeconds: 10
           # --------------------------------------------------------------------
