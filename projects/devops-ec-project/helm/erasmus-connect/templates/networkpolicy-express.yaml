@@ -12,13 +12,13 @@ spec:
    - Ingress
   ingress:
     - from:
-       - podSelector:
-          matchLabels: 
+        - podSelector:
+           matchLabels: 
             app: erasmus-nextjs
-       - namespaceSelector:
+        - namespaceSelector:
            matchLabels: 
              kubernetes.io/metadata.name: ingress-nginx
-         podSelector:
+          podSelector:
             matchLabels:
                app.kubernetes.io/name: ingress-nginx
                app.kubernetes.io/component: controller
