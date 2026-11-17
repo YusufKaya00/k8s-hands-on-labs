@@ -25,7 +25,6 @@ spec:
           volumeMounts: 
             - name: redis-storage
               mountPath: /data
-
   volumeClaimTemplates:
    - metadata: 
       name: redis-storage
@@ -36,5 +35,4 @@ spec:
            storage: {{.Values.redis.storage}}
           # TODO: [Bilet 7] `resources` bloğunu ekle (Redis hafif olduğu için uygun CPU/RAM requests & limits belirle)
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (İpucu: Redis için `exec` -> `redis-cli ping` veya `tcpSocket` tercihini değerlendir)
-          # TODO: [Bilet 5] Kalıcı veri için `volumeMounts` (`mountPath: /data`) ekle  modu ve storage requests boyutu belirle)
     
