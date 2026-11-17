@@ -21,7 +21,7 @@ spec:
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           ports: 
-          containerPort: {{.Values.redis.port}}
+          - containerPort: {{.Values.redis.port}}
 
 volumeClaimTemplates:
    - metadata: 
