@@ -7,14 +7,14 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      kubernetes.io/metadata.name: erasmus-redis
+      app: erasmus-redis
     policyTypes:
     - Ingress
     ingress:
       from:
         podSelector:
           matchLabels:
-           kubernetes.io/metadata.name: erasmus-express
+           app: erasmus-express
       ports:
        - protocol: TCP
          port: {{.Values.redis.port}}
