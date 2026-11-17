@@ -50,16 +50,18 @@ redis:
   storage: 1Gi
   resources:
     # TODO: [Bilet 7] Redis için CPU ve RAM requests/limits değerlerini tanımla (ör. 50m/100m CPU, 64Mi/128Mi RAM)
+    requests:
+     cpu: 100m
+     memory: 150Mi
+    limits:
+     cpu: 300m
+     memory: 512Mi
 
 ingress:
   enabled: true
   # TODO: [Bilet 9] className (nginx) ve host (erasmus.local) bilgilerini buraya tanımla
 
-# ==============================================================================
-# Secret & ConfigMap İSİM Referansları (Şifre DEĞİL, sadece kümedeki objenin ADI!)
-# .env.backend-secrets -> kubectl create secret generic erasmus-backend-secrets ...
-# .env.backend-config  -> kubectl create configmap erasmus-backend-config ...
-# ==============================================================================
+
 envFrom:
   backendSecretName: "erasmus-backend-secrets"
   backendConfigMapName: "erasmus-backend-config"
