@@ -8,7 +8,7 @@ spec:
   podSelector:
     matchLabels:
       app: erasmus-redis
-    policyTypes:
+  policyTypes:
     - Ingress
   ingress:
     - from:
