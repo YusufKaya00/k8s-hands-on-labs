@@ -110,12 +110,6 @@ kubectl get pods -n ingress-nginx
 - Çıktıda `ports` alanının `<[]Object>` olduğunu gör (`- containerPort: ...` gerektirir).
 - Zorunlu ve opsiyonel alt alanları gör: `containerPort`, `name`, `protocol`.
 
-> [!NOTE]
-> **`containerPort` vs `env` (`PORT` + `| quote`) Kuralı:**
-> - `ports[].containerPort` sadece **Kubernetes'e** bilgi verir (uygulamayı etkilemez, sayı/`<integer>` ister).
-> - `env[].PORT` sadece **uygulama portu `process.env.PORT` üzerinden okuyorsa** (Express, Next.js gibi) yazılır; Redis (`6379`) veya Nginx (`80`) gibi sabit portlu hazır imajlarda `env` olarak `PORT` açmaya gerek yoktur.
-> - `env` altında sayısal bir değer (`PORT` vb.) veriyorsan `| quote` **her zaman zorunludur**, çünkü `env.value` sadece metin (`<string>`) kabul eder.
-
 <details>
 <summary>🆘 Takılırsan Aç (Reveal): `ports` Yapısal Yazım Mantığı</summary>
 
@@ -182,6 +176,12 @@ helm template erasmus ./helm/erasmus-connect -s templates/express-service.yaml
 - Terminalde çalıştır:
   `kubectl explain deployment.spec.template.spec.containers.env`
 - `env` bir `<[]Object>` listesidir (`- name: ...` ve `value: "..."` alır).
+
+> [!NOTE]
+> **`containerPort` vs `env` (`PORT` + `| quote`) Kuralı:**
+> - `ports[].containerPort` sadece **Kubernetes'e** bilgi verir (uygulamayı etkilemez, sayı/`<integer>` ister).
+> - `env[].PORT` sadece **uygulama portu `process.env.PORT` üzerinden okuyorsa** (Next.js, Express gibi) yazılır; Redis (`6379`) veya Nginx (`80`) gibi sabit portlu hazır imajlarda `env` olarak `PORT` açmaya gerek yoktur.
+> - `env` altında sayısal bir değer (`PORT` vb.) veriyorsan `| quote` **her zaman zorunludur**, çünkü `env.value` sadece metin (`<string>`) kabul eder.
 - **Build-arg akışı (frontend repo'nda):**
   1. `Dockerfile`'ı aç. Her `NEXT_PUBLIC_*` için bir `ARG` satırı ve onu `ENV`'e aktaran satır, `RUN npm run build` satırından **önce** var mı? Yoksa ekle. Build sırasında sadece `ENV`'deki değerleri Next.js görür.
   2. `.env.frontend-build` içindeki her satırı `--build-arg` olarak ver. `docker build --help | grep build-arg` ile sözdizimine bak. Bash'te dosyadan otomatik üretmek için: `sed 's/^/--build-arg /' .env.frontend-build | grep -v '^--build-arg #' | xargs`
