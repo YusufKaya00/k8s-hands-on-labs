@@ -257,7 +257,7 @@ cacheDb:
     pullPolicy: IfNotPresent
   port: 6379
   headlessServiceName: "cache-headless"
-  statefulSetServiceName: "cache-internal"
+  statefulSetServiceName: "cache-headless"
   resources:
     requests:
       cpu: 30m
