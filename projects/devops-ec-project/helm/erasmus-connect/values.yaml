@@ -83,8 +83,7 @@ redis:
 ingress:
   enabled: true
   ingressClassName: nginx
-  ingress.host: erasmus.local
-  # TODO: [Bilet 9] className (nginx) ve host (erasmus.local) bilgilerini buraya tanımla
+  host: erasmus.local
 
 
 envFrom:
