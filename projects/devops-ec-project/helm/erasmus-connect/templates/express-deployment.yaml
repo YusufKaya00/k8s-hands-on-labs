@@ -21,8 +21,8 @@ spec:
           imagePullPolicy: {{ .Values.express.image.pullPolicy }} 
           ports: 
             - name: http
-              port: {{.Values.express.containerPort}}
-              protocol : TCP
+              containerPortport: {{.Values.express.containerPort}}
+              protocol: TCP
 
            
         
