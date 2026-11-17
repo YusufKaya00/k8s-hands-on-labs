@@ -7,5 +7,9 @@ metadata:
     app: erasmus-redis
 spec:
   # TODO: [Bilet 5] Bu Service'i Headless (Başsız) yapmak için `clusterIP` alanına hangi özel değeri vermelisin?
+  type: none 
+  selector:
+   matchLabels: 
+    app: erasmus-redis
   # TODO: [Bilet 5] `selector` bloğunu yaz (StatefulSet pod'larındaki etiketle eşleştir)
   # TODO: [Bilet 5] `ports` bloğunu yaz (Redis portu: 6379)
