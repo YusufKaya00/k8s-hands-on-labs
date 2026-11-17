@@ -25,11 +25,11 @@ spec:
 
   volumeClaimTemplates:
    - metadata: 
-     name: redis-storage
+      name: redis-storage
      spec:
-     accessModes: ["ReadWriteOnce"]
-     resources:
-       requests:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
            storage: {{.Values.redis.storage}}
           # TODO: [Bilet 7] `resources` bloğunu ekle (Redis hafif olduğu için uygun CPU/RAM requests & limits belirle)
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (İpucu: Redis için `exec` -> `redis-cli ping` veya `tcpSocket` tercihini değerlendir)
