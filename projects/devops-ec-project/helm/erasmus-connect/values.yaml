@@ -49,10 +49,9 @@ redis:
   port: 6379
   storage: 1Gi
   resources:
-    # TODO: [Bilet 7] Redis için CPU ve RAM requests/limits değerlerini tanımla (ör. 50m/100m CPU, 64Mi/128Mi RAM)
     requests:
-     cpu: 100m
-     memory: 150Mi
+     cpu: 50m
+     memory: 50Mi
     limits:
      cpu: 300m
      memory: 512Mi
