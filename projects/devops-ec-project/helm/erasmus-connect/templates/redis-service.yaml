@@ -6,7 +6,7 @@ metadata:
     {{- include "erasmus-connect.labels" . | nindent 4 }}
     app: erasmus-redis
 spec:
-  type: None 
+  clusterIP: None 
   selector:
     app: erasmus-redis
   ports :
