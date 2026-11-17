@@ -10,10 +10,10 @@ type: {{.Values.nextjs.service.type}}
 selector:
   app: erasmus.nextjs
 ports:
-  name: http
-  port: {{.Values.nextjs.Service.port}}
-  targetPort: {{.Values.nextjs.containerPort}}
-  protocol: TCP
+ - name: http
+   port: {{.Values.nextjs.Service.port}}
+   targetPort: {{.Values.nextjs.containerPort}}
+   protocol: TCP
   # TODO: [Bilet 4] Service `type` alanını belirle
   # TODO: [Bilet 4] `selector` bloğunu yaz (Next.js Deployment pod etiketleriyle eşleştir)
   # TODO: [Bilet 4] `ports` bloğunu yaz (`port` ve `targetPort` eşleşmesine dikkat et)
