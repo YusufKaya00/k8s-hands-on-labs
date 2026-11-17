@@ -23,7 +23,6 @@ spec:
             - name: http
               containerPortport: {{.Values.express.containerPort}}
               protocol: TCP
-
           env:
           - name: HOST
             value: "0.0.0.0"
@@ -33,8 +32,11 @@ spec:
           - secretRef: 
             name: {{.Values.envFrom.backendSecretName}}
           - configMapRef: {{.Values.envFrom.backendConfigMapName}}
-          # TODO: [Bilet 6] `env` bloğunu ekle:
-          #   - HOST="0.0.0.0" ve PORT değerini ayarla
-          #   - MONGODB_URI, SUPABASE_URL, SUPABASE_KEY, REDIS_URL, JWT_SECRET değişkenlerini düz metin yerine `valueFrom.secretKeyRef` kullanarak Secret kaynağından çek!
-          # TODO: [Bilet 7] `resources` bloğunu ekle ve requests/limits değerlerini .Values.express.resources üzerinden bağla
+          resources:
+            requests: 
+              cpu: {{.Values.express.resources.requests.cpu}}
+              memory: {{.Values.express.resources.requests.memory}}
+            limits: 
+              cpu: {{.Values.express.resources.limits.cpu}}
+              memory: {{.Values.express.resources.limits.memory}}
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` bloklarını ekle (httpGet ile healthPath ve containerPort kullan)
