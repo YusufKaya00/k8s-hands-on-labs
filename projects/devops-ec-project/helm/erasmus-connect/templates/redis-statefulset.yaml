@@ -7,7 +7,7 @@ metadata:
     app: erasmus-redis
 spec:
   # TODO: [Bilet 5] StatefulSet'in zorunlu alanı `serviceName` değerini Headless Service adıyla eşleştir!
-  serviceName: redis-headless
+  serviceName: erasmus-redis-headless
   replicas: 1
   selector:
     matchLabels:
@@ -22,6 +22,9 @@ spec:
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           # TODO: [Bilet 5] `ports` bloğunu ekle (Redis varsayılan portu 6379)
+          ports: 
+          containerPort: {{.Values.redis.port}}
+
           # TODO: [Bilet 7] `resources` bloğunu ekle (Redis hafif olduğu için uygun CPU/RAM requests & limits belirle)
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (İpucu: Redis için `exec` -> `redis-cli ping` veya `tcpSocket` tercihini değerlendir)
           # TODO: [Bilet 5] Kalıcı veri için `volumeMounts` (`mountPath: /data`) ekle
