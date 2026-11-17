@@ -23,7 +23,7 @@ spec:
           ports: 
           containerPort: {{.Values.redis.port}}
 
-  volumeClaimTemplates:
+volumeClaimTemplates:
    - metadata: 
       name: redis-storage
      spec:
