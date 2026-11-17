@@ -20,7 +20,7 @@ edgeProxy:
     tag: "1.27-alpine"
     pullPolicy: IfNotPresent
   port: 80
-  reportsReadTimeout: "1s"
+  reportsReadTimeout: "4s"
   resources:
     requests:
       cpu: 40m
