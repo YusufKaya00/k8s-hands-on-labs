@@ -19,8 +19,6 @@ spec:
             service:
             name: erasmus-express-svc
             port: {{.Values.express.service.port}}
-          
-
         - path: /
           pathType: Prefix
           backend:
@@ -28,12 +26,5 @@ spec:
             name: erasmus-nextjs-svc
             port: {{.Values.nextjs.service.port}}
 
-    
-  # TODO: [Bilet 9] `ingressClassName` değerini .Values.ingress üzerinden tanımla (ör. nginx)
-  # TODO: [Bilet 9] `rules` listesini yaz:
-  #   - `host` alanını belirle
-  #   - `http.paths` altında:
-  #     1) `/api` yolunu (`pathType: Prefix`) Express Service adına ve portuna yönlendir
-  #     2) `/` yolunu (`pathType: Prefix`) Next.js Service adına ve portuna yönlendir
-  #   (Dikkat: Sıralama ve pathType NGINX tarafından nasıl değerlendirilir?)
+  
 {{- end }}
