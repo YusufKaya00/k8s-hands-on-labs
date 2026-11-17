@@ -160,7 +160,7 @@ fraudChecker:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8087
-  allocMb: 10
+  allocMb: 24
   resources:
     requests:
       cpu: 30m
