@@ -39,4 +39,16 @@ spec:
             limits: 
               cpu: {{.Values.express.resources.limits.cpu}}
               memory: {{.Values.express.resources.limits.memory}}
-          # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` bloklarını ekle (httpGet ile healthPath ve containerPort kullan)
+            readinessProbe:
+            httpGet:
+             path: {{.Values.express.healthPath}}
+             port: {{.Values.express.containerPort}}
+             initialDelaySeconds: 10
+             periodSeconds: 10
+            livenessProbe:
+            httpGet:
+             path: {{.Values.express.healthPath}}
+             port: {{.Values.express.containerPort}}
+             initialDelaySeconds: 15
+             periodSeconds: 15
+            
