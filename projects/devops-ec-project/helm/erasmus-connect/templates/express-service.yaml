@@ -6,12 +6,12 @@ metadata:
     {{- include "erasmus-connect.labels" . | nindent 4 }}
     app: erasmus-express
 spec:
- type: {{.Values.express.service.type}}
- selector:
+   type: {{.Values.express.service.type}}
+   selector:
      app: erasmus-express
- ports: 
-  - port: {{.Values.express.service.port}}
-    targetPort: {{.Values.express.containerPort}}    
-    protocol: TCP
-    name: http
+   ports: 
+     - name: http
+       port: {{.Values.express.service.port}}
+       targetPort: {{.Values.express.containerPort}}    
+       protocol: TCP
 
