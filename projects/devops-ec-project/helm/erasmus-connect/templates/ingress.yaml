@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "erasmus-connect.labels" . | nindent 4 }}
   annotations:
-    # TODO: [Bilet 9] NGINX Ingress için gerekiyorsa `nginx.ingress.kubernetes.io/...` annotation'larını değerlendir (ör. Express `/api` prefix'ini backend'de olduğu gibi bekliyorsa rewrite koyma; strip gerekiyorsa neden gerektiğini düşün!)
+     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
   # TODO: [Bilet 9] `ingressClassName` değerini .Values.ingress üzerinden tanımla (ör. nginx)
   # TODO: [Bilet 9] `rules` listesini yaz:
