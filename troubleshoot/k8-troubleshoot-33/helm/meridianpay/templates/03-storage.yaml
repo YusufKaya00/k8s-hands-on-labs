@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.invoiceArchiver.storage.pvcName }}
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: invoice-archiver
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  accessModes:
+    - {{ .Values.invoiceArchiver.storage.accessMode }}
+  storageClassName: {{ .Values.invoiceArchiver.storage.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.invoiceArchiver.storage.size }}

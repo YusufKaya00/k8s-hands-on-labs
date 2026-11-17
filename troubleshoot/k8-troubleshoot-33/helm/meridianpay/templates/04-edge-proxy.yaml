@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: edge-proxy
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: edge-proxy
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: edge-proxy
+  ports:
+    - name: http
+      port: {{ .Values.edgeProxy.port }}
+      targetPort: {{ .Values.edgeProxy.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-proxy
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: edge-proxy
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.edgeProxy.replicaCount }}
+  selector:
+    matchLabels:
+      app: edge-proxy
+  template:
+    metadata:
+      labels:
+        app: edge-proxy
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/02-configs.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: nginx
+          image: "{{ .Values.edgeProxy.image.repository }}:{{ .Values.edgeProxy.image.tag }}"
+          imagePullPolicy: {{ .Values.edgeProxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.edgeProxy.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.edgeProxy.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          resources:
+            {{- toYaml .Values.edgeProxy.resources | nindent 12 }}
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: edge-proxy-conf
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meridian-main-ingress
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/risk
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/fx
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/reports
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/billing
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/fraud
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/invoices
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/audit
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/session
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+          - path: /api/cache
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: meridian-payments-ingress
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  ingressClassName: {{ .Values.ingress.paymentsIngressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /api/payments
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-proxy
+                port:
+                  number: {{ .Values.edgeProxy.port }}
+{{- end }}
