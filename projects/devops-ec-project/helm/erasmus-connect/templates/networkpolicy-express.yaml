@@ -9,7 +9,7 @@ spec:
     matchLabels: 
        app: erasmus-express
   policyTypes:
-   - Ingress
+    - Ingress
   ingress:
     - from:
         - podSelector:
