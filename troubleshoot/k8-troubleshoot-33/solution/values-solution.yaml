@@ -1,0 +1,62 @@
+ingress:
+  paymentsIngressClassName: "nginx"
+
+riskGateway:
+  networkPolicy:
+    egressRules:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kube-system
+            podSelector:
+              matchLabels:
+                k8s-app: kube-dns
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: meridian-data
+            podSelector:
+              matchLabels:
+                app: risk-engine
+        ports:
+          - protocol: TCP
+            port: 8082
+
+fxService:
+  service:
+    targetPort: "http-api"
+
+edgeProxy:
+  reportsReadTimeout: "5s"
+
+billingApi:
+  overrideVaultUrl: ""
+
+fraudChecker:
+  resources:
+    requests:
+      memory: 48Mi
+    limits:
+      memory: 128Mi
+
+invoiceArchiver:
+  storage:
+    accessMode: "ReadWriteOnce"
+
+auditCollector:
+  serviceAccountName: "audit-collector-sa"
+
+sessionApi:
+  resources:
+    requests:
+      memory: "48Mi"
+    limits:
+      memory: "128Mi"
+
+cacheDb:
+  statefulSetServiceName: "cache-headless"
