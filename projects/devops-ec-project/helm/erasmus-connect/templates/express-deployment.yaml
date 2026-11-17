@@ -27,11 +27,12 @@ spec:
           - name: HOST
             value: "0.0.0.0"
           - name: PORT
-            value: {{.Values.express.containerPortport | quote}}
+            value: {{.Values.express.containerPort | quote}}
           envFrom:
-          - secretRef: 
-            name: {{.Values.envFrom.backendSecretName}}
-          - configMapRef: {{.Values.envFrom.backendConfigMapName}}
+            - secretRef: 
+              name: {{.Values.envFrom.backendSecretName}}
+            - configMapRef: 
+              name: {{.Values.envFrom.backendConfigMapName}}
           resources:
             requests: 
               cpu: {{.Values.express.resources.requests.cpu}}
