@@ -22,6 +22,7 @@ express:
     limits:
       cpu: 300m
       memory: 512Mi
+  
 
 nextjs:
   replicaCount: 1
@@ -40,6 +41,14 @@ nextjs:
     limits:
       cpu: 300m
       memory: 512Mi
+  readinessProbe:
+    path: /
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  livenessProbe:
+    path: /
+    initialDelaySeconds: 20
+    periodSeconds: 10
 
 redis:
   image:
@@ -55,6 +64,17 @@ redis:
     limits:
      cpu: 300m
      memory: 512Mi
+  readinessProbe:
+    exec: 
+     command: ["redis-cli" , "ping"]
+    initialDelaySeconds: 5
+    periodSeconds: 5
+  livenessProbe:
+    exec: 
+      command: ["redis-cli" , "ping"]
+    initialDelaySeconds: 15
+    periodSeconds: 10
+
 
 ingress:
   enabled: true
