@@ -40,13 +40,13 @@ spec:
             limits: 
               cpu: {{.Values.express.resources.limits.cpu}}
               memory: {{.Values.express.resources.limits.memory}}
-            readinessProbe:
+          readinessProbe:
             httpGet:
              path: {{.Values.express.healthPath}}
              port: {{.Values.express.containerPort}}
              initialDelaySeconds: 10
              periodSeconds: 10
-            livenessProbe:
+          livenessProbe:
             httpGet:
              path: {{.Values.express.healthPath}}
              port: {{.Values.express.containerPort}}
