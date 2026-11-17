@@ -28,5 +28,9 @@ spec:
              value: "0.0.0.0"
            - name: PORT
              value: {{.Values.nextjs.containerPort | quote  }} 
+          resources:
+             {{- toYaml .Values.express.resources | nindent 12 }}
+          
+         
           # TODO: [Bilet 7] `resources` bloğunu ekle (requests ve limits)
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (Next.js ana sayfasına `/` veya `/api/health` endpoint'ine httpGet)
