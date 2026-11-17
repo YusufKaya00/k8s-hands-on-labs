@@ -27,7 +27,7 @@ spec:
           - name: HOST
             value: "0.0.0.0"
           - name: PORT
-            value: {{.Values.express.port | quote}}
+            value: {{.Values.express.containerPortport | quote}}
           envFrom:
           - secretRef: 
             name: {{.Values.envFrom.backendSecretName}}
