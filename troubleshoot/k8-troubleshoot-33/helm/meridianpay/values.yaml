@@ -118,7 +118,7 @@ fxService:
   containerPortName: "http-api"
   service:
     port: 8083
-    targetPort: "grpc-web"
+    targetPort: "http-api"
   resources:
     requests:
       cpu: 30m
