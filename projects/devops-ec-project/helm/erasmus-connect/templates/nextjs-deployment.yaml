@@ -36,4 +36,3 @@ spec:
             {{- toYaml .Values.nextjs.livenessProbe | nindent 12}}
           
          
-          # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (Next.js ana sayfasına `/` veya `/api/health` endpoint'ine httpGet)
