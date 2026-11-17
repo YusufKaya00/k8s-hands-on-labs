@@ -17,14 +17,16 @@ spec:
           pathType: Prefix
           backend:
             service:
-            name: erasmus-express-svc
-            port: {{.Values.express.service.port}}
+              name: erasmus-express-svc
+              port: 
+                number: {{.Values.express.service.port}}
         - path: /
           pathType: Prefix
           backend:
             service: 
-            name: erasmus-nextjs-svc
-            port: {{.Values.nextjs.service.port}}
+              name: erasmus-nextjs-svc
+              port: 
+                number: {{.Values.nextjs.service.port}}
 
   
 {{- end }}
