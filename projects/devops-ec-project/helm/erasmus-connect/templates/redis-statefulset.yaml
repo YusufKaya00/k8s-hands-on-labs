@@ -23,7 +23,7 @@ spec:
           ports: 
           - containerPort: {{.Values.redis.port}}
           resources:
-            {{- .toYaml .Values.redis.resources | nindent 12 }}
+            {{- toYaml .Values.redis.resources | nindent 12 }}
           volumeMounts: 
             - name: redis-storage
               mountPath: /data
