@@ -22,6 +22,9 @@ spec:
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           ports: 
           - containerPort: {{.Values.redis.port}}
+          resources:
+            {{- .toYaml .Values.redis.resources | nindent 12 }}
+            
           volumeMounts: 
             - name: redis-storage
               mountPath: /data
