@@ -230,9 +230,9 @@ auditCollector:
 
 dataQuota:
   enabled: true
-  requestsMemory: "256Mi"
-  limitsMemory: "1Gi"
-  pods: "6"
+  requestsMemory: "1000Mi"
+  limitsMemory: "5Gi"
+  pods: "10"
 
 sessionApi:
   replicaCount: 1
