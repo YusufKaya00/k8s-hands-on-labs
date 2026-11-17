@@ -6,7 +6,6 @@ metadata:
     {{- include "erasmus-connect.labels" . | nindent 4 }}
     app: erasmus-redis
 spec:
-  # TODO: [Bilet 5] StatefulSet'in zorunlu alanı `serviceName` değerini Headless Service adıyla eşleştir!
   serviceName: erasmus-redis-headless
   replicas: 1
   selector:
@@ -21,7 +20,6 @@ spec:
         - name: redis
           image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
-          # TODO: [Bilet 5] `ports` bloğunu ekle (Redis varsayılan portu 6379)
           ports: 
           containerPort: {{.Values.redis.port}}
 
