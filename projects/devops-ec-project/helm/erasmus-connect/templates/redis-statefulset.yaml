@@ -22,6 +22,9 @@ spec:
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           ports: 
           - containerPort: {{.Values.redis.port}}
+          volumeMounts: 
+            - name: redis-storage
+              mountPath: /data
 
   volumeClaimTemplates:
    - metadata: 
