@@ -160,7 +160,7 @@ fraudChecker:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8087
-  allocMb: 10m
+  allocMb: 10
   resources:
     requests:
       cpu: 30m
@@ -179,7 +179,7 @@ invoiceArchiver:
   storage:
     pvcName: "invoice-archive-pvc"
     storageClassName: "managed-csi"
-    accessMode: "ReadWriteOnce"
+    accessMode: "ReadWriteOne"
     size: "1Gi"
   resources:
     requests:
