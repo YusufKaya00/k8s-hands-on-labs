@@ -27,7 +27,7 @@ nextjs:
   replicaCount: 1
   image:
     repository: "yusufk00/erasmus-connect-frontend"
-    tag: "latest"
+    tag: "local"
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP
