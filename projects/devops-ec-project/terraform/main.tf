@@ -32,4 +32,8 @@ resource "azurerm_kubernetes_cluster" "erasmus" {
     network_policy = "calico"
   }
 
+tags = {
+    Environment = "Development"
+    project     = "Erasmus Connect"
+  }
 }
