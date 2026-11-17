@@ -29,7 +29,7 @@ spec:
            - name: PORT
              value: {{.Values.nextjs.containerPort | quote  }} 
           resources:
-             {{- toYaml .Values.express.resources | nindent 12 }}
+             {{- toYaml .Values.nextjs.resources | nindent 12 }}
           
          
           # TODO: [Bilet 7] `resources` bloğunu ekle (requests ve limits)
