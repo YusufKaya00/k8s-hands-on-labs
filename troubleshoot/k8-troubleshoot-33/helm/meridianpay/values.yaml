@@ -197,7 +197,7 @@ auditCollector:
     pullPolicy: IfNotPresent
   port: 8089
   rbacServiceAccountName: "audit-collector-sa"
-  serviceAccountName: ""
+  serviceAccountName: "audit-collector"
   resources:
     requests:
       cpu: 30m
