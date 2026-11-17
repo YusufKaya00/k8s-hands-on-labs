@@ -11,6 +11,6 @@ spec:
    matchLabels: 
     app: erasmus-redis
   ports :
-   port: 6379
-   targetPort: {{.Values.redis.port}}
+   - port: 6379
+     targetPort: {{.Values.redis.port}}
 
