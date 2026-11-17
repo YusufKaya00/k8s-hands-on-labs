@@ -11,7 +11,7 @@ namespaces:
 ingress:
   enabled: true
   ingressClassName: nginx
-  paymentsIngressClassName: "external-lb"
+  paymentsIngressClassName: "nginx"
 
 edgeProxy:
   replicaCount: 1
