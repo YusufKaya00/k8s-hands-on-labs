@@ -8,6 +8,27 @@ metadata:
   annotations:
      nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
+  ingressClassName: {{.Values.ingress.ingressClassName}}
+  rules: 
+  - host: {{.Values.ingress.ingress.host}}
+    http:
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+            name: erasmus-express
+            port: {{.Values.express.service.port}}
+          
+
+        - path: /
+          pathType Prefix
+          backend:
+            service: 
+            name: erasmus-nextjs
+            port: {{.Values.nextjs.service.port}}
+
+    
   # TODO: [Bilet 9] `ingressClassName` değerini .Values.ingress üzerinden tanımla (ör. nginx)
   # TODO: [Bilet 9] `rules` listesini yaz:
   #   - `host` alanını belirle
