@@ -10,14 +10,14 @@ metadata:
 spec:
   ingressClassName: {{.Values.ingress.ingressClassName}}
   rules: 
-  - host: {{.Values.ingress.ingress.host}}
+  - host: {{.Values.ingress.host}}
     http:
       paths:
         - path: /api
           pathType: Prefix
           backend:
             service:
-            name: erasmus-express
+            name: erasmus-express-svc
             port: {{.Values.express.service.port}}
           
 
@@ -25,7 +25,7 @@ spec:
           pathType Prefix
           backend:
             service: 
-            name: erasmus-nextjs
+            name: erasmus-nextjs-svc
             port: {{.Values.nextjs.service.port}}
 
     
