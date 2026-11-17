@@ -30,9 +30,9 @@ spec:
             value: {{.Values.express.containerPort | quote}}
           envFrom:
             - secretRef: 
-              name: {{.Values.envFrom.backendSecretName}}
+                name: {{.Values.envFrom.backendSecretName}}
             - configMapRef: 
-              name: {{.Values.envFrom.backendConfigMapName}}
+                name: {{.Values.envFrom.backendConfigMapName}}
           resources:
             requests: 
               cpu: {{.Values.express.resources.requests.cpu}}
