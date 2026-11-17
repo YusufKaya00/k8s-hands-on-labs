@@ -7,6 +7,7 @@ metadata:
     app: erasmus-redis
 spec:
   # TODO: [Bilet 5] StatefulSet'in zorunlu alanı `serviceName` değerini Headless Service adıyla eşleştir!
+  serviceName: redis-headless
   replicas: 1
   selector:
     matchLabels:
