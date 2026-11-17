@@ -29,6 +29,10 @@ spec:
             value: "0.0.0.0"
           - name: PORT
             value: {{.Values.backend.port | quote}}
+          envFrom:
+          - secretRef: 
+            name: {{.Values.envFrom.backendSecretName}}
+          - configMapRef: {{.Values.envFrom.backendConfigMapName}}
           # TODO: [Bilet 6] `env` bloğunu ekle:
           #   - HOST="0.0.0.0" ve PORT değerini ayarla
           #   - MONGODB_URI, SUPABASE_URL, SUPABASE_KEY, REDIS_URL, JWT_SECRET değişkenlerini düz metin yerine `valueFrom.secretKeyRef` kullanarak Secret kaynağından çek!
