@@ -151,7 +151,7 @@ billingApi:
     pullPolicy: IfNotPresent
   port: 8085
   configVaultUrl: "http://vault-core.meridian-data.svc.cluster.local:8086/verify"
-  overrideVaultUrl: "http://vault-core:8086/verify"
+  overrideVaultUrl: ""
   resources:
     requests:
       cpu: 30m
