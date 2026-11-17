@@ -21,13 +21,13 @@ spec:
           imagePullPolicy: {{ .Values.express.image.pullPolicy }} 
           ports: 
             - name: http
-              containerPortport: {{.Values.express.containerPort}}
+              containerPort: {{.Values.express.containerPort}}
               protocol: TCP
           env:
           - name: HOST
             value: "0.0.0.0"
           - name: PORT
-            value: {{.Values.backend.port | quote}}
+            value: {{.Values.express.port | quote}}
           envFrom:
           - secretRef: 
             name: {{.Values.envFrom.backendSecretName}}
