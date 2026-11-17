@@ -8,7 +8,6 @@ metadata:
 spec:
   type: None 
   selector:
-   matchLabels: 
     app: erasmus-redis
   ports :
    - port: 6379
