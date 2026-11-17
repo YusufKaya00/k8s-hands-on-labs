@@ -14,6 +14,6 @@ spec:
     - Ingress
     - Egress
   ingress: 
-    {{- toYaml .Values.riskGateway.networkPolicy.ingress| nindent 8}}
+    {{- toYaml .Values.riskGateway.networkPolicy.ingress| nindent 4}}
   egress:
     {{- toYaml .Values.riskGateway.networkPolicy.egressRules | nindent 4 }}
