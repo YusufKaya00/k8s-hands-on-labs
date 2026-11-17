@@ -27,6 +27,10 @@ spec:
           volumeMounts: 
             - name: redis-storage
               mountPath: /data
+          readinessProbe: 
+           {{- toYaml .Values.redis.readinessProbe | nindent 4  }}
+          livenessProbe:
+           {{- toYaml .Values.redis.livenessProbe | nindent 4}}
   volumeClaimTemplates:
    - metadata: 
       name: redis-storage
