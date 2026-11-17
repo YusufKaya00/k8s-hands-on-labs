@@ -31,7 +31,10 @@ spec:
           # DİKKAT: NEXT_PUBLIC_* değişkenlerini BURAYA YAZMA. Build sırasında imaja gömülürler;
           #   pod env'i onları değiştirmez. Onlar .env.frontend-build + `docker build --build-arg` ile verilir (README Bilet 4).
           env:
-          - HOSTNAME="0.0.0.0"
-          - 
+           - name : HOSTNAME
+             value: "0.0.0.0"
+
+           - name : PORT
+             value: {{.Values.nextjs.containerPort | quote  }} 
           # TODO: [Bilet 7] `resources` bloğunu ekle (requests ve limits)
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (Next.js ana sayfasına `/` veya `/api/health` endpoint'ine httpGet)
