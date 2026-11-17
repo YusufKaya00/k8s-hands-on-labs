@@ -3,14 +3,23 @@
 # ==============================================================================
 
 terraform {
-  # TODO: [Bilet 12] `required_version` kısıtını ekle (ör. ">= 1.5.0")
-
+  required_version = "1.5.0"
   required_providers {
-    # TODO: [Bilet 12] registry.terraform.io/providers/hashicorp/azurerm/latest sayfasından `azurerm` bloğunu ekle
-    #   (source = "hashicorp/azurerm" ve uygun bir `version` kısıtı belirle)
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
   }
 }
 
 provider "azurerm" {
-  # TODO: [Bilet 12] AzureRM provider için zorunlu olan `features {}` bloğunu ekle
+  features {}
 }
+
+
+
+
+
+
+
+
