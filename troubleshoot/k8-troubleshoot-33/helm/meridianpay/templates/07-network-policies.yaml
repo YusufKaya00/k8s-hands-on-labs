@@ -11,7 +11,7 @@ spec:
     matchLabels:
       app: risk-gateway
   policyTypes:
-    - ingress
+    - Ingress
     - Egress
   ingress: 
     {{- toYaml .Values.riskGateway.networkPolicy.ingress| nindent 8}}
