@@ -6,11 +6,11 @@ metadata:
     {{- include "erasmus-connect.labels" . | nindent 4 }}
     app: erasmus-nextjs
 spec:
-type: {{.Values.nextjs.service.type}}
-selector:
-  app: erasmus.nextjs
-ports:
- - name: http
-   port: {{.Values.nextjs.service.port}}
-   targetPort: {{.Values.nextjs.containerPort}}
-   protocol: TCP
+  type: {{.Values.nextjs.service.type}}
+  selector:
+    app: erasmus.nextjs
+  ports:
+    - name: http
+      port: {{.Values.nextjs.service.port}}
+      targetPort: {{.Values.nextjs.containerPort}}
+      protocol: TCP
