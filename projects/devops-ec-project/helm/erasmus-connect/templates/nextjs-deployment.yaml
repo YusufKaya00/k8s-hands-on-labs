@@ -30,6 +30,10 @@ spec:
              value: {{.Values.nextjs.containerPort | quote  }} 
           resources:
              {{- toYaml .Values.nextjs.resources | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.nextjs.readinessProbe | nindent 12}}
+          livenessProbe:
+            {{- toYaml .Values.nextjs.livenessProbe | nindent 12}}
           
          
           # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` ekle (Next.js ana sayfasına `/` veya `/api/health` endpoint'ine httpGet)
