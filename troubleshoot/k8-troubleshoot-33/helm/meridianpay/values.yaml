@@ -52,6 +52,17 @@ riskGateway:
     pullPolicy: IfNotPresent
   port: 8082
   networkPolicy:
+    ingress: 
+     - from: 
+          - namespaceSelector: 
+             matchLabels: 
+               kubernetes.io/metadata.name: meridian-edge
+            podSelector:
+               matchLabels:
+                     app: edge-proxy
+       ports: 
+          - protocol: TCP
+            port: 8082
     egressRules:
       - to:
           - namespaceSelector:
