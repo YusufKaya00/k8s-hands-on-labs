@@ -164,10 +164,10 @@ fraudChecker:
   resources:
     requests:
       cpu: 30m
-      memory: 16Mi
+      memory: 50mi
     limits:
       cpu: 150m
-      memory: 24Mi
+      memory: 150mi
 
 invoiceArchiver:
   replicaCount: 1
