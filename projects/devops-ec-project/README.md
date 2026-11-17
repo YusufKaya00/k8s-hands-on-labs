@@ -408,7 +408,8 @@ helm template erasmus ./helm/erasmus-connect | grep -A 8 "resources:"
 **c) Çözüm Kanıtı:**
 Kümeye yüklediğinde tüm podlar `1/1 Running` olmalı ve `kubectl describe pod <pod-adi>` çıktısında `Readiness` / `Liveness` hatası olmamalıdır:
 ```bash
-helm upgrade --install erasmus ./helm/erasmus-connect
+# Bilet 9'daki ingress.yaml henüz boşsa kurulumda geçici kapatabilirsin:
+helm upgrade --install erasmus ./helm/erasmus-connect --set ingress.enabled=false
 kubectl get pods -w
 kubectl get endpoints
 ```
@@ -459,13 +460,20 @@ Bu faz projenin ağ ve güvenlik omurgasıdır. Özellikle Calico altında **Pos
 </details>
 
 **c) Çözüm Kanıtı:**
-Yerel kümede Ingress Controller IP'sini (`minikube ip` veya `kubectl get svc -n ingress-nginx`) kullanarak `Host` header'ı ile test et:
+
+> [!WARNING]
+> **Timeout Tuzağı (Boş NetworkPolicy'ler):** `networkpolicy-redis.yaml` ve `networkpolicy-express.yaml` içindeki `# TODO` kısımları henüz boşken `helm upgrade` yaptığında kümede `podSelector: {}` (Default-Deny-All) uygulanır ve Calico tüm trafiği keser (`Operation timed out`). Bu yüzden:
+> - Ya Bilet 10 & 11'i de doldurduktan sonra `curl` testini çalıştır,
+> - Ya da sadece Ingress'i şimdi görmek için boş policy'leri geçici sil (`kubectl delete netpol erasmus-express-post-dnat erasmus-redis-isolation`), test et ve hemen Bilet 10–11'e geç.
+
+Yerel kümede Ingress Controller IP'sini (`minikube ip` veya `kubectl get ingress`) kullanarak `Host` header'ı ile test et (`--reset-values` ile Bilet 8'deki `--set ingress.enabled=false` önbelleğini temizle):
 ```bash
+helm upgrade --install erasmus ./helm/erasmus-connect --reset-values
 kubectl get ingress
 curl -i -H "Host: erasmus.local" http://<INGRESS_IP>/
-curl -i -H "Host: erasmus.local" http://<INGRESS_IP>/api/health
+curl -i -X POST -H "Host: erasmus.local" http://<INGRESS_IP>/api/v1/ping
 ```
-- `/` isteği Next.js HTML/200 dönmeli, `/api/health` isteği Express JSON/200 dönmelidir.
+- `/` isteği Next.js HTML/200 dönmeli, `/api/v1/ping` isteği Express `{"ok":true}`/200 dönmelidir.
 
 ---
 
@@ -552,11 +560,11 @@ Ve `ports:` altında:
 
 **c) Çözüm Kanıtı:**
 ```bash
-# 1. Tarayıcı / Ingress üzerinden /api/health erişimi hala 200 OK dönmeli:
-curl -i -H "Host: erasmus.local" http://<INGRESS_IP>/api/health
+# 1. Tarayıcı / Ingress üzerinden /api/v1/ping erişimi hala 200 OK dönmeli:
+curl -i -X POST -H "Host: erasmus.local" http://<INGRESS_IP>/api/v1/ping
 
 # 2. Yetkisiz bir test podundan Express'e doğrudan erişim ENGELLENMELİ:
-kubectl run intruder --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- --timeout=3 http://erasmus-express-svc:<SVC_PORT>/api/health
+kubectl run intruder --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- --timeout=3 http://erasmus-express-svc:<SVC_PORT>/health
 ```
 - İlk komut başarılı, ikinci komut (`intruder`) timeout ile başarısız olmalıdır.
 
