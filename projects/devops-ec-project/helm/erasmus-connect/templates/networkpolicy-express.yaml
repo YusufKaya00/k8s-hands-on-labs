@@ -16,7 +16,7 @@ spec:
           matchLabels: 
             app: erasmus-nextjs
        - namespaceSelector:
-          matchLabels: 
+           matchLabels: 
              kubernetes.io/metadata.name: ingress-nginx
          podSelector:
             matchLabels:
