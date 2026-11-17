@@ -179,7 +179,7 @@ invoiceArchiver:
   storage:
     pvcName: "invoice-archive-pvc"
     storageClassName: "managed-csi"
-    accessMode: "ReadWriteOne"
+    accessMode: "ReadWriteOnce"
     size: "1Gi"
   resources:
     requests:
