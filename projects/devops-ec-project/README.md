@@ -110,6 +110,12 @@ kubectl get pods -n ingress-nginx
 - Çıktıda `ports` alanının `<[]Object>` olduğunu gör (`- containerPort: ...` gerektirir).
 - Zorunlu ve opsiyonel alt alanları gör: `containerPort`, `name`, `protocol`.
 
+> [!NOTE]
+> **`containerPort` vs `env` (`PORT` + `| quote`) Kuralı:**
+> - `ports[].containerPort` sadece **Kubernetes'e** bilgi verir (uygulamayı etkilemez, sayı/`<integer>` ister).
+> - `env[].PORT` sadece **uygulama portu `process.env.PORT` üzerinden okuyorsa** (Express, Next.js gibi) yazılır; Redis (`6379`) veya Nginx (`80`) gibi sabit portlu hazır imajlarda `env` olarak `PORT` açmaya gerek yoktur.
+> - `env` altında sayısal bir değer (`PORT` vb.) veriyorsan `| quote` **her zaman zorunludur**, çünkü `env.value` sadece metin (`<string>`) kabul eder.
+
 <details>
 <summary>🆘 Takılırsan Aç (Reveal): `ports` Yapısal Yazım Mantığı</summary>
 
