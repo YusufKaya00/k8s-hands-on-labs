@@ -8,7 +8,7 @@ metadata:
 spec:
   type: {{.Values.nextjs.service.type}}
   selector:
-    app: erasmus.nextjs
+    app: erasmus-nextjs
   ports:
     - name: http
       port: {{.Values.nextjs.service.port}}
