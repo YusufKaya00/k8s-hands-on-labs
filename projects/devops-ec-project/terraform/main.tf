@@ -10,4 +10,26 @@ resource "azurerm_resource_group" "erasmus" {
 
 }
 
+resource "azurerm_kubernetes_cluster" "erasmus" {
+  name                = var.cluster_name
+  location            = azurerm_resource_group.erasmus.location
+  resource_group_name = azurerm_resource_group.erasmus.name
+  dns_prefix          = var.dns_prefix
 
+  default_node_pool {
+    name           = "default"
+    node_count     = var.node_count
+    vm_size        = var.vm_size
+    os_disk_size_gb = 30
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  network_profile {
+    network_plugin = "azure"
+    network_policy = "calico"
+  }
+
+}
