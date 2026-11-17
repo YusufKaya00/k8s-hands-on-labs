@@ -18,41 +18,16 @@ spec:
       containers:
         - name: express-api
           image: "{{ .Values.express.image.repository }}:{{ .Values.express.image.tag }}"
-          imagePullPolicy: {{ .Values.express.image.pullPolicy }}
-          # --------------------------------------------------------------------
-          # 1) TODO [Bilet 2] - PORTS:
-          # imagePullPolicy ile aynı hizada (10 boşluk) `ports:` aç,
-          # altına `- name: http`, `containerPort` (.Values.express.containerPort) ve `protocol: TCP` yaz.
-          # --------------------------------------------------------------------
+          imagePullPolicy: {{ .Values.express.image.pullPolicy }} 
+          ports: 
+            - name: http
+              port: {{.Values.express.containerPort}}
+              protocol : TCP
 
-          # --------------------------------------------------------------------
-          # 2) TODO [Bilet 6] - ENV (Pod'a özel sabit 2 değişken):
-          # `env:` aç ve iki liste elemanı (`- name: ...` / `value: ...`) ekle:
-          #   - HOST -> "0.0.0.0"
-          #   - PORT -> .Values.express.containerPort | quote
-          # --------------------------------------------------------------------
-
-          # --------------------------------------------------------------------
-          # 3) TODO [Bilet 6] - ENVFROM (.env.backend-config ve .env.backend-secrets bağlantısı):
-          # Tek tek 30 tane secret yazmak yerine `envFrom:` kullan!
-          # `envFrom:` altında 2 liste elemanı (`-`) olacak:
-          #   - configMapRef:
-          #       name: .Values.envFrom.backendConfigMapName
-          #   - secretRef:
-          #       name: .Values.envFrom.backendSecretName
-          # --------------------------------------------------------------------
-
-          # --------------------------------------------------------------------
-          # 4) TODO [Bilet 7] - RESOURCES:
-          # `resources:` aç, altına toYaml ile .Values.express.resources (nindent 12) bağla.
-          # --------------------------------------------------------------------
-
-          # --------------------------------------------------------------------
-          # 5) TODO [Bilet 8] - PROBES (Sağlık Kontrolleri):
-          # `readinessProbe:` ve `livenessProbe:` bloklarını ekle:
-          #   httpGet:
-          #     path: .Values.express.healthPath
-          #     port: .Values.express.containerPort
-          #   initialDelaySeconds: 10
-          #   periodSeconds: 10
-          # --------------------------------------------------------------------
+           
+        
+          # TODO: [Bilet 6] `env` bloğunu ekle:
+          #   - HOST="0.0.0.0" ve PORT değerini ayarla
+          #   - MONGODB_URI, SUPABASE_URL, SUPABASE_KEY, REDIS_URL, JWT_SECRET değişkenlerini düz metin yerine `valueFrom.secretKeyRef` kullanarak Secret kaynağından çek!
+          # TODO: [Bilet 7] `resources` bloğunu ekle ve requests/limits değerlerini .Values.express.resources üzerinden bağla
+          # TODO: [Bilet 8] `readinessProbe` ve `livenessProbe` bloklarını ekle (httpGet ile healthPath ve containerPort kullan)
