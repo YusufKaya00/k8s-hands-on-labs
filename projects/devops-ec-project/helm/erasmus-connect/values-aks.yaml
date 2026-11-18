@@ -6,11 +6,11 @@
 
 nextjs:
   image:
-    tag: "aks"
+    tag: "acr"
 
 admin:
   image:
-    tag: "aks"
+    tag: "acr"
 
 ingress:
   host: "9.205.150.178.nip.io"
