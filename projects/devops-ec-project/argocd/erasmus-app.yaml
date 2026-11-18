@@ -10,6 +10,8 @@ metadata:
 spec:
   project: default
   source:
+   repoURL: https://github.com/YusufKaya00/k8s-hands-on-labs.git
+   targetRevision: main
     # TODO: [Bilet 21] `repoURL` (https://github.com/YusufKaya00/k8s-hands-on-labs.git),
     #   `targetRevision` (main) ve `path` (projects/devops-ec-project/helm/erasmus-connect) alanlarını yaz
     helm:
