@@ -58,7 +58,7 @@ ledgerSync:
     port: 80
     targetPort: 8083
   networkPolicy:
-    allowedPort: 80
+    allowedPort: 8083
   resources:
     requests:
       cpu: 30m
