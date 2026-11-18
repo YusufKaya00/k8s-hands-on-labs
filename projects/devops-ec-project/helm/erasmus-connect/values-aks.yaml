@@ -1,0 +1,17 @@
+# ==============================================================================
+# Azure AKS Ortamı Override Değerleri
+# Kullanım (Ansible olmadan doğrudan Helm ile güncellemek için):
+#   helm upgrade erasmus ./helm/erasmus-connect -f ./helm/erasmus-connect/values-aks.yaml
+# ==============================================================================
+
+nextjs:
+  image:
+    tag: "aks"
+
+admin:
+  image:
+    tag: "aks"
+
+ingress:
+  host: "9.205.150.178.nip.io"
+  adminHost: "admin.9.205.150.178.nip.io"
