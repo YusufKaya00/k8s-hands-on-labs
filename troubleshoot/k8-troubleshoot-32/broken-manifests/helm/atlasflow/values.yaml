@@ -1,0 +1,206 @@
+global:
+  ingressHost: ""
+  domain: atlasflow.local
+  environment: production
+
+namespaces:
+  edge: atlas-edge
+  core: atlas-core
+  data: atlas-data
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  catalogPathType: Exact
+
+edgeProxy:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+  port: 80
+  analyticsUpstream: "analytics-api:8088"
+  resources:
+    requests:
+      cpu: 40m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+
+catalogApi:
+  replicaCount: 2
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8081
+  resources:
+    requestsCpu: ""
+    requestsMemory: "48Mi"
+    limitsCpu: "150m"
+    limitsMemory: "128Mi"
+  hpa:
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    minAvailable: 2
+
+pricingEngine:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8082
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+checkoutApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8083
+  readinessPath: "/readyz"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+settlementWorker:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8084
+  secretName: "settlement-credentials"
+  actualSecretKey: "auth-token"
+  secretKeyRef: "api-token"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+reportExporter:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8087
+  storage:
+    pvcName: "report-archive-pvc"
+    storageClassName: "atlas-nvme-fast"
+    accessMode: "ReadWriteOnce"
+    size: "1Gi"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+topologyWatcher:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8086
+  serviceAccountName: "topology-watcher-sa"
+  rbac:
+    allowedResources:
+      - "configmaps"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+vaultApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8085
+  bindHost: "127.0.0.1"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+analyticsApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8088
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+auditStore:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8089
+  nodeSelectorEnabled: true
+  nodeSelectorKey: "hardware-profile"
+  nodeSelectorValue: "dedicated-nvme"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+nodeGuardian:
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  tolerations: []
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+networkPolicies:
+  pricingFrom:
+    - podSelector:
+        matchLabels:
+          app: edge-proxy
