@@ -32,16 +32,6 @@
 
 ---
 
-## 📝 Kendi Çalışma Notlarım
-*(İzledikten/okuduktan sonra kendi cümlelerini buraya ekle.)*
-
-- **Kritik Komutlar / Configler:**
-  - ...
-- **İş Yeri Eğitimi Özeti:**
-  - ...
-
----
-
 ## 🧪 Bu Derse Bağlı Lablarım
 
 | Lab | Klasör | Konu / Senaryo | Durum |

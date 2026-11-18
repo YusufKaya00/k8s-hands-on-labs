@@ -29,11 +29,3 @@ Her ders klasörünün içinde:
 | **03** | [**03-secrets-management-vault**](./03-secrets-management-vault/README.md) | Secrets Management, HashiCorp Vault, Dynamic Creds & TLS | `2023` Days 35–41 + `2024` Day 39 | ⬜ Bekliyor | 0 |
 | **04** | [**04-devsecops-runtime-security**](./04-devsecops-runtime-security/README.md) | İleri DevSecOps: SAST/DAST, Auditing, Falco, Tetragon & Runtime Defense | `2023` Days 02–20, 24, 28–34 + `2024` Day 09, 14, 69, 84 | ⬜ Bekliyor | 0 |
 | **05** | [**05-day2-ops-rbac-platform**](./05-day2-ops-rbac-platform/README.md) | Day-2 Ops, Service Mesh, Multi-Cluster Add-Ons & Ansible K8s RBAC | `2023` Days 77–83, 86–89 + `2024` Day 04, 06, 17, 18, 27, 36, 43, 63, 68, 90 | ⬜ Bekliyor | 0 |
-
----
-
-## 🔄 Günlük Uygulama Rutini
-
-1. **Sabah (Değişmez):** [`../troubleshoot/`](../troubleshoot/) üzerinden 20–25 dk Kör Mod K8s / IaC tekrar labı.
-2. **Akşam / Teori Bloğu (15–20 dk):** Sıradaki dersin `README.md` içindeki doğrudan Markdown linkini veya YouTube videosunu açıp izle/oku ve kendi notlarını `Çalışma Notlarım` bölümüne ekle.
-3. **Lab Bloğu (30–45 dk):** O ders klasörünün altına `lab-1/` oluşturup teoriyi canlı Kubernetes/IaC pratiğine dök.
