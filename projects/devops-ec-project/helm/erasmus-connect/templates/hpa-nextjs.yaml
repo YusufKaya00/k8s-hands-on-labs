@@ -1,0 +1,13 @@
+{{- if and .Values.nextjs.hpa .Values.nextjs.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "erasmus-connect.fullname" . }}-nextjs-hpa
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    # TODO: [Bilet 17] Next.js Deployment'ını hedefleyen `apiVersion`, `kind` ve `name` alanlarını tanımla
+  # TODO: [Bilet 17] `minReplicas` ve `maxReplicas` belirle
+  # TODO: [Bilet 17] `metrics` listesini yaz (CPU ortalama kullanım yüzdesi hedefi)
+{{- end }}

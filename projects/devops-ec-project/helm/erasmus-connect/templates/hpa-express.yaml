@@ -1,0 +1,13 @@
+{{- if and .Values.express.hpa .Values.express.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "erasmus-connect.fullname" . }}-express-hpa
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    # TODO: [Bilet 17] `apiVersion`, `kind` (Deployment) ve `name` ({{ include "erasmus-connect.fullname" . }}-express) alanlarını tanımla
+  # TODO: [Bilet 17] `minReplicas` ve `maxReplicas` belirle (Standard_B2s 4 GB RAM sınırını unutma!)
+  # TODO: [Bilet 17] `metrics` listesini yaz (type: Resource -> cpu -> target.averageUtilization, ör. 60 veya 70)
+{{- end }}

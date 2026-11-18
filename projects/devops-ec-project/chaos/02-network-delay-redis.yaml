@@ -1,0 +1,14 @@
+# ==============================================================================
+# Kaos Deneyi 2: Redis Ağ Gecikmesi (300ms Latency Enjeksiyonu)
+# Amaç: Express uygulamasının Redis yavaşladığında hata/timeout davranışını gözlemlemek
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: erasmus-redis-network-delay
+  namespace: default
+spec:
+  # TODO: [Bilet 19] `action: delay` ve `mode: one` alanlarını tanımla
+  # TODO: [Bilet 19] `selector` bloğu ile Redis podunu (`app: erasmus-redis`) hedefle
+  # TODO: [Bilet 19] `delay` bloğunu yaz (`latency: "300ms"`, `jitter: "50ms"`, `correlation: "25"`)
+  # TODO: [Bilet 19] `duration` (ör. "60s") ve `direction` ("both" veya "to") ayarla

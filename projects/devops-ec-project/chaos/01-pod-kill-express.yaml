@@ -1,0 +1,16 @@
+# ==============================================================================
+# Kaos Deneyi 1: Express Pod Kill (Sıfır Kesinti & Self-Healing Testi)
+# Referans: kubectl explain podchaos.spec (Chaos Mesh kurulu olduktan sonra)
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: erasmus-express-pod-kill
+  namespace: default
+spec:
+  # TODO: [Bilet 19] `action` alanını belirle ("pod-kill" veya "pod-failure")
+  # TODO: [Bilet 19] `mode` alanını belirle (2+ replika varken sadece 1 podu düşürmek için "one")
+  # TODO: [Bilet 19] `selector` bloğunu yaz:
+  #   - `namespaces:` -> ["default"]
+  #   - `labelSelectors:` -> `app: erasmus-express`
+  # TODO: [Bilet 19] `duration` (veya tek seferlik değilse `scheduler.cron`) ekle

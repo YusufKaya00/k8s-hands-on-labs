@@ -1,0 +1,21 @@
+{{- if and .Values.pdb .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erasmus-connect.fullname" . }}-express-pdb
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+spec:
+  # TODO: [Bilet 18] Express podları için `minAvailable` (veya `maxUnavailable`) tanımla
+  #   (Dikkat: Tek replika varken minAvailable: 1 koyarsan node drain kilitlenir! En az 2 replika varken minAvailable: 1 kullan.)
+  # TODO: [Bilet 18] `selector.matchLabels` ile `app: erasmus-express` etiketini seç
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erasmus-connect.fullname" . }}-nextjs-pdb
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+spec:
+  # TODO: [Bilet 18] Next.js podları için `minAvailable` ve `selector.matchLabels` (`app: erasmus-nextjs`) tanımla
+{{- end }}

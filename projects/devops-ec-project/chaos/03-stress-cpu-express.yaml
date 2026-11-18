@@ -1,0 +1,13 @@
+# ==============================================================================
+# Kaos Deneyi 3: Express CPU Stresi (HPA Otomatik Ölçekleme Tetikleme)
+# Amaç: Gerçek yük testi veya sentetik CPU stresiyle HPA'nın replikayı 2 -> 3+ artırdığını görmek
+# ==============================================================================
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: erasmus-express-cpu-stress
+  namespace: default
+spec:
+  # TODO: [Bilet 19] `mode: all` (veya `one`) ile `selector` (`app: erasmus-express`) tanımla
+  # TODO: [Bilet 19] `stressors.cpu` bloğunu yaz (`workers: 1`, `load: 80` - yüzde yük)
+  # TODO: [Bilet 19] `duration: "120s"` tanımla ki metrics-server + HPA 30-60 sn içinde tepki verebilsin
