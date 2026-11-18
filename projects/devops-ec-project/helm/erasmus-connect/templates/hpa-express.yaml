@@ -7,7 +7,17 @@ metadata:
     {{- include "erasmus-connect.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
-    # TODO: [Bilet 17] `apiVersion`, `kind` (Deployment) ve `name` ({{ include "erasmus-connect.fullname" . }}-express) alanlarını tanımla
-  # TODO: [Bilet 17] `minReplicas` ve `maxReplicas` belirle (Standard_B2s 4 GB RAM sınırını unutma!)
-  # TODO: [Bilet 17] `metrics` listesini yaz (type: Resource -> cpu -> target.averageUtilization, ör. 60 veya 70)
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "erasmus-connect.fullname" . }}-express
+    minReplicas: {{ .Values.express.hpa.minReplicas }}
+    maxReplicas: {{ .Values.express.hpa.maxReplicas }}
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: {{ .Values.express.hpa.targetCPUUtilizationPercentage }}
+      
 {{- end }}
