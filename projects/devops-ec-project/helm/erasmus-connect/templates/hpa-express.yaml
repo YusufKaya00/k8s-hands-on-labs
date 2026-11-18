@@ -10,14 +10,14 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "erasmus-connect.fullname" . }}-express
-    minReplicas: {{ .Values.express.hpa.minReplicas }}
-    maxReplicas: {{ .Values.express.hpa.maxReplicas }}
-    metrics:
+  minReplicas: {{ .Values.express.hpa.minReplicas }}
+  maxReplicas: {{ .Values.express.hpa.maxReplicas }}
+  metrics:
       - type: Resource
         resource:
           name: cpu
           target:
             type: Utilization
-            averageUtilization: {{ .Values.express.hpa.targetCPUUtilizationPercentage }}
+            averageUtilization: {{ .Values.express.hpa.targetCPUUtilizationPercentage | default 60 }}
       
 {{- end }}
