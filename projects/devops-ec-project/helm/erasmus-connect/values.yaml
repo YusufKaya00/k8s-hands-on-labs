@@ -24,7 +24,7 @@ express:
       memory: 512Mi
   hpa:
     enabled: true
-    minReplicas: 2
+    minReplicas: 3
     maxReplicas: 4
     targetCPUUtilizationPercentage: 60
   
