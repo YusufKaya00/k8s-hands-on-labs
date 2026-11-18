@@ -998,6 +998,89 @@ kubectl get pdb -n default
 
 ---
 
+## Faz 8: Azure Container Registry (ACR) ve Şifresiz İmaj Çekme (`AcrPull`)
+
+Bu fazda Docker Hub ve `dockerhub-secret` bağımlılığını kaldırıp Azure'un kendi özel registry'sini (**ACR**) kuracak, AKS'in imajları **Azure Managed Identity** ile şifresiz çekmesini sağlayacaksın.
+
+---
+
+### Bilet 22: Terraform ile ACR Kurulumu ve `AcrPull` Rol Ataması (`acr.tf` & `outputs.tf`)
+
+**a) Görev Tanımı:**
+- [terraform/acr.tf](./terraform/acr.tf) dosyasındaki `[Bilet 22]` `# TODO` bloklarını doldur:
+  1. `azurerm_container_registry.erasmus`: `Basic` SKU, `admin_enabled = false`, global olarak benzersiz **tiresiz** bir isim (ör. `acrerasmusconnectysf01`).
+  2. `azurerm_role_assignment.aks_acr_pull`: AKS düğümlerinin (`kubelet_identity[0].object_id`) ACR üzerinde **`AcrPull`** yetkisi almasını sağla.
+- [terraform/outputs.tf](./terraform/outputs.tf) içine `acr_login_server` çıktısını ekle.
+- `terraform plan` ve `terraform apply` çalıştır.
+
+**b) İpucu ve Referans:**
+- Resmi dokümantasyon: `registry.terraform.io` üzerinde `azurerm_container_registry` ve `azurerm_role_assignment` sayfalarına bak.
+- **İsim Tuzağı:** ACR adında tire (`-`), alt çizgi (`_`) veya büyük harf **olamaz**; aksi halde Azure reddeder.
+- **Yetki Notu:** `azurerm_role_assignment` için Azure hesabının abonelikte `Owner` veya `User Access Administrator` yetkisine sahip olması gerekir (Azure for Students'ta varsayılan olarak açıktır).
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): `acr.tf` Yapısal Şeması</summary>
+
+`azurerm_container_registry`:
+- `name = "<BENZERSIZ_KUCUK_HARF_RAKAM>"`
+- `resource_group_name = azurerm_resource_group.erasmus.name`
+- `location = azurerm_resource_group.erasmus.location`
+- `sku = "Basic"`
+- `admin_enabled = false`
+
+`azurerm_role_assignment`:
+- `principal_id = azurerm_kubernetes_cluster.erasmus.kubelet_identity[0].object_id`
+- `role_definition_name = "AcrPull"`
+- `scope = azurerm_container_registry.erasmus.id`
+- `skip_service_principal_aad_check = true`
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+cd terraform
+terraform validate
+terraform plan -out=tfplan   # Mevcut AKS silinmeden sadece +2 yeni kaynak (ACR + Role Assignment) görmelisin!
+terraform apply tfplan
+terraform output acr_login_server
+```
+
+---
+
+### Bilet 23: İmajları ACR'ye Pushlama ve `dockerhub-secret` Olmadan ArgoCD ile Yayınlama
+
+**a) Görev Tanımı:**
+- Mevcut `backend:latest`, `frontend:aks` ve `admin:aks` imajlarını ACR login server adınla (`<ACR_NAME>.azurecr.io/...`) etiketleyip ACR'ye pushla.
+- [values-aks.yaml](./helm/erasmus-connect/values-aks.yaml) içinde `express.image.repository`, `nextjs.image.repository` ve `admin.image.repository` adreslerini ACR adresine çevir.
+- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki `imagePullSecrets` (`dockerhub-secret`) bloğunu kaldır (artık `AcrPull` sayesinde şifre gerekmiyor!) ve `kubectl delete secret dockerhub-secret -n default` ile eski secret'ı sil.
+- Değişiklikleri GitHub'a pushla ve ArgoCD'nin imajları ACR'den şifresiz çekip podları ayağa kaldırdığını doğrula!
+
+**b) İpucu ve Referans:**
+- ACR'ye Docker girişi (`az login` açıkken şifre sormaz!):
+  `az acr login --name <ACR_ADIN>`
+- İmaj etiketleme ve pushlama kalıbı:
+  ```bash
+  ACR="<ACR_ADIN>.azurecr.io"
+  docker tag yusufk00/erasmus-connect-backend:latest  $ACR/erasmus-connect-backend:v1
+  docker tag yusufk00/erasmus-connect-frontend:aks    $ACR/erasmus-connect-frontend:v1
+  docker tag yusufk00/erasmus-connect-admin:aks       $ACR/erasmus-connect-admin:v1
+  docker push $ACR/erasmus-connect-backend:v1
+  docker push $ACR/erasmus-connect-frontend:v1
+  docker push $ACR/erasmus-connect-admin:v1
+  ```
+
+**c) Çözüm Kanıtı:**
+```bash
+# 1. ACR içindeki depoları listele:
+az acr repository list --name <ACR_ADIN> -o table
+
+# 2. Git push sonrası ArgoCD Synced + Podların ACR imajlarıyla Running olduğunu doğrula:
+kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.image}{"\n"}{end}{end}'
+```
+- Pod imajlarının artık `*.azurecr.io/...:v1` olduğunu ve `dockerhub-secret` olmadan `1/1 Running` çalıştığını gör! *(Not: ACR Basic ~5$/ay yazar; işin bittiğinde `terraform destroy` ile temizlemeyi unutma.)*
+
+---
+
 ## Kontrol Listesi (Kendini Değerlendir)
 
 - [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
