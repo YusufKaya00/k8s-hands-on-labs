@@ -9,11 +9,9 @@
   gather_facts: false
 
   vars:
-    # TODO: [Bilet 15] Terraform çıktılarındaki Azure Resource Group ve AKS küme adını tanımla
-    resource_group: ""
-    cluster_name: ""
+    resource_group: "rg-erasmus-connect"
+    cluster_name: "aks-erasmus-connect"
     kubeconfig_path: "~/.kube/config"
-    # TODO: [Bilet 16] Helm chart yolu, release adı ve hedef namespace değişkenlerini tanımla
     chart_path: "../helm/erasmus-connect"
     release_name: "erasmus"
     app_namespace: "default"
@@ -26,29 +24,26 @@
           - cluster_name | length > 0
         fail_msg: "Once playbook.yml vars bolumundeki resource_group ve cluster_name TODO'larini doldur!"
 
-    # --------------------------------------------------------------------------
-    # TODO: [Bilet 15] ADIM 1 - AKS Kubeconfig cekme (az aks get-credentials)
-    #   - Modül: ansible.builtin.command
-    #   - Komut: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing
-    #   - İpucu: changed_when: false veya kubeconfig dosyasını kontrol et
-    # --------------------------------------------------------------------------
 
-    # --------------------------------------------------------------------------
-    # TODO: [Bilet 15] ADIM 2 - NGINX Ingress Helm deposunu ekle
-    #   - Modül: kubernetes.core.helm_repository (ansible-doc kubernetes.core.helm_repository)
-    #   - name: ingress-nginx
-    #   - repo_url: https://kubernetes.github.io/ingress-nginx
-    # --------------------------------------------------------------------------
+    - name: AKS Kubeconfig pull etme
+      ansible.builtin.command:
+        cmd: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing
+      changed_when: false
 
-    # --------------------------------------------------------------------------
-    # TODO: [Bilet 15] ADIM 3 - NGINX Ingress Controller'i AKS'e kur
-    #   - Modül: kubernetes.core.helm (ansible-doc kubernetes.core.helm)
-    #   - name: ingress-nginx
-    #   - chart_ref: ingress-nginx/ingress-nginx
-    #   - release_namespace: ingress-nginx
-    #   - create_namespace: true
-    #   - wait: true (LoadBalancer Public IP hazir olana kadar bekle!)
-    # --------------------------------------------------------------------------
+    - name: NGINX Ingress Helm repo add
+      kubernetes.core.helm_repository:
+        name: ingress-nginx
+        repo_url: https://kubernetes.github.io/ingress-nginx
+        state: present
+
+
+    - name : NGINX Ingress Controller to AKS
+      kubernetes.core.helm:
+        name: ingress-nginx
+        chart_ref: ingress-nginx/ingress-nginx
+        release_namespace: ingress-nginx
+        create_namespace: true
+        wait: true
 
     # --------------------------------------------------------------------------
     # TODO: [Bilet 16] ADIM 4 - .env.backend-secrets ve .env.backend-config'ten
