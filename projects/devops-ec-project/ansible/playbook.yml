@@ -46,6 +46,11 @@
         release_namespace: ingress-nginx
         create_namespace: true
         wait: true
+        values:
+          controller:
+            service:
+              annotations:
+                service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"
       tags: [ingress]
 
     - name: NGINX Ingress External IP adresini al
