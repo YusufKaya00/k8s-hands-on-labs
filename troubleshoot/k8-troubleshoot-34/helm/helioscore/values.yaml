@@ -181,7 +181,7 @@ nodeInspector:
     pullPolicy: IfNotPresent
   port: 8089
   serviceAccountName: "node-inspector-sa"
-  clusterRbacEnabled: false
+  clusterRbacEnabled: true
   resources:
     requests:
       cpu: 30m
