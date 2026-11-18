@@ -1,0 +1,6 @@
+apiVersion: v2
+name: helioscore
+description: HeliosCore v17.0 — Blind-Mode Full-Spectrum Kubernetes General Review Lab #3
+type: application
+version: 1.0.0
+appVersion: "17.0.0"
