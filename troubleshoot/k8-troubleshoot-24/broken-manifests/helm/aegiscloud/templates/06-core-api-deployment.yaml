@@ -1,0 +1,218 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: core-api
+    component: core-api
+spec:
+  selector:
+    app: core-api
+    component: {{ .Values.coreApi.serviceSelectorComponent }}
+  ports:
+    - name: http
+      port: {{ .Values.coreApi.port }}
+      targetPort: {{ .Values.coreApi.serviceTargetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-api
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  replicas: {{ .Values.coreApi.replicas }}
+  selector:
+    matchLabels:
+      app: core-api
+      component: core-api
+  template:
+    metadata:
+      labels:
+        app: core-api
+        component: core-api
+    spec:
+      serviceAccountName: {{ .Values.coreApi.serviceAccountName }}
+      initContainers:
+        - name: init-rbac-verify
+          image: {{ .Values.coreApi.image }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import urllib.request, ssl, sys, time
+
+              token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+              ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+              ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+              with open(token_path) as f:
+                  token = f.read().strip()
+              with open(ns_path) as f:
+                  ns = f.read().strip()
+
+              ctx = ssl.create_default_context(cafile=ca_path)
+              for resource in ["services", "endpoints"]:
+                  url = f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/{resource}"
+                  req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+                  try:
+                      with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+                          if resp.status != 200:
+                              print(f"RBAC check failed for {resource}: HTTP {resp.status}")
+                              sys.exit(1)
+                          print(f"RBAC verified for {resource}: HTTP 200")
+                  except Exception as e:
+                      print(f"FATAL: Kubernetes API RBAC verification failed for '{resource}': {e}")
+                      sys.exit(1)
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+        - name: init-wait-datastore
+          image: {{ .Values.coreApi.image }}
+          envFrom:
+            - configMapRef:
+                name: core-api-config
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import os, socket, sys, time
+
+              host = os.environ.get("STATE_STORE_HOST")
+              port = int(os.environ.get("STATE_STORE_PORT", "6379"))
+              print(f"Resolving and connecting to StatefulSet datastore {host}:{port}...")
+
+              for attempt in range(1, 15):
+                  try:
+                      ip = socket.gethostbyname(host)
+                      print(f"Resolved {host} -> {ip}")
+                      s = socket.create_connection((host, port), timeout=3)
+                      s.sendall(b"*1\r\n$4\r\nPING\r\n")
+                      data = s.recv(64)
+                      s.close()
+                      if b"PONG" in data:
+                          print("State store PING -> PONG verified!")
+                          sys.exit(0)
+                  except Exception as e:
+                      print(f"Attempt {attempt}/14 failed: {e}")
+                      time.sleep(2)
+              print("FATAL: Could not reach state-store headless DNS or TCP port.")
+              sys.exit(1)
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+      containers:
+        - name: core-api
+          image: {{ .Values.coreApi.image }}
+          envFrom:
+            - configMapRef:
+                name: core-api-config
+          {{- if .Values.coreApi.overrideVaultAddr }}
+          env:
+            - name: VAULT_ADDR
+              value: {{ .Values.coreApi.overrideVaultAddr | quote }}
+          {{- end }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import os, sys, json, socket, urllib.request
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+
+              vault_addr = os.environ.get("VAULT_ADDR", "")
+              state_host = os.environ.get("STATE_STORE_HOST", "")
+              state_port = int(os.environ.get("STATE_STORE_PORT", "6379"))
+              report_dir = os.environ.get("REPORT_MOUNT_PATH", "/mnt/shared-reports")
+
+              print(f"Validating Crypto-Vault connection at {vault_addr}/v1/keys/status ...")
+              try:
+                  with urllib.request.urlopen(f"{vault_addr}/v1/keys/status", timeout=4) as r:
+                      if r.status != 200:
+                          print(f"FATAL: Crypto-Vault returned status {r.status}")
+                          sys.exit(1)
+                      vault_data = json.loads(r.read().decode())
+                      print(f"Crypto-Vault verified: {vault_data}")
+              except Exception as e:
+                  print(f"FATAL: Failed to connect to Crypto-Vault at {vault_addr}: {e}")
+                  sys.exit(1)
+
+              os.makedirs(report_dir, exist_ok=True)
+              with open(os.path.join(report_dir, "core-heartbeat.json"), "w") as f:
+                  json.dump({"service": "core-api", "status": "online"}, f)
+
+              class CoreHandler(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ["/", "/healthz", "/api/v1/status"]:
+                          try:
+                              s = socket.create_connection((state_host, state_port), timeout=2)
+                              s.sendall(b"*1\r\n$4\r\nPING\r\n")
+                              pong = b"PONG" in s.recv(64)
+                              s.close()
+                              with urllib.request.urlopen(f"{vault_addr}/v1/keys/status", timeout=2) as vr:
+                                  vault_ok = (vr.status == 200)
+                          except Exception as ex:
+                              self.send_response(503)
+                              self.end_headers()
+                              self.wfile.write(json.dumps({"status": "degraded", "error": str(ex)}).encode())
+                              return
+
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.end_headers()
+                          resp = {
+                              "platform": "AegisCloud v7.0",
+                              "status": "operational",
+                              "state_store": "connected" if pong else "disconnected",
+                              "crypto_vault": "verified" if vault_ok else "unverified",
+                              "pod": socket.gethostname()
+                          }
+                          self.wfile.write(json.dumps(resp).encode())
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, fmt, *args):
+                      return
+
+              print("Starting Core-API Server on 0.0.0.0:{{ .Values.coreApi.port }}")
+              HTTPServer(("0.0.0.0", {{ .Values.coreApi.port }}), CoreHandler).serve_forever()
+          ports:
+            - name: {{ .Values.coreApi.containerPortName }}
+              containerPort: {{ .Values.coreApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.coreApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.coreApi.livenessProbe.path }}
+              port: {{ .Values.coreApi.livenessProbe.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 2
+          volumeMounts:
+            - name: shared-reports
+              mountPath: /mnt/shared-reports
+          resources:
+            requests:
+              cpu: {{ .Values.coreApi.resources.requests.cpu | quote }}
+              memory: {{ .Values.coreApi.resources.requests.memory | quote }}
+            limits:
+              cpu: {{ .Values.coreApi.resources.limits.cpu | quote }}
+              memory: {{ .Values.coreApi.resources.limits.memory | quote }}
+      volumes:
+        - name: shared-reports
+          persistentVolumeClaim:
+            claimName: {{ .Values.sharedStorage.pvcName }}

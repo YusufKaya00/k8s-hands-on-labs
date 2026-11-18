@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aegis-e2e-verifier
+  namespace: {{ .Values.namespaces.edge }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: aegis-e2e-verifier
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: verifier
+          image: python:3.11-alpine
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import urllib.request, json, sys
+
+              url = "http://edge-proxy.{{ .Values.namespaces.edge }}.svc.cluster.local:{{ .Values.edgeProxy.port }}/api/v1/status"
+              print(f"Testing E2E flow via {url} ...")
+              try:
+                  with urllib.request.urlopen(url, timeout=5) as r:
+                      body = r.read().decode()
+                      print(f"HTTP {r.status}: {body}")
+                      data = json.loads(body)
+                      if r.status == 200 and data.get("status") == "operational":
+                          print("SUCCESS: AegisCloud v7.0 E2E Verification Passed!")
+                          sys.exit(0)
+              except Exception as e:
+                  print(f"FAILED: E2E Verification encountered error: {e}")
+              sys.exit(1)
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"

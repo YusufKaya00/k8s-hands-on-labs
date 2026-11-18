@@ -1,0 +1,31 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-api-hpa
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.scaling.hpa.targetDeploymentName }}
+  minReplicas: {{ .Values.scaling.hpa.minReplicas }}
+  maxReplicas: {{ .Values.scaling.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.scaling.hpa.targetCPUUtilizationPercentage }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: core-api-pdb
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  minAvailable: {{ .Values.scaling.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: core-api
+      component: core-api

@@ -1,0 +1,606 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-api
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: gateway-api
+    app.kubernetes.io/part-of: novamesh
+spec:
+  replicas: {{ .Values.gatewayApi.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway-api
+        app.kubernetes.io/part-of: novamesh
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: gateway-api
+          image: "{{ .Values.gatewayApi.image.repository }}:{{ .Values.gatewayApi.image.tag }}"
+          imagePullPolicy: {{ .Values.gatewayApi.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import socket
+              import socketserver
+              import urllib.error
+              import urllib.request
+
+              DATA_NS = "{{ .Values.namespaces.data }}"
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              def fetch_upstream(url, timeout=1.2):
+                  try:
+                      with urllib.request.urlopen(url, timeout=timeout) as resp:
+                          return resp.status, resp.read().decode("utf-8")
+                  except urllib.error.HTTPError as e:
+                      return e.code, e.read().decode("utf-8")
+                  except urllib.error.URLError as e:
+                      if isinstance(e.reason, (socket.timeout, TimeoutError)):
+                          return 504, json.dumps({"error": "upstream timeout", "target": url, "detail": str(e.reason)})
+                      return 502, json.dumps({"error": "upstream unreachable", "target": url, "detail": str(e.reason)})
+                  except (socket.timeout, TimeoutError) as e:
+                      return 504, json.dumps({"error": "upstream timeout", "target": url, "detail": str(e)})
+                  except Exception as e:
+                      return 502, json.dumps({"error": "upstream error", "target": url, "detail": str(e)})
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def _send(self, code, body):
+                      data = body.encode("utf-8") if isinstance(body, str) else body
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(data)))
+                          self.end_headers()
+                          self.wfile.write(data)
+                      except BrokenPipeError:
+                          pass
+
+                  def do_GET(self):
+                      path = self.path.split("?")[0]
+                      if path == "/api/v1/health":
+                          self._send(200, json.dumps({"status": "ok", "service": "gateway-api"}))
+                      elif path == "/partner/sync":
+                          self._send(200, json.dumps({"status": "ok", "service": "gateway-api", "route": "partner-sync"}))
+                      elif path == "/portal/status":
+                          self._send(200, json.dumps({"status": "ok", "service": "gateway-api", "route": "portal-status"}))
+                      elif path == "/api/v1/quote":
+                          code, body = fetch_upstream("http://pricing-engine:8081/quote", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/risk":
+                          code, body = fetch_upstream("http://risk-evaluator:8082/eval", timeout=3.0)
+                          self._send(code, body)
+                      elif path == "/api/v1/receipt":
+                          code, body = fetch_upstream("http://receipt-service:8083/receipt", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/token":
+                          code, body = fetch_upstream(f"http://token-vault.{DATA_NS}.svc.cluster.local:8084/token", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/bridge":
+                          code, body = fetch_upstream("http://report-bridge:80/reports/daily", timeout=1.2)
+                          self._send(code, body)
+                      else:
+                          self._send(404, json.dumps({"error": "not found", "received_path": path}))
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.gatewayApi.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.gatewayApi.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.gatewayApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-api
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: gateway-api
+    app.kubernetes.io/part-of: novamesh
+spec:
+  type: {{ .Values.gatewayApi.service.type }}
+  selector:
+    app.kubernetes.io/name: gateway-api
+  ports:
+    - name: http
+      port: {{ .Values.gatewayApi.service.port }}
+      targetPort: {{ .Values.gatewayApi.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: catalog-api
+    app.kubernetes.io/part-of: novamesh
+spec:
+  replicas: {{ .Values.catalogApi.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-api
+        app.kubernetes.io/part-of: novamesh
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: catalog-api
+          image: "{{ .Values.catalogApi.image.repository }}:{{ .Values.catalogApi.image.tag }}"
+          imagePullPolicy: {{ .Values.catalogApi.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import socketserver
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def _send(self, code, body):
+                      data = body.encode("utf-8")
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(data)))
+                          self.end_headers()
+                          self.wfile.write(data)
+                      except BrokenPipeError:
+                          pass
+
+                  def do_GET(self):
+                      path = self.path.split("?")[0]
+                      if path == "/items":
+                          self._send(200, json.dumps({"status": "ok", "service": "catalog-api", "items": ["mesh-pro", "edge-gw"]}))
+                      else:
+                          self._send(404, json.dumps({"error": "unknown route", "received_path": path}))
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.catalogApi.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.catalogApi.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /items
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /items
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.catalogApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: catalog-api
+    app.kubernetes.io/part-of: novamesh
+spec:
+  type: {{ .Values.catalogApi.service.type }}
+  selector:
+    app.kubernetes.io/name: catalog-api
+  ports:
+    - name: http
+      port: {{ .Values.catalogApi.service.port }}
+      targetPort: {{ .Values.catalogApi.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pricing-engine
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: pricing-engine
+    app.kubernetes.io/part-of: novamesh
+spec:
+  replicas: {{ .Values.pricingEngine.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pricing-engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pricing-engine
+        app.kubernetes.io/part-of: novamesh
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: pricing-engine
+          image: "{{ .Values.pricingEngine.image.repository }}:{{ .Values.pricingEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.pricingEngine.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import socketserver
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "pricing-engine", "quote": "149.90 USD"}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.pricingEngine.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.pricingEngine.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /quote
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /quote
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.pricingEngine.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pricing-engine
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: pricing-engine
+    app.kubernetes.io/part-of: novamesh
+spec:
+  type: {{ .Values.pricingEngine.service.type }}
+  selector:
+    app.kubernetes.io/name: pricing-engine
+  ports:
+    - name: http
+      port: {{ .Values.pricingEngine.service.port }}
+      targetPort: {{ .Values.pricingEngine.service.targetPort }}
+{{- if .Values.pricingEngine.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pricing-netpol
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: pricing-engine
+    app.kubernetes.io/part-of: novamesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pricing-engine
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.pricingEngine.networkPolicy.allowedFromPodLabels | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.pricingEngine.containerPort }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-evaluator
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: risk-evaluator
+    app.kubernetes.io/part-of: novamesh
+spec:
+  replicas: {{ .Values.riskEvaluator.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: risk-evaluator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: risk-evaluator
+        app.kubernetes.io/part-of: novamesh
+    spec:
+      terminationGracePeriodSeconds: 2
+      dnsConfig:
+        options:
+          - name: timeout
+            value: "1"
+          - name: attempts
+            value: "1"
+      containers:
+        - name: risk-evaluator
+          image: "{{ .Values.riskEvaluator.image.repository }}:{{ .Values.riskEvaluator.image.tag }}"
+          imagePullPolicy: {{ .Values.riskEvaluator.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import socketserver
+              import threading
+              import urllib.request
+
+              DATA_NS = "{{ .Values.namespaces.data }}"
+              TARGET_URL = f"http://report-service.{DATA_NS}.svc.cluster.local:80/reports/daily"
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              def query_report():
+                  result = {"code": 502, "body": json.dumps({"error": "dns lookup or upstream timeout", "target": TARGET_URL})}
+                  def _worker():
+                      try:
+                          with urllib.request.urlopen(TARGET_URL, timeout=1.2) as resp:
+                              result["code"] = resp.status
+                              result["body"] = json.dumps({
+                                  "status": "ok",
+                                  "service": "risk-evaluator",
+                                  "risk_score": "low",
+                                  "upstream": json.loads(resp.read().decode("utf-8"))
+                              })
+                      except Exception as e:
+                          result["code"] = 502
+                          result["body"] = json.dumps({"error": "upstream lookup failed", "target": TARGET_URL, "detail": str(e)})
+                  t = threading.Thread(target=_worker, daemon=True)
+                  t.start()
+                  t.join(timeout=1.6)
+                  return result["code"], result["body"]
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def _send(self, code, body):
+                      data = body.encode("utf-8")
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(data)))
+                          self.end_headers()
+                          self.wfile.write(data)
+                      except BrokenPipeError:
+                          pass
+
+                  def do_GET(self):
+                      path = self.path.split("?")[0]
+                      if path == "/healthz":
+                          self._send(200, json.dumps({"status": "ok", "service": "risk-evaluator"}))
+                          return
+                      code, body = query_report()
+                      self._send(code, body)
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.riskEvaluator.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.riskEvaluator.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.riskEvaluator.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-evaluator
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: risk-evaluator
+    app.kubernetes.io/part-of: novamesh
+spec:
+  type: {{ .Values.riskEvaluator.service.type }}
+  selector:
+    app.kubernetes.io/name: risk-evaluator
+  ports:
+    - name: http
+      port: {{ .Values.riskEvaluator.service.port }}
+      targetPort: {{ .Values.riskEvaluator.service.targetPort }}
+{{- if .Values.riskEvaluator.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: risk-netpol
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: risk-evaluator
+    app.kubernetes.io/part-of: novamesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: risk-evaluator
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml .Values.riskEvaluator.networkPolicy.egressRules | nindent 4 }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: receipt-service
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: receipt-service
+    app.kubernetes.io/part-of: novamesh
+spec:
+  replicas: {{ .Values.receiptService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: receipt-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: receipt-service
+        app.kubernetes.io/part-of: novamesh
+        {{- toYaml .Values.receiptService.podLabels | nindent 8 }}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: receipt-service
+          image: "{{ .Values.receiptService.image.repository }}:{{ .Values.receiptService.image.tag }}"
+          imagePullPolicy: {{ .Values.receiptService.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import socketserver
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "receipt-service", "receipt_id": "rcpt-9921"}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.receiptService.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.receiptService.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /receipt
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /receipt
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.receiptService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: receipt-service
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: receipt-service
+    app.kubernetes.io/part-of: novamesh
+spec:
+  type: {{ .Values.receiptService.service.type }}
+  selector:
+    {{- toYaml .Values.receiptService.service.selector | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.receiptService.service.port }}
+      targetPort: {{ .Values.receiptService.service.targetPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.reportBridge.name }}
+  namespace: {{ .Values.namespaces.api }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.reportBridge.name }}
+    app.kubernetes.io/part-of: novamesh
+spec:
+  type: ExternalName
+  externalName: {{ .Values.reportBridge.externalName }}
+  ports:
+    - name: http
+      port: {{ .Values.reportBridge.port }}

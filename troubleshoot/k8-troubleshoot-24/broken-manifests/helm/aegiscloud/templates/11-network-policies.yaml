@@ -1,0 +1,70 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: crypto-vault-netpol
+  namespace: {{ .Values.namespaces.data }}
+spec:
+  podSelector:
+    matchLabels:
+      app: crypto-vault
+      tier: {{ .Values.cryptoVault.networkPolicy.targetLabelTier }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              aegis.io/zone: core
+      ports:
+        - protocol: TCP
+          port: {{ .Values.cryptoVault.networkPolicy.allowedPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: data-default-protect
+  namespace: {{ .Values.namespaces.data }}
+spec:
+  podSelector:
+    matchLabels:
+      app: crypto-vault
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: core-api-egress
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      component: core-api
+  policyTypes:
+    - Egress
+  egress:
+    {{- if .Values.coreApi.egressPolicy.allowDns }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              aegis.io/zone: data
+      ports:
+        - protocol: TCP
+          port: {{ .Values.coreApi.egressPolicy.allowedDataPort }}
+        - protocol: TCP
+          port: {{ .Values.cryptoVault.port }}
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443

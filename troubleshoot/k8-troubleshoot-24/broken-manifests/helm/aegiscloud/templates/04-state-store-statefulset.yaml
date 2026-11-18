@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.stateStore.headlessServiceName }}
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: state-store
+    tier: data-persistence
+spec:
+  clusterIP: None
+  selector:
+    app: state-store
+    tier: data-persistence
+  ports:
+    - name: redis
+      port: {{ .Values.stateStore.port }}
+      targetPort: {{ .Values.stateStore.port }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: state-store
+  namespace: {{ .Values.namespaces.data }}
+spec:
+  serviceName: {{ .Values.stateStore.serviceName }}
+  replicas: {{ .Values.stateStore.replicas }}
+  selector:
+    matchLabels:
+      app: state-store
+      tier: data-persistence
+  template:
+    metadata:
+      labels:
+        app: state-store
+        tier: data-persistence
+    spec:
+      priorityClassName: {{ .Values.stateStore.priorityClassName }}
+      containers:
+        - name: redis
+          image: {{ .Values.stateStore.image }}
+          command:
+            - sh
+            - -c
+            - |
+              exec redis-server --appendonly yes --dir /data
+          ports:
+            - name: redis
+              containerPort: {{ .Values.stateStore.port }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.stateStore.secretName }}
+                  key: {{ .Values.stateStore.envSecretKey }}
+          volumeMounts:
+            - name: state-data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+  volumeClaimTemplates:
+    - metadata:
+        name: state-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.stateStore.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.stateStore.storageSize }}

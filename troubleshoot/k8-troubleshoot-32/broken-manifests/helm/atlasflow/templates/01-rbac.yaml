@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.topologyWatcher.serviceAccountName }}
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: topology-watcher
+    app.kubernetes.io/part-of: atlasflow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: topology-watcher-role
+  namespace: {{ .Values.namespaces.core }}
+rules:
+  - apiGroups: [""]
+    resources:
+{{- range .Values.topologyWatcher.rbac.allowedResources }}
+      - {{ . | quote }}
+{{- end }}
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: topology-watcher-binding
+  namespace: {{ .Values.namespaces.core }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.topologyWatcher.serviceAccountName }}
+    namespace: {{ .Values.namespaces.core }}
+roleRef:
+  kind: Role
+  name: topology-watcher-role
+  apiGroup: rbac.authorization.k8s.io

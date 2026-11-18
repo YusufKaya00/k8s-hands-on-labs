@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.sharedStorage.pvcName }}
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  accessModes:
+    - {{ .Values.sharedStorage.accessMode }}
+  storageClassName: {{ .Values.sharedStorage.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.sharedStorage.size }}

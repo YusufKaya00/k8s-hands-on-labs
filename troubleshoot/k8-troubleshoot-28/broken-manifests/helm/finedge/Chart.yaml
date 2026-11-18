@@ -1,0 +1,6 @@
+apiVersion: v2
+name: finedge
+description: FinEdge v11.0 - Production Kubernetes Networking & Real-Time Payment Mesh Lab
+type: application
+version: 1.0.0
+appVersion: "11.0.0"

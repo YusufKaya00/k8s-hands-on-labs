@@ -1,0 +1,36 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: catalog-api-hpa
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: catalog-api
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: catalog-api
+  minReplicas: {{ .Values.catalogApi.hpa.minReplicas }}
+  maxReplicas: {{ .Values.catalogApi.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.catalogApi.hpa.targetCPUUtilizationPercentage }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: catalog-api-pdb
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: catalog-api
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  minAvailable: {{ .Values.catalogApi.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: catalog-api

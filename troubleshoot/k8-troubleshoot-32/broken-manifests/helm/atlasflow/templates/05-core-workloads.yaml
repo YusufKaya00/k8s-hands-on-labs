@@ -1,0 +1,495 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: catalog-api
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  selector:
+    app: catalog-api
+  ports:
+    - name: http
+      port: {{ .Values.catalogApi.port }}
+      targetPort: {{ .Values.catalogApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: catalog-api
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  replicas: {{ .Values.catalogApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: catalog-api
+  template:
+    metadata:
+      labels:
+        app: catalog-api
+    spec:
+      containers:
+        - name: catalog-api
+          image: "{{ .Values.catalogApi.image.repository }}:{{ .Values.catalogApi.image.tag }}"
+          imagePullPolicy: {{ .Values.catalogApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.catalogApi.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ("/api/catalog", "/api/catalog/featured", "/healthz"):
+                          body = json.dumps({
+                              "service": "catalog-api",
+                              "path": self.path,
+                              "status": "ok",
+                              "pod": os.environ.get("HOSTNAME", "unknown")
+                          }).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          body = b'{"error":"not_found"}\n'
+                          self.send_response(404)
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                  def log_message(self, fmt, *args):
+                      pass
+
+              HTTPServer(("0.0.0.0", {{ .Values.catalogApi.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.catalogApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              {{- if .Values.catalogApi.resources.requestsCpu }}
+              cpu: {{ .Values.catalogApi.resources.requestsCpu | quote }}
+              {{- end }}
+              memory: {{ .Values.catalogApi.resources.requestsMemory | quote }}
+            limits:
+              cpu: {{ .Values.catalogApi.resources.limitsCpu | quote }}
+              memory: {{ .Values.catalogApi.resources.limitsMemory | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pricing-engine
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: pricing-engine
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  selector:
+    app: pricing-engine
+  ports:
+    - name: http
+      port: {{ .Values.pricingEngine.port }}
+      targetPort: {{ .Values.pricingEngine.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pricing-engine
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: pricing-engine
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  replicas: {{ .Values.pricingEngine.replicaCount }}
+  selector:
+    matchLabels:
+      app: pricing-engine
+  template:
+    metadata:
+      labels:
+        app: pricing-engine
+    spec:
+      containers:
+        - name: pricing-engine
+          image: "{{ .Values.pricingEngine.image.repository }}:{{ .Values.pricingEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.pricingEngine.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.pricingEngine.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ("/api/pricing/quote", "/healthz"):
+                          body = json.dumps({"service": "pricing-engine", "currency": "EUR", "quote": 49.90, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, fmt, *args):
+                      pass
+
+              HTTPServer(("0.0.0.0", {{ .Values.pricingEngine.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.pricingEngine.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.pricingEngine.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: checkout-api
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  selector:
+    app: checkout-api
+  ports:
+    - name: http
+      port: {{ .Values.checkoutApi.port }}
+      targetPort: {{ .Values.checkoutApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: checkout-api
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  replicas: {{ .Values.checkoutApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: checkout-api
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+    spec:
+      containers:
+        - name: checkout-api
+          image: "{{ .Values.checkoutApi.image.repository }}:{{ .Values.checkoutApi.image.tag }}"
+          imagePullPolicy: {{ .Values.checkoutApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.checkoutApi.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ("/api/checkout/ready", "/healthz"):
+                          body = json.dumps({"service": "checkout-api", "ready": True, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          body = b'{"error":"probe path not found"}\n'
+                          self.send_response(404)
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                  def log_message(self, fmt, *args):
+                      pass
+
+              print("checkout-api listening on 0.0.0.0:{{ .Values.checkoutApi.port }}; health endpoint: /healthz")
+              HTTPServer(("0.0.0.0", {{ .Values.checkoutApi.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.checkoutApi.readinessPath }}
+              port: {{ .Values.checkoutApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 4
+          resources:
+            {{- toYaml .Values.checkoutApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: settlement-worker
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: settlement-worker
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  selector:
+    app: settlement-worker
+  ports:
+    - name: http
+      port: {{ .Values.settlementWorker.port }}
+      targetPort: {{ .Values.settlementWorker.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: settlement-worker
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: settlement-worker
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  replicas: {{ .Values.settlementWorker.replicaCount }}
+  selector:
+    matchLabels:
+      app: settlement-worker
+  template:
+    metadata:
+      labels:
+        app: settlement-worker
+    spec:
+      containers:
+        - name: settlement-worker
+          image: "{{ .Values.settlementWorker.image.repository }}:{{ .Values.settlementWorker.image.tag }}"
+          imagePullPolicy: {{ .Values.settlementWorker.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.settlementWorker.port }}
+          env:
+            - name: SETTLEMENT_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.settlementWorker.secretName }}
+                  key: {{ .Values.settlementWorker.secretKeyRef }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os, sys
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+
+              if not os.environ.get("SETTLEMENT_API_TOKEN"):
+                  print("FATAL: SETTLEMENT_API_TOKEN missing", file=sys.stderr)
+                  sys.exit(1)
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ("/api/settlement/health", "/healthz"):
+                          body = json.dumps({"service": "settlement-worker", "token_loaded": True, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, fmt, *args):
+                      pass
+
+              HTTPServer(("0.0.0.0", {{ .Values.settlementWorker.port }}), Handler).serve_forever()
+          resources:
+            {{- toYaml .Values.settlementWorker.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: topology-watcher
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: topology-watcher
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  selector:
+    app: topology-watcher
+  ports:
+    - name: http
+      port: {{ .Values.topologyWatcher.port }}
+      targetPort: {{ .Values.topologyWatcher.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: topology-watcher
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: topology-watcher
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  replicas: {{ .Values.topologyWatcher.replicaCount }}
+  selector:
+    matchLabels:
+      app: topology-watcher
+  template:
+    metadata:
+      labels:
+        app: topology-watcher
+    spec:
+      serviceAccountName: {{ .Values.topologyWatcher.serviceAccountName }}
+      containers:
+        - name: topology-watcher
+          image: "{{ .Values.topologyWatcher.image.repository }}:{{ .Values.topologyWatcher.image.tag }}"
+          imagePullPolicy: {{ .Values.topologyWatcher.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.topologyWatcher.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, ssl, sys, urllib.request
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+
+              with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                  token = f.read().strip()
+              with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace") as f:
+                  ns = f.read().strip()
+              ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+              def fetch_k8s(resource):
+                  url = f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/{resource}"
+                  req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+                  with urllib.request.urlopen(req, context=ctx, timeout=4) as resp:
+                      return len(json.loads(resp.read().decode()).get("items", []))
+
+              try:
+                  pod_count = fetch_k8s("pods")
+                  svc_count = fetch_k8s("services")
+                  print(f"K8s API discovery ok: {pod_count} pods, {svc_count} services in {ns}")
+              except Exception as e:
+                  print(f"FATAL: Kubernetes API access denied/failed for namespace '{ns}': {e}", file=sys.stderr)
+                  sys.exit(1)
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ("/api/topology", "/healthz"):
+                          try:
+                              pods = fetch_k8s("pods")
+                              svcs = fetch_k8s("services")
+                              body = json.dumps({"service": "topology-watcher", "namespace": ns, "pods": pods, "services": svcs, "status": "ok"}).encode()
+                              self.send_response(200)
+                          except Exception as err:
+                              body = json.dumps({"service": "topology-watcher", "error": str(err)}).encode()
+                              self.send_response(500)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, fmt, *args):
+                      pass
+
+              HTTPServer(("0.0.0.0", {{ .Values.topologyWatcher.port }}), Handler).serve_forever()
+          resources:
+            {{- toYaml .Values.topologyWatcher.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: report-exporter
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: report-exporter
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  selector:
+    app: report-exporter
+  ports:
+    - name: http
+      port: {{ .Values.reportExporter.port }}
+      targetPort: {{ .Values.reportExporter.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-exporter
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: report-exporter
+    app.kubernetes.io/part-of: atlasflow
+spec:
+  replicas: {{ .Values.reportExporter.replicaCount }}
+  selector:
+    matchLabels:
+      app: report-exporter
+  template:
+    metadata:
+      labels:
+        app: report-exporter
+    spec:
+      containers:
+        - name: report-exporter
+          image: "{{ .Values.reportExporter.image.repository }}:{{ .Values.reportExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.reportExporter.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.reportExporter.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+
+              os.makedirs("/data/reports", exist_ok=True)
+              report_file = "/data/reports/latest.txt"
+              with open(report_file, "w") as f:
+                  f.write("atlasflow-daily-export=ready\n")
+
+              class Handler(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path in ("/api/reports/export", "/healthz"):
+                          with open(report_file) as f:
+                              marker = f.read().strip()
+                          body = json.dumps({"service": "report-exporter", "storage": "bound", "marker": marker, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+                  def log_message(self, fmt, *args):
+                      pass
+
+              HTTPServer(("0.0.0.0", {{ .Values.reportExporter.port }}), Handler).serve_forever()
+          volumeMounts:
+            - name: report-volume
+              mountPath: /data/reports
+          resources:
+            {{- toYaml .Values.reportExporter.resources | nindent 12 }}
+      volumes:
+        - name: report-volume
+          persistentVolumeClaim:
+            claimName: {{ .Values.reportExporter.storage.pvcName }}
