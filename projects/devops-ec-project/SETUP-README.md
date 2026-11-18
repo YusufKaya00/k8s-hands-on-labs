@@ -914,7 +914,7 @@ Bu fazda artık `helm upgrade` veya `ansible-playbook` çalıştırmayı bırak�
 ### Bilet 20: Node Ölçekleme (`node_count = 2`) ve ArgoCD Kurulumu
 
 **a) Görev Tanımı:**
-- Tek `Standard_B2s` node'un 30 pod limitini (`Too many pods`) ve RAM sınırını açmak için [variables.tf](./terraform/variables.tf) içindeki `node_count` değerini `2` yap ve `terraform apply` ile kümeyi silmeden **yerinde** 2. node'u ekle (`60 pod`, `4 vCPU`, `8 GB RAM`).
+- Tek `Standard_B2s` node'un 30 pod limitini (`Too many pods`) ve RAM sınırını açmak için [variables.tf](./terraform/variables.tf) (ve varsa [terraform.tfvars](./terraform/terraform.tfvars)) içindeki `node_count` değerini `2` yap ve `terraform apply` ile kümeyi silmeden **yerinde** 2. node'u ekle (`60 pod`, `4 vCPU`, `8 GB RAM`).
 - AKS üzerine `argocd` namespace'ini açıp resmi ArgoCD Helm chart'ını (veya resmi manifestosunu) kur.
 - ArgoCD arayüzüne internete açmadan `kubectl port-forward` ile eriş ve ilk `admin` şifresini al.
 
@@ -962,7 +962,10 @@ kubectl get pods -n argocd
   `kubectl explain application.spec.source.helm`
   `kubectl explain application.spec.syncPolicy.automated`
   `kubectl explain application.spec.ignoreDifferences`
-- **Dikkat (Helm Release Devralma):** Daha önce `helm install erasmus ...` ile kurduğun nesneler zaten kümede duruyor. ArgoCD `Application` uyguladığında mevcut Deployment/Service'leri devralıp senkronlar (eğer eski bir sahipsiz kaynakla çakışırsa `kubectl get app -n argocd` / ArgoCD UI'dan hangi kaynağın `OutOfSync` olduğunu görebilirsin).
+- **Dikkat (Helm Release Devralma ve Ingress Çakışması):** Daha önce `helm install erasmus ...` ile kurduğun nesneler zaten kümede duruyorsa ArgoCD yeni bir release adıyla (`erasmus-connect`) kurulum yaparken Ingress webhook'u **`host ... and path "/" is already defined in ingress default/erasmus-erasmus-connect-ingress`** hatası verir! Bu yüzden ArgoCD'ye geçerken önce manuel Helm release'ini kaldır ki ArgoCD tek yetkili olarak temiz kurulum yapsın:
+  ```bash
+  helm uninstall erasmus -n default
+  ```
 
 <details>
 <summary>🆘 Takılırsan Aç (Reveal): `Application` CRD Yapısal Şeması</summary>
@@ -1035,6 +1038,7 @@ Bu fazda Docker Hub ve `dockerhub-secret` bağımlılığını kaldırıp Azure'
 <summary>🆘 Takılırsan Aç (Reveal): `acr.tf` Yapısal Şeması</summary>
 
 `azurerm_container_registry`:
+*(HCL sözdiziminde satır başına `- ` konmaz! Aşağıdaki maddeler sadece okuma listesidir; `.tf` dosyasına doğrudan `name = ...` şeklinde yazılır.)*
 - `name = "<BENZERSIZ_KUCUK_HARF_RAKAM>"`
 - `resource_group_name = azurerm_resource_group.erasmus.name`
 - `location = azurerm_resource_group.erasmus.location`
@@ -1064,9 +1068,9 @@ terraform output acr_login_server
 
 **a) Görev Tanımı:**
 - Mevcut `backend:latest`, `frontend:aks` ve `admin:aks` imajlarını ACR login server adınla (`<ACR_NAME>.azurecr.io/...`) etiketleyip ACR'ye pushla.
-- [values-aks.yaml](./helm/erasmus-connect/values-aks.yaml) içinde `express.image.repository`, `nextjs.image.repository` ve `admin.image.repository` adreslerini ACR adresine çevir.
-- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki `imagePullSecrets` (`dockerhub-secret`) bloğunu kaldır (artık `AcrPull` sayesinde şifre gerekmiyor!) ve `kubectl delete secret dockerhub-secret -n default` ile eski secret'ı sil.
-- Değişiklikleri GitHub'a pushla ve ArgoCD'nin imajları ACR'den şifresiz çekip podları ayağa kaldırdığını doğrula!
+- [values-aks.yaml](./helm/erasmus-connect/values-aks.yaml) içinde `express.image`, `nextjs.image` ve `admin.image` için **hem `repository` hem de `tag` (`"v1"`)** alanlarını ACR adresine göre güncelle! *(Örn: sadece `repository` değiştirip `tag`'i güncellemezsen podlar `values.yaml`'daki `:local` veya `:aks` tag'ini çekmeye çalışır ve `ImagePullBackOff` hatası alırsın. Değişiklik sonrası `helm template erasmus ./helm/erasmus-connect -f ./helm/erasmus-connect/values.yaml -f ./helm/erasmus-connect/values-aks.yaml | grep "image:"` komutuyla doğrula!)*
+- Deployment şablonlarında (`express-deployment.yaml`, `nextjs-deployment.yaml`, `admin-deployment.yaml`) `imagePullSecrets` (`dockerhub-secret`) bloğunu kaldır (artık `AcrPull` sayesinde şifre gerekmiyor!) ve `kubectl delete secret dockerhub-secret -n default` ile eski secret'ı sil.
+- Değişiklikleri GitHub'a pushla; ArgoCD'nin yeni `:v1` imajlarını çektiğini doğrula (`git push` sonrası ArgoCD ~3 dakika polling bekler, istersen UI'dan **Refresh -> Sync** ile anında tetikleyebilirsin).
 
 **b) İpucu ve Referans:**
 - ACR'ye Docker girişi (`az login` açıkken şifre sormaz!):
