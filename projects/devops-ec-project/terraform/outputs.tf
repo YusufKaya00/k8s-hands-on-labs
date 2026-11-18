@@ -14,4 +14,8 @@ output "kube_config_raw" {
   sensitive = true
 }
 
+output "acr_login_server" {
+  value = azurerm_container_registry.erasmus.login_server
+  
+}
 # TODO: [Bilet 22] ACR kurulduktan sonra `acr_login_server` çıktısını ekle (azurerm_container_registry.erasmus.login_server)
