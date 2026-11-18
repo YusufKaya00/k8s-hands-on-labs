@@ -143,7 +143,7 @@ telemetrySink:
     pullPolicy: IfNotPresent
   port: 8087
   readOnlyRootFilesystem: true
-  cacheMountEnabled: false
+  cacheMountEnabled: true
   resources:
     requests:
       cpu: 30m
