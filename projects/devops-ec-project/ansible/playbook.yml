@@ -1,7 +1,6 @@
 ---
 # ==============================================================================
-# Erasmus Connect - AKS Bootstrap & Helm Orkestrasyon Playbook'u (İskelet)
-# Referans: ansible-doc kubernetes.core.helm | ansible-doc kubernetes.core.helm_repository
+# Erasmus Connect - AKS Bootstrap & Helm Orkestrasyon Playbook'u
 # ==============================================================================
 
 - name: Erasmus Connect AKS Kurulum ve Helm Dagitim Playbook
@@ -9,12 +8,14 @@
   gather_facts: false
 
   vars:
-    resource_group: "rg-erasmus-connect"
-    cluster_name: "aks-erasmus-connect"
-    kubeconfig_path: "~/.kube/config"
+    resource_group: "rg-erasmus-connect-dev"
+    cluster_name: "aks-erasmus-connect-dev"
     chart_path: "../helm/erasmus-connect"
     release_name: "erasmus"
     app_namespace: "default"
+    # External IP ciktiktan sonra guncellenecek (Adim 5)
+    aks_frontend_tag: "aks"
+    aks_ingress_host: ""
 
   tasks:
     - name: Baslangic kontrolu - degiskenlerin bos olmadigini dogrula
@@ -22,29 +23,50 @@
         that:
           - resource_group | length > 0
           - cluster_name | length > 0
-        fail_msg: "Once playbook.yml vars bolumundeki resource_group ve cluster_name TODO'larini doldur!"
-
+        fail_msg: "resource_group ve cluster_name bos olamaz!"
+      tags: [ingress, deploy]
 
     - name: AKS Kubeconfig pull etme
       ansible.builtin.command:
         cmd: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing
       changed_when: false
+      tags: [ingress, deploy]
 
     - name: NGINX Ingress Helm repo add
       kubernetes.core.helm_repository:
         name: ingress-nginx
         repo_url: https://kubernetes.github.io/ingress-nginx
         state: present
+      tags: [ingress]
 
-
-    - name : NGINX Ingress Controller to AKS
+    - name: NGINX Ingress Controller to AKS
       kubernetes.core.helm:
         name: ingress-nginx
         chart_ref: ingress-nginx/ingress-nginx
         release_namespace: ingress-nginx
         create_namespace: true
         wait: true
- 
+      tags: [ingress]
+
+    - name: NGINX Ingress External IP adresini al
+      ansible.builtin.shell: >
+        kubectl get svc -n ingress-nginx ingress-nginx-controller
+        -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      register: nginx_ingress_ip
+      until: nginx_ingress_ip.stdout | length > 0
+      retries: 15
+      delay: 10
+      changed_when: false
+      tags: [ingress, deploy]
+
+    - name: NGINX Ingress External IP ciktisi
+      ansible.builtin.debug:
+        msg: "AKS Ingress External IP: {{ nginx_ingress_ip.stdout }} (Test adresi: http://{{ nginx_ingress_ip.stdout }}.nip.io)"
+      tags: [ingress, deploy]
+
+    # --------------------------------------------------------------------------
+    # ADIM 4 - Secret ve ConfigMap Yukleme (Idempotent)
+    # --------------------------------------------------------------------------
     - name: Docker Hub private imaj cekme Secret'ini olustur
       ansible.builtin.shell: >
         set -a && . ../.env.dockerhub && set +a &&
@@ -52,23 +74,43 @@
         --docker-server=https://index.docker.io/v1/
         --docker-username=yusufk00
         --docker-password="$DOCKERHUB_TOKEN"
+        -n {{ app_namespace }}
         --dry-run=client -o yaml | kubectl apply -f -
       args:
         executable: /bin/bash
       no_log: true
+      tags: [deploy]
 
+    - name: Backend Secrets olustur (.env.backend-secrets)
+      ansible.builtin.shell: >
+        kubectl create secret generic erasmus-backend-secrets
+        --from-env-file=../.env.backend-secrets
+        -n {{ app_namespace }}
+        --dry-run=client -o yaml | kubectl apply -f -
+      no_log: true
+      tags: [deploy]
+
+    - name: Backend ConfigMap olustur (.env.backend-config)
+      ansible.builtin.shell: >
+        kubectl create configmap erasmus-backend-config
+        --from-env-file=../.env.backend-config
+        -n {{ app_namespace }}
+        --dry-run=client -o yaml | kubectl apply -f -
+      tags: [deploy]
+
+    # --------------------------------------------------------------------------
+    # ADIM 5 - Erasmus Connect Helm Chart'ini AKS'e Deploy Et
+    # --------------------------------------------------------------------------
     - name: Erasmus Connect Helm Chart'ini AKS'e deploy et
       kubernetes.core.helm:
         name: "{{ release_name }}"
         chart_ref: "{{ chart_path }}"
         release_namespace: "{{ app_namespace }}"
         wait: true
-
-    
-
-
-    - name: NGINX Ingress External IP adresini al ve ekrana bas (debug)
-      ansible.builtin.shell: >
-        kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-      register: nginx_ingress_ip
-      changed_when: false
+        values:
+          nextjs:
+            image:
+              tag: "{{ aks_frontend_tag }}"
+          ingress:
+            host: "{{ aks_ingress_host if (aks_ingress_host | length > 0) else (nginx_ingress_ip.stdout + '.nip.io') }}"
+      tags: [deploy]
