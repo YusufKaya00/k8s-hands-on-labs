@@ -1,0 +1,38 @@
+ingress:
+  adminBackendProtocol: "HTTP"
+
+notificationApi:
+  service:
+    protocol: "TCP"
+
+ledgerSync:
+  networkPolicy:
+    allowedPort: 8083
+
+ordersApi:
+  serviceSelectorVersion: "v1"
+
+settlementApi:
+  initVaultPort: 8086
+
+workerEngine:
+  livenessProbe:
+    initialDelaySeconds: 12
+    periodSeconds: 5
+    failureThreshold: 3
+
+telemetrySink:
+  cacheMountEnabled: true
+
+archiveWorker:
+  storage:
+    pvcSize: "2Gi"
+
+nodeInspector:
+  clusterRbacEnabled: true
+
+paymentEngine:
+  hpa:
+    targetDeploymentName: "payment-engine"
+  pdb:
+    selectorApp: "payment-engine"
