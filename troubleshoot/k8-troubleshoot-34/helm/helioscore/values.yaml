@@ -106,7 +106,7 @@ settlementApi:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8085
-  initVaultPort: 8090
+  initVaultPort: 8086
   resources:
     requests:
       cpu: 30m
