@@ -121,5 +121,6 @@ envFrom:
   backendConfigMapName: "erasmus-backend-config"
 
 pdb:
-  enabled: false
+  enabled: true
+  minAvailable: 1
   # TODO: [Bilet 18] Express ve Next.js için minAvailable (ör. 1 - sadece replica >= 2 iken!) değerini tanımlayıp enabled: true yap
