@@ -1,0 +1,214 @@
+global:
+  ingressHost: ""
+  domain: helioscore.local
+  environment: production
+
+namespaces:
+  edge: helios-edge
+  core: helios-core
+  data: helios-data
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  adminBackendProtocol: "HTTPS"
+
+edgeProxy:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+  port: 80
+  resources:
+    requests:
+      cpu: 40m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+
+notificationApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8081
+  service:
+    port: 8081
+    targetPort: 8081
+    protocol: "UDP"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+ledgerSync:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8083
+  service:
+    port: 80
+    targetPort: 8083
+  networkPolicy:
+    allowedPort: 80
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+ordersApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8084
+  podVersion: "v1"
+  serviceSelectorVersion: "v2"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+vaultService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8086
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+settlementApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8085
+  initVaultPort: 8090
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+workerEngine:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8088
+  warmupSeconds: "8"
+  livenessProbe:
+    initialDelaySeconds: 2
+    periodSeconds: 2
+    failureThreshold: 2
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+telemetrySink:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8087
+  readOnlyRootFilesystem: true
+  cacheMountEnabled: false
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+archiveWorker:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8090
+  storage:
+    storageClassName: "managed-csi"
+    pvName: "archive-pv"
+    pvSize: "2Gi"
+    pvcName: "archive-pvc"
+    pvcSize: "5Gi"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+nodeInspector:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8089
+  serviceAccountName: "node-inspector-sa"
+  clusterRbacEnabled: false
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+paymentEngine:
+  replicaCount: 2
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8082
+  hpa:
+    targetDeploymentName: "payment-api-v1"
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    minAvailable: 1
+    selectorApp: "payment-v1"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
