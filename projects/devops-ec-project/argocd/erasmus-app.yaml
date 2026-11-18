@@ -13,7 +13,7 @@ spec:
    repoURL: https://github.com/YusufKaya00/k8s-hands-on-labs.git
    targetRevision: main
    path: projects/devops-ec-project/helm/erasmus-connect
-  helm:
+   helm:
     valueFiles:
       - values.yaml
       - values-aks.yaml
@@ -31,9 +31,3 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/replicas
-  # TODO: [Bilet 21] `syncPolicy.automated` bloğunu ekle:
-  #   - `prune: true` (Git'ten sildiğin kaynakları kümeden de silsin)
-  #   - `selfHeal: true` (Kümeden elle değiştirilen/silinen kaynakları Git'teki haline geri çevirsin)
-  # TODO: [Bilet 21] `ignoreDifferences` bloğunu ekle (KRİTİK - HPA Çakışması!):
-  #   - group: apps, kind: Deployment için `/spec/replicas` alanını yoksay
-  #   - Neden? HPA replika sayısını 2 -> 4 yaptığında ArgoCD'nin bunu tekrar 1'e düşürmemesi için!
