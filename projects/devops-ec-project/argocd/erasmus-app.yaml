@@ -12,14 +12,25 @@ spec:
   source:
    repoURL: https://github.com/YusufKaya00/k8s-hands-on-labs.git
    targetRevision: main
-    # TODO: [Bilet 21] `repoURL` (https://github.com/YusufKaya00/k8s-hands-on-labs.git),
-    #   `targetRevision` (main) ve `path` (projects/devops-ec-project/helm/erasmus-connect) alanlarını yaz
-    helm:
-      # TODO: [Bilet 21] `valueFiles` listesini ekle ve sırasıyla `values.yaml` ile `values-aks.yaml` dosyalarını bağla!
-      #   (Böylece ArgoCD :aks tag'lerini ve nip.io hostlarını uygular, :local ile ezmez.)
+   path: projects/devops-ec-project/helm/erasmus-connect
+  helm:
+    valueFiles:
+      - values.yaml
+      - values-aks.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: default
+  
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
   # TODO: [Bilet 21] `syncPolicy.automated` bloğunu ekle:
   #   - `prune: true` (Git'ten sildiğin kaynakları kümeden de silsin)
   #   - `selfHeal: true` (Kümeden elle değiştirilen/silinen kaynakları Git'teki haline geri çevirsin)
