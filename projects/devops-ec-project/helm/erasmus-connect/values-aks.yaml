@@ -6,17 +6,17 @@
 
 nextjs:
   image:
-    repository: "erasmusconnect.azurecr.io/erasmus-connect-frontend"
+    repository: "erasmusconnectv1.azurecr.io/erasmus-connect-frontend"
     tag: "v1"
 
 admin:
   image:
-    repository: "erasmusconnect.azurecr.io/erasmus-connect-admin"
+    repository: "erasmusconnectv1.azurecr.io/erasmus-connect-admin"
     tag: "v1"
 
 express:
   image:
-    repository: "erasmusconnect.azurecr.io/erasmus-connect-backend"
+    repository: "erasmusconnectv1.azurecr.io/erasmus-connect-backend"
     tag: "v1"
     
 ingress:
