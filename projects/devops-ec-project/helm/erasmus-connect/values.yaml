@@ -27,8 +27,6 @@ express:
     minReplicas: 2
     maxReplicas: 4
     targetCPUUtilizationPercentage: 60
-    targetMemoryUtilizationPercentage: 60
-    # TODO: [Bilet 17] Express HPA için minReplicas (ör. 2), maxReplicas (ör. 4) ve targetCPUUtilizationPercentage (ör. 60) tanımla; sonra enabled: true yap
   
 
 nextjs:
@@ -62,7 +60,9 @@ nextjs:
    periodSeconds: 10
   hpa:
     enabled: false
-    # TODO: [Bilet 17] Next.js HPA için minReplicas, maxReplicas ve targetCPUUtilizationPercentage tanımla; sonra enabled: true yap
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 60
 
 redis:
   image:
