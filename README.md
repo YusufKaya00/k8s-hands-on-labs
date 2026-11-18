@@ -5,9 +5,9 @@
 [![DevSecOps](https://img.shields.io/badge/DevSecOps-Harbor_%7C_Trivy_%7C_Jenkins-0EA5E9?style=for-the-badge&logo=jenkins&logoColor=white)](./projects/devops-capstone-project-6/README.md)
 [![GitOps](https://img.shields.io/badge/GitOps-ArgoCD_%26_Helm-F97316?style=for-the-badge&logo=argo&logoColor=white)](https://argo-cd.readthedocs.io/)
 [![IaC](https://img.shields.io/badge/IaC-Terraform_%26_Ansible-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![SRE Troubleshooting](https://img.shields.io/badge/SRE_Practice-39_Troubleshooting_Simulations-10B981?style=for-the-badge&logo=prometheus&logoColor=white)](./troubleshoot/)
+[![SRE Troubleshooting](https://img.shields.io/badge/SRE_Practice-45_Troubleshooting_Simulations-10B981?style=for-the-badge&logo=prometheus&logoColor=white)](./troubleshoot/)
 
-Welcome to the ultimate **Kubernetes Training, Real-World Troubleshooting Simulation, Site Reliability Engineering (SRE), DevSecOps, and Chaos Engineering Practice** repository. This workspace provides **54+ hands-on labs and production capstone projects** covering foundational container orchestration, multi-node RKE2/AKS/OKE clusters, polyglot data architectures (Kafka, RabbitMQ, Cassandra, PostgreSQL, Redis), self-hosted **Harbor OCI Registry + Trivy + Jenkins CI/CD**, **39 break-and-fix incident triage simulations**, and **Chaos Mesh Game Days**.
+Welcome to the ultimate **Kubernetes Training, Real-World Troubleshooting Simulation, Site Reliability Engineering (SRE), DevSecOps, and Chaos Engineering Practice** repository. This workspace provides **60+ hands-on labs and production capstone projects** covering foundational container orchestration, multi-node RKE2/AKS/OKE clusters, polyglot data architectures (Kafka, RabbitMQ, Cassandra, PostgreSQL, Redis), self-hosted **Harbor OCI Registry + Trivy + Jenkins CI/CD**, **45 break-and-fix incident triage simulations**, **Chaos Mesh Game Days**, and **curated Deep-Dive Lessons (`lessons/`)**.
 
 All projects and troubleshooting scenarios are fully reproducible on local clusters (**Minikube**), managed cloud clusters (**Oracle Cloud OKE**, **Azure AKS**), and self-managed IaaS clusters (**Azure RKE2 & K3s via Terraform and Ansible**).
 
@@ -17,6 +17,13 @@ All projects and troubleshooting scenarios are fully reproducible on local clust
 
 ```text
 k8s-hands-on-labs/
+├── lessons/                         # Curated DevOps Deep-Dive Tracks & Topic-Specific Labs (90DaysOfDevOps)
+│   ├── 01-logging-pipeline/         # Centralized Logging & Tracing (ELK, Fluentd, FluentBit, EFK, OpenTelemetry)
+│   ├── 02-backup-disaster-recovery/ # Stateful Backup, Velero/Kasten/Kanister & Disaster Recovery
+│   ├── 03-secrets-management-vault/ # HashiCorp Vault, Dynamic Credentials & TLS
+│   ├── 04-devsecops-runtime-security/ # SAST/DAST, Auditing, Falco, Tetragon & Runtime Defense
+│   └── 05-day2-ops-rbac-platform/   # Day-2 Ops, Service Mesh, Multi-Cluster Add-Ons & Ansible K8s RBAC
+│
 ├── projects/
 │   ├── k8-training/                 # Scratch / training manifests and deep-dive notes
 │   ├── k8-project-1/                # Kubernetes Foundations (Deployments, StatefulSets, DaemonSets, Storage, Ingress)
@@ -69,6 +76,12 @@ k8s-hands-on-labs/
     ├── k8-troubleshoot-26/          # NetVortex v9.0 Advanced K8s Networking & Zero-Trust Mesh Outage on AKS (10 Critical Network Failures)
     ├── k8-troubleshoot-27/          # CloudApex v10.0 Enterprise Multi-Tier Mesh & Dual Cloud LoadBalancer Outage on AKS (10 Network Failures)
     ├── k8-troubleshoot-28/          # FinEdge v11.0 Real-World Production Networking & Live Traffic Diagnostics on AKS (10 Live HTTP/LB/Calico Tickets)
+    ├── k8-troubleshoot-29/          # NovaMesh v12.0 Real-World Multi-Tier Networking & Live Traffic Triage on AKS (10 Live Tickets)
+    ├── k8-troubleshoot-30/          # PulseGrid v13.0 General Production Networking & Live Pod Isolation Triage on AKS (10 Tickets)
+    ├── k8-troubleshoot-31/          # StreamCart v14.0 Blind-Mode NGINX Reverse Proxy & Edge Networking Triage on AKS (10 Tickets)
+    ├── k8-troubleshoot-32/          # AtlasFlow v15.0 Blind-Mode Full-Spectrum Kubernetes General Review #1 on AKS (10 Tickets)
+    ├── k8-troubleshoot-33/          # MeridianPay v16.0 Blind-Mode Full-Spectrum Kubernetes General Review #2 on AKS (10 Tickets)
+    ├── k8-troubleshoot-34/          # HeliosCore v17.0 Blind-Mode Full-Spectrum Kubernetes General Review #3 on AKS (10 Tickets)
     ├── tf-troubleshoot-1/           # Terraform Lab 1 (Azure): State Drift, Import (already exists), prevent_destroy
     ├── tf-troubleshoot-2/           # Terraform Lab 2 (local): State Lock, Lost State recovery, Refactor (moved / state mv)
     ├── tf-troubleshoot-3/           # Terraform Lab 3 (local): Broken code (5 errors incl. Cycle), -replace / secret rotation
@@ -182,10 +195,19 @@ k8s-hands-on-labs/
 * [**k8-troubleshoot-26:** NetVortex v9.0 Advanced Kubernetes Networking & Zero-Trust Mesh Outage](./troubleshoot/k8-troubleshoot-26/README.md) — 100% networking & Calico security outage on 2-node AKS covering `externalTrafficPolicy: Local` blackholing, L7 NGINX regex rewrite, cross-namespace FQDN DNS, named ports, NetworkPolicy AND vs OR traps, Egress `ipBlock` CIDR masking, and CoreDNS TCP 53 fallback.
 * [**k8-troubleshoot-27:** CloudApex v10.0 Enterprise Multi-Tier Mesh & Dual Cloud LoadBalancer Outage](./troubleshoot/k8-troubleshoot-27/README.md) — Real-world AKS & cloud networking crisis featuring dual Azure Public LoadBalancers, Azure LB health probe failures, Ingress Prefix vs Exact routing, Calico blocking Cloud IMDS (`169.254.169.254`), L4/L7 session affinity hotspotting, and CoreDNS `ndots: 5` tuning.
 * [**k8-troubleshoot-28:** FinEdge v11.0 Real-World Production Networking & Live Traffic Diagnostics](./troubleshoot/k8-troubleshoot-28/README.md) — 10 live traffic tickets on AKS where all pods are `1/1 Running` yet every external endpoint fails (`Connection timed out`, `413`, `504`, `502`): Azure LB `loadBalancerSourceRanges` NSG drops, NGINX proxy-body-size/read-timeout/TLS backend-protocol, `internalTrafficPolicy` drops, `hostNetwork` DNS behavior, and post-DNAT NetworkPolicy traps.
+* [**k8-troubleshoot-29:** NovaMesh v12.0 Multi-Tier API Gateway & Live Traffic Diagnostics](./troubleshoot/k8-troubleshoot-29/README.md) — 10 live AKS tickets isolating Azure LB `targetPort`, NGINX path regex/rewrite, IP whitelist (`403`), SSL redirect (`308`), cross-namespace NetPol/CIDR `except`, CoreDNS egress `:53`, `ExternalName` FQDN, and Ingress port alignment.
+* [**k8-troubleshoot-30:** PulseGrid v13.0 General Production Networking & Live Pod Isolation](./troubleshoot/k8-troubleshoot-30/README.md) — 10 general live-traffic tickets covering Azure LB health probes (`/ping` vs `/healthz`), `ingressClassName`, host overrides, loopback `127.0.0.1` sockets, named `targetPort`, cross-NS NetPols, and FQDN resolution.
+* [**k8-troubleshoot-31:** StreamCart v14.0 Blind-Mode NGINX Reverse Proxy & Edge Triage](./troubleshoot/k8-troubleshoot-31/README.md) — 10 blind-mode production tickets across Azure LB, NGINX Ingress, an internal NGINX reverse proxy (`resolver 1.1.1.1` vs `kube-dns`, `proxy_read_timeout`, upstream ports), loopback bind, named/numeric ports, and egress NetPols.
+* [**k8-troubleshoot-32:** AtlasFlow v15.0 Blind-Mode Full-Spectrum General Review #1](./troubleshoot/k8-troubleshoot-32/README.md) — 25-minute blind-mode mixed Kubernetes triage on AKS covering `pathType`, cross-NS NetPol, loopback bind, readiness path, Secret key, immutable PVC StorageClass, RBAC `Role`, `nodeSelector` + DaemonSet `Toleration`, HPA `requests.cpu` & PDB, and cross-NS CoreDNS FQDN.
+* [**k8-troubleshoot-33:** MeridianPay v16.0 Blind-Mode Full-Spectrum General Review #2](./troubleshoot/k8-troubleshoot-33/README.md) — 25-minute blind-mode mixed Kubernetes triage covering `ingressClassName`, egress DNS `:53`, named `targetPort`, proxy `proxy_read_timeout`, `env` vs `envFrom` precedence, `OOMKilled (137)`, immutable PVC `RWX` vs `RWO`, `serviceAccountName`, `ResourceQuota`, and immutable StatefulSet `serviceName`.
+* [**k8-troubleshoot-34:** HeliosCore v17.0 Blind-Mode Full-Spectrum General Review #3](./troubleshoot/k8-troubleshoot-34/README.md) — 25-minute blind-mode mixed Kubernetes triage covering `backend-protocol: HTTPS`, Service `UDP` vs `TCP`, Post-DNAT port NetPol, Service selector drift, `InitContainer` port, `livenessProbe` warmup, `readOnlyRootFilesystem` + `emptyDir`, PV/PVC capacity mismatch, `Role` vs `ClusterRole`, and HPA/PDB typos.
+
+### 3. Curated Deep-Dive Tracks & Topic Labs (`lessons/`)
+* [**lessons/README.md:** Selected DevOps Mastery Tracks (`90DaysOfDevOps` Reference)](./lessons/README.md) — Structured theory links, YouTube sessions, and topic-specific labs across [**Logging & Tracing**](./lessons/01-logging-pipeline/README.md), [**Backup & Disaster Recovery**](./lessons/02-backup-disaster-recovery/README.md), [**Vault Secrets & Dynamic Credentials**](./lessons/03-secrets-management-vault/README.md), [**DevSecOps SAST/DAST & Runtime Defense**](./lessons/04-devsecops-runtime-security/README.md), and [**Day-2 Ops, Service Mesh & Ansible RBAC**](./lessons/05-day2-ops-rbac-platform/README.md).
 
 ---
 
-### 3. Terraform Troubleshooting Labs (IaC Incident Response)
+### 4. Terraform Troubleshooting Labs (IaC Incident Response)
 * [**tf-troubleshoot-1:** Drift, Import & Destroy Protection (Azure, free resources)](./troubleshoot/tf-troubleshoot-1/README.md) — Manual portal changes (NSG rule & tag drift), `-refresh-only`, unmanaged subnet `already exists` → `import {}` block, and `lifecycle.prevent_destroy`.
 * [**tf-troubleshoot-2:** State Disasters (local)](./troubleshoot/tf-troubleshoot-2/README.md) — State lock contention & `force-unlock`, deleted `terraform.tfstate` recovery from backup, resource rename refactor with `moved {}` / `terraform state mv`.
 * [**tf-troubleshoot-3:** Broken Code, Cycles & Replace (local)](./troubleshoot/tf-troubleshoot-3/README.md) — 5 validate/plan errors (type mismatch, undeclared variable, unsupported attribute, duplicate resource, dependency cycle) and targeted secret rotation with `-replace`.
@@ -264,10 +286,21 @@ Tüm projeler ve sorun giderme laboratuvarları hem yerel kümelerde (**Minikube
 * [**k8-troubleshoot-26:** NetVortex v9.0 İleri Seviye Kubernetes Ağı & Zero-Trust Mesh Kesintisi](./troubleshoot/k8-troubleshoot-26/README.md) — AKS üzerinde `externalTrafficPolicy: Local`, NGINX regex rewrite, cross-namespace FQDN DNS, named ports, NetworkPolicy AND/OR tuzağı, Egress CIDR maskeleme ve CoreDNS TCP 53 fallback içeren 10 kritik ağ arızası.
 * [**k8-troubleshoot-27:** CloudApex v10.0 Kurumsal Çok Katmanlı Mesh & Çift Cloud LoadBalancer Kesintisi](./troubleshoot/k8-troubleshoot-27/README.md) — Çift Azure Public LoadBalancer, Azure LB Health Probe arızası, Ingress Prefix vs Exact yönlendirme, Calico IMDS (`169.254.169.254`) izolasyonu, L4/L7 session affinity hotspotting ve CoreDNS `ndots: 5` optimizasyonu.
 * [**k8-troubleshoot-28:** FinEdge v11.0 Gerçek Dünya Üretim Ağı & Canlı Trafik Teşhis Laboratuvarı](./troubleshoot/k8-troubleshoot-28/README.md) — Tüm podlar `1/1 Running` görünürken dış HTTP uç noktalarının başarısız olduğu (`413`, `504`, `502`, zaman aşımı) 10 canlı AKS üretim bileti: Azure LB `loadBalancerSourceRanges`, NGINX timeout/TLS/body-size, `internalTrafficPolicy`, `hostNetwork` DNS ve post-DNAT NetworkPolicy tuzakları.
+* [**k8-troubleshoot-29:** NovaMesh v12.0 Çok Katmanlı API Geçidi & Canlı Trafik Teşhis Labı](./troubleshoot/k8-troubleshoot-29/README.md) — AKS üzerinde Azure LB `targetPort`, NGINX regex/rewrite, IP whitelist (`403`), SSL redirect (`308`), cross-NS NetPol/CIDR `except`, CoreDNS egress `:53` ve `ExternalName` FQDN içeren 10 canlı üretim bileti.
+* [**k8-troubleshoot-30:** PulseGrid v13.0 Genel Production Ağı & Pod İzolasyon Teşhis Labı](./troubleshoot/k8-troubleshoot-30/README.md) — Azure LB health probe (`/ping` vs `/healthz`), `ingressClassName`, host ezme, loopback `127.0.0.1` soketi, named `targetPort` ve cross-NS NetPol/FQDN içeren 10 genel ağ bileti.
+* [**k8-troubleshoot-31:** StreamCart v14.0 Kör Mod Reverse Proxy & Ağ Teşhis Labı](./troubleshoot/k8-troubleshoot-31/README.md) — Azure LB, NGINX Ingress ve iç NGINX Reverse Proxy (`resolver 1.1.1.1` vs `kube-dns`, `proxy_read_timeout`, upstream port) katmanlarında HTTP kodlarından katman eleme odaklı 10 kör bilet.
+* [**k8-troubleshoot-32:** AtlasFlow v15.0 Kör Mod Genel Tekrar Labı #1](./troubleshoot/k8-troubleshoot-32/README.md) — AKS üzerinde 25 dakikalık sıfır-ipucu karışık K8s genel tekrarı (`pathType`, cross-NS NetPol, loopback bind, probe path, Secret key, immutable PVC StorageClass, RBAC `Role`, `nodeSelector` + DaemonSet `Toleration`, HPA/PDB, FQDN).
+* [**k8-troubleshoot-33:** MeridianPay v16.0 Kör Mod Genel Tekrar Labı #2](./troubleshoot/k8-troubleshoot-33/README.md) — 25 dakikalık karışık K8s genel tekrarı (`ingressClassName`, egress DNS `:53`, named `targetPort`, proxy timeout, `env` vs `envFrom`, `OOMKilled 137`, immutable PVC `RWX` vs `RWO`, `serviceAccountName`, `ResourceQuota`, immutable StatefulSet `serviceName`).
+* [**k8-troubleshoot-34:** HeliosCore v17.0 Kör Mod Genel Tekrar Labı #3](./troubleshoot/k8-troubleshoot-34/README.md) — 25 dakikalık karışık K8s genel tekrarı (`backend-protocol: HTTPS`, Service `UDP` vs `TCP`, Post-DNAT NetPol, Service selector, `InitContainer` port, `livenessProbe` ısınma süresi, `readOnlyRootFilesystem` + `emptyDir`, PV/PVC kapasitesi, `Role` vs `ClusterRole`, HPA/PDB).
 
 ---
 
-#### 3. Terraform ve Altyapı Sorun Giderme Laboratuvarları (IaC Incident Response)
+#### 3. Konu Bazlı Teori & Spesifik Lab Serisi (`lessons/`)
+* [**lessons/README.md:** DevOps Maceram — Seçili Dersler & Konu Bazlı Lablar (`90DaysOfDevOps` Referanslı)](./lessons/README.md) — [**Merkezi Loglama & Tracing**](./lessons/01-logging-pipeline/README.md), [**Backup & Disaster Recovery**](./lessons/02-backup-disaster-recovery/README.md), [**HashiCorp Vault Secrets**](./lessons/03-secrets-management-vault/README.md), [**İleri DevSecOps (SAST & Runtime Defense)**](./lessons/04-devsecops-runtime-security/README.md) ve [**Day-2 Ops, Service Mesh & Ansible RBAC**](./lessons/05-day2-ops-rbac-platform/README.md) dersleri ve bağlı labları.
+
+---
+
+#### 4. Terraform ve Altyapı Sorun Giderme Laboratuvarları (IaC Incident Response)
 * [**tf-troubleshoot-1:** Drift, Import ve Silme Koruması (Azure, ücretsiz kaynaklar)](./troubleshoot/tf-troubleshoot-1/README.md) — Portaldan elle yapılan NSG kural/etiket sapması, `-refresh-only`, yönetilmeyen subnet `already exists` → `import {}` bloğu ve `lifecycle.prevent_destroy`.
 * [**tf-troubleshoot-2:** State Felaketleri (lokal)](./troubleshoot/tf-troubleshoot-2/README.md) — State lock çakışması ve `force-unlock`, silinen `terraform.tfstate` dosyasının backup ile kurtarılması, `moved {}` / `terraform state mv` ile yeniden adlandırma.
 * [**tf-troubleshoot-3:** Bozuk Kod, Cycle ve Replace (lokal)](./troubleshoot/tf-troubleshoot-3/README.md) — 5 validate/plan hatası (tip uyuşmazlığı, tanımsız değişken, olmayan attribute, çift kaynak, döngüsel bağımlılık) ve `-replace` ile hedefli şifre rotasyonu.
