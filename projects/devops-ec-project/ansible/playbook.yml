@@ -109,19 +109,13 @@
     # ADIM 5 - Erasmus Connect Helm Chart'ini AKS'e Deploy Et
     # --------------------------------------------------------------------------
     - name: Erasmus Connect Helm Chart'ini AKS'e deploy et
-      kubernetes.core.helm:
-        name: "{{ release_name }}"
-        chart_ref: "{{ chart_path }}"
-        release_namespace: "{{ app_namespace }}"
-        wait: true
-        values:
-          nextjs:
-            image:
-              tag: "{{ aks_frontend_tag }}"
-          admin:
-            image:
-              tag: "{{ aks_admin_tag }}"
-          ingress:
-            host: "{{ aks_ingress_host if (aks_ingress_host | length > 0) else (nginx_ingress_ip.stdout + '.nip.io') }}"
-            adminHost: "{{ aks_admin_host if (aks_admin_host | length > 0) else ('admin.' + nginx_ingress_ip.stdout + '.nip.io') }}"
+      ansible.builtin.command:
+        cmd: >
+          helm upgrade --install {{ release_name }} {{ chart_path }}
+          --namespace {{ app_namespace }}
+          --wait
+          --set nextjs.image.tag={{ aks_frontend_tag }}
+          --set admin.image.tag={{ aks_admin_tag }}
+          --set ingress.host={{ aks_ingress_host if (aks_ingress_host | length > 0) else (nginx_ingress_ip.stdout + '.nip.io') }}
+          --set ingress.adminHost={{ aks_admin_host if (aks_admin_host | length > 0) else ('admin.' + nginx_ingress_ip.stdout + '.nip.io') }}
       tags: [deploy]
