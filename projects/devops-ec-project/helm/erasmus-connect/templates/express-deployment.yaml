@@ -15,8 +15,6 @@ spec:
       labels:
         app: erasmus-express
     spec:
-      imagePullSecrets:
-        - name: dockerhub-secret
       containers:
         - name: express-api
           image: "{{ .Values.express.image.repository }}:{{ .Values.express.image.tag }}"
