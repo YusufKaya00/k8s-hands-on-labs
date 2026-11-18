@@ -892,6 +892,112 @@ kubectl get hpa,pods -n default -w
 
 ---
 
+## Faz 7: ArgoCD ile GitOps Otomatik Dağıtım
+
+Bu fazda artık `helm upgrade` veya `ansible-playbook` çalıştırmayı bırakıp, **GitHub'a yaptığın her push'un AKS kümesine otomatik yansıdığı (GitOps)** ArgoCD yapısını kuracaksın.
+
+---
+
+### Bilet 20: Node Ölçekleme (`node_count = 2`) ve ArgoCD Kurulumu
+
+**a) Görev Tanımı:**
+- Tek `Standard_B2s` node'un 30 pod limitini (`Too many pods`) ve RAM sınırını açmak için [variables.tf](./terraform/variables.tf) içindeki `node_count` değerini `2` yap ve `terraform apply` ile kümeyi silmeden **yerinde** 2. node'u ekle (`60 pod`, `4 vCPU`, `8 GB RAM`).
+- AKS üzerine `argocd` namespace'ini açıp resmi ArgoCD Helm chart'ını (veya resmi manifestosunu) kur.
+- ArgoCD arayüzüne internete açmadan `kubectl port-forward` ile eriş ve ilk `admin` şifresini al.
+
+**b) İpucu ve Referans:**
+- Terraform ile node artırma:
+  ```bash
+  cd terraform
+  terraform apply   # Plan'da ~ node_count: 1 -> 2 (in-place update) görmelisin, destroy OLMAMALI!
+  ```
+- ArgoCD Helm kurulumu (öğrenci kümesinde gereksiz HA kopyaları yerine hafif kurulum):
+  ```bash
+  helm repo add argo https://argoproj.github.io/argo-helm
+  helm repo update
+  helm upgrade --install argocd argo/argo-cd \
+    --namespace argocd --create-namespace \
+    --set configs.params."server\.insecure"=true
+  ```
+  *(Not: `server.insecure=true` iç TLS'i kapatır, `port-forward` yaparken tarayıcıda sertifika uyarısı görmeden bağlanmanı sağlar.)*
+- İlk `admin` şifresini çekme:
+  `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo`
+- ArgoCD Web UI erişimi:
+  `kubectl port-forward svc/argocd-server -n argocd 8085:80` → Tarayıcıda **`http://localhost:8085`** (Kullanıcı: `admin`).
+
+**c) Çözüm Kanıtı:**
+```bash
+kubectl get nodes
+kubectl get pods -n argocd
+```
+- 2 adet `Ready` node ve tüm `argocd-*` podlarının `Running` olduğunu doğrula.
+
+---
+
+### Bilet 21: ArgoCD `Application` Manifestosu, `values-aks.yaml` ve HPA Çakışma Koruması
+
+**a) Görev Tanımı:**
+- [argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml) dosyasındaki tüm `[Bilet 21]` `# TODO` kısımlarını doldur:
+  1. `source`: Reponun GitHub URL'si (`https://github.com/YusufKaya00/k8s-hands-on-labs.git`), `targetRevision: main`, `path: projects/devops-ec-project/helm/erasmus-connect`.
+  2. `source.helm.valueFiles`: `values.yaml` ve `values-aks.yaml` (`values-aks.yaml` sona yazılır ki AKS imaj tag'lerini ve `nip.io` hostlarını üzerine yazsın!).
+  3. `syncPolicy.automated`: `prune: true` ve `selfHeal: true`.
+  4. `ignoreDifferences`: `apps/Deployment` kaynaklarında `/spec/replicas` alanını yoksay (**KRİTİK:** HPA replika sayısını artırdığında ArgoCD'nin geri düşürmemesi için!).
+- **Secret Kuralı:** `erasmus-backend-secrets`, `erasmus-backend-config` ve `dockerhub-secret` yine Git'te değildir (kümede hazır durur).
+
+**b) İpucu ve Referans:**
+- Terminalde CRD şemasını incele:
+  `kubectl explain application.spec.source.helm`
+  `kubectl explain application.spec.syncPolicy.automated`
+  `kubectl explain application.spec.ignoreDifferences`
+- **Dikkat (Helm Release Devralma):** Daha önce `helm install erasmus ...` ile kurduğun nesneler zaten kümede duruyor. ArgoCD `Application` uyguladığında mevcut Deployment/Service'leri devralıp senkronlar (eğer eski bir sahipsiz kaynakla çakışırsa `kubectl get app -n argocd` / ArgoCD UI'dan hangi kaynağın `OutOfSync` olduğunu görebilirsin).
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): `Application` CRD Yapısal Şeması</summary>
+
+`spec.source:` altında:
+```yaml
+    repoURL: https://github.com/YusufKaya00/k8s-hands-on-labs.git
+    targetRevision: main
+    path: projects/devops-ec-project/helm/erasmus-connect
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-aks.yaml
+```
+`spec:` altında `syncPolicy:` ve `ignoreDifferences:`:
+```yaml
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+```
+
+</details>
+
+**c) Çözüm Kanıtı (Canlı GitOps Testi!):**
+```bash
+# 1. Application manifestosunu kümede oluştur:
+kubectl apply -f ./argocd/erasmus-app.yaml
+kubectl get applications -n argocd
+
+# 2. Otomatik Sync testi:
+#    - Kümeden örneğin bir Service'i veya PDB'yi elle sil:
+kubectl delete pdb erasmus-erasmus-connect-express-pdb -n default
+#    - 10-15 saniye bekle ve geri geldiğini gör (selfHeal!):
+kubectl get pdb -n default
+
+# 3. Git Push testi:
+#    - values.yaml içinde küçük bir değişiklik (ör. hpa maxReplicas: 4 -> 5) yapıp GitHub'a pushla.
+#    - ArgoCD UI'da (http://localhost:8085) veya CLI'da birkaç dakika içinde otomatik Synced olduğunu gör!
+```
+
+---
+
 ## Kontrol Listesi (Kendini Değerlendir)
 
 - [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
