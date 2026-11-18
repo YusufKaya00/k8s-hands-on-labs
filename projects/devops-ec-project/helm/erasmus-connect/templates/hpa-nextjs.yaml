@@ -7,7 +7,16 @@ metadata:
     {{- include "erasmus-connect.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
-    # TODO: [Bilet 17] Next.js Deployment'ını hedefleyen `apiVersion`, `kind` ve `name` alanlarını tanımla
-  # TODO: [Bilet 17] `minReplicas` ve `maxReplicas` belirle
-  # TODO: [Bilet 17] `metrics` listesini yaz (CPU ortalama kullanım yüzdesi hedefi)
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "erasmus-connect.fullname" . }}-nextjs
+  minReplicas: {{ .Values.nextjs.hpa.minReplicas }}
+  maxReplicas: {{ .Values.nextjs.hpa.maxReplicas }}
+  metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: {{ .Values.nextjs.hpa.targetCPUUtilizationPercentage | default 60 }}
 {{- end }}
