@@ -6,12 +6,19 @@
 
 nextjs:
   image:
-    tag: "acr"
+    repository: "erasmusconnect.azurecr.io/erasmus-connect-frontend"
+    tag: "v1"
 
 admin:
   image:
-    tag: "acr"
+    repository: "erasmusconnect.azurecr.io/erasmus-connect-admin"
+    tag: "v1"
 
+express:
+  image:
+    repository: "erasmusconnect.azurecr.io/erasmus-connect-backend"
+    tag: "v1"
+    
 ingress:
   host: "9.205.150.178.nip.io"
   adminHost: "admin.9.205.150.178.nip.io"
