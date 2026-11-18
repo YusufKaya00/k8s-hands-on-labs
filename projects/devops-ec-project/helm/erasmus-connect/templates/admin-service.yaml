@@ -1,0 +1,18 @@
+{{- if .Values.admin.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: erasmus-admin-svc
+  labels:
+    {{- include "erasmus-connect.labels" . | nindent 4 }}
+    app: erasmus-admin
+spec:
+  type: {{ .Values.admin.service.type }}
+  selector:
+    app: erasmus-admin
+  ports:
+    - name: http
+      port: {{ .Values.admin.service.port }}
+      targetPort: {{ .Values.admin.containerPort }}
+      protocol: TCP
+{{- end }}

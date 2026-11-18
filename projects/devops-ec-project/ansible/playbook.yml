@@ -15,7 +15,9 @@
     app_namespace: "default"
     # External IP ciktiktan sonra guncellenecek (Adim 5)
     aks_frontend_tag: "aks"
+    aks_admin_tag: "aks"
     aks_ingress_host: ""
+    aks_admin_host: ""
 
   tasks:
     - name: Baslangic kontrolu - degiskenlerin bos olmadigini dogrula
@@ -116,6 +118,10 @@
           nextjs:
             image:
               tag: "{{ aks_frontend_tag }}"
+          admin:
+            image:
+              tag: "{{ aks_admin_tag }}"
           ingress:
             host: "{{ aks_ingress_host if (aks_ingress_host | length > 0) else (nginx_ingress_ip.stdout + '.nip.io') }}"
+            adminHost: "{{ aks_admin_host if (aks_admin_host | length > 0) else ('admin.' + nginx_ingress_ip.stdout + '.nip.io') }}"
       tags: [deploy]
