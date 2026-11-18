@@ -1,12 +1,16 @@
-# Ders 03 — Secrets Management, HashiCorp Vault & Dynamic Credentials
+# Ders 03 / Lesson 03 — Secrets Management, HashiCorp Vault & Dynamic Credentials
 
-> **Ana Kaynak Referansı:** [MichaelCade/90DaysOfDevOps](https://github.com/MichaelCade/90DaysOfDevOps) (`2023` & `2024`)
+> **[🇹🇷 Türkçe](#-türkçe-bölüm) | [🇬🇧 English](#-english-section)**  
+> **Ana Kaynak Referansı / Source:** [MichaelCade/90DaysOfDevOps](https://github.com/MichaelCade/90DaysOfDevOps) (`2023` & `2024`)
 
 ---
 
-## 📚 Doğrudan Okuma & Video Linkleri
+<a id="-türkçe-bölüm"></a>
+## 🇹🇷 Türkçe Bölüm
 
-### 1. Birebir GitHub Ders Sayfaları (`90DaysOfDevOps`)
+### 📚 Doğrudan Okuma & Video Linkleri
+
+#### 1. Birebir GitHub Ders Sayfaları (`90DaysOfDevOps`)
 - [ ] **2023 / Day 35:** [Understanding the Importance of Secrets Management](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day35.md)
 - [ ] **2023 / Day 36:** [Securing Secrets with HashiCorp Vault](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day36.md) *(Vault Helm kurulumu, `vault operator init`, `unseal`, Root Token yönetimi)*
 - [ ] **2023 / Day 37:** [Working with HashiCorp Vault's Secrets Engines](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day37.md) *(KV v2, `/data/` API path farkı, PKI, Transit, Database engine)*
@@ -15,28 +19,44 @@
 - [ ] **2023 / Day 40:** [Understanding Kubernetes Secrets](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day40.md) *(Opaque/TLS/DockerConfig tipleri, etcd encryption at rest)*
 - [ ] **2023 / Day 41:** [Hands-On with Kubernetes Secrets](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day41.md)
 
-### 2. İzlenecek YouTube Videoları *(Repodaki Seçilmiş & Doğrulanmış Linkler)*
+#### 2. İzlenecek YouTube Videoları *(Repodaki Seçilmiş & Doğrulanmış Linkler)*
 - [ ] [Vault `operator init` ve Key Güvenliği](https://youtu.be/QErHqzGH1mk) *(Bryan Krausen — Day 36)*
 - [ ] [Vault Auto-Unseal Migration](https://youtu.be/HolUACQutpk) *(Bryan Krausen — Day 36)*
 - [ ] [Root Token Üretimi ve İptali](https://youtu.be/rcQsNinVl0Y) *(Bryan Krausen — Day 36)*
 - [ ] [Advanced Kubernetes Secrets Management with HashiCorp Vault](https://www.youtube.com/watch?v=byCCrbt0bBo) *(HashiCorp — Day 40)*
-- [ ] [Kubernetes Secrets: Store, Use & Encrypt Secrets](https://www.youtube.com/watch?v=fFOvlPjuw9I) *(DevOps Toolkit — Day 40)*
+- [ ] [Kubernetes Secrets: Store, Use & Encrypt](https://www.youtube.com/watch?v=fFOvlPjuw9I) *(DevOps Toolkit — Day 40)*
 - [ ] [Secrets Management in Kubernetes with Sealed Secrets](https://www.youtube.com/watch?v=UrhZiFEYcs4) *(KubeCon — Day 40)*
 - [ ] [Kubernetes Secrets Management Best Practices](https://www.youtube.com/watch?v=Nwd8tUP43WU) *(KCD — Day 40)*
 - [ ] **2024 / Day 39:** [Is TLS in Kubernetes really that hard to understand?](https://www.youtube.com/watch?v=aJfcP5fambs) — Shivang Shandilya | [Özet MD](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2024/day39.md)
 
----
-
-## 💡 Hap Teori Özeti (Neye Dikkat Etmeli?)
+### 💡 Hap Teori Özeti (Neye Dikkat Etmeli?)
 * **Seal / Unseal (`Day 36`):** Vault başlatıldığında **Sealed** durumdadır (veriyi okuyamaz/yazamaz). `operator init` sonrası çıkan unseal key eşik sayısı girilerek bellek içi decryption key yeniden kurulur; prod ortamda Cloud KMS / Auto-Unseal kullanılır.
 * **KV v2 Path Tuzağı (`Day 37`):** CLI'da `vault kv put team/app` yazılır ama **API ve Vault Policy'lerde** araya `/data/` girer (`team/data/app`).
 * **Static vs Dynamic Credentials (`Day 38`):** Statik şifre rotasyonu risklidir. Dynamic Secrets ile Vault her pod/pipeline isteğinde süreli (`TTL` / lease) kullanıcı açar; pod ölünce veya TTL dolunca DB kullanıcısını otomatik siler.
 * **K8s Agent Injector (`Day 39`):** Pod annotation'ları (`vault.hashicorp.com/agent-inject: "true"`) ve `serviceAccountName` kullanarak uygulama kodunu hiç Vault SDK ile değiştirmeden `/vault/secrets/...` dosyasına secret basılır.
 
----
-
-## 🧪 Bu Derse Bağlı Lablarım
+### 🧪 Bu Derse Bağlı Lablarım
 
 | Lab | Klasör | Konu / Senaryo | Durum |
 | :-: | :--- | :--- | :---: |
 | **Lab 1** | `./lab-1/` *(oluşturulacak)* | Kubernetes + Vault Agent Injector & Sealed State / Role Policy 403 Arıza Giderme Labı | ⬜ Planlandı |
+
+---
+
+<a id="-english-section"></a>
+## 🇬🇧 English Section
+
+### 🎯 Why This Lesson?
+Standard Kubernetes `Secret` objects are merely base64-encoded unless etcd encryption and external secret lifecycles are configured. This module bridges into **HashiCorp Vault, Kubernetes Auth, and short-lived Dynamic Credentials**.
+
+### 📚 Key Takeaways
+* **Seal / Unseal (`Day 36`):** Vault starts sealed until unseal keys reconstruct the root key (automated in production via Cloud KMS Auto-Unseal).
+* **KV v2 Policy Path (`Day 37`):** CLI commands like `vault kv put team/app` map to `team/data/app` in REST API calls and HCL policies.
+* **Dynamic Credentials (`Day 38`):** Eliminates manual password rotation by generating on-demand, lease-bound DB/Cloud credentials that automatically expire and revoke.
+* **Vault Agent Sidecar (`Day 39`):** Pod annotations (`vault.hashicorp.com/agent-inject: "true"`) authenticate via Kubernetes `ServiceAccount` tokens and render secrets directly to `/vault/secrets/`.
+
+### 🧪 Linked Hands-On Labs
+
+| Lab | Directory | Topic / Scenario | Status |
+| :-: | :--- | :--- | :---: |
+| **Lab 1** | `./lab-1/` *(upcoming)* | Kubernetes + Vault Agent Injector, Sealed State & Policy 403 Triage Lab | ⬜ Planned |

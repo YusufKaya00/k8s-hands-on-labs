@@ -1,12 +1,16 @@
-# Ders 05 — Day-2 Platform Ops, Service Mesh & Ansible ile K8s RBAC
+# Ders 05 / Lesson 05 — Day-2 Platform Ops, Service Mesh & Ansible K8s RBAC
 
-> **Ana Kaynak Referansı:** [MichaelCade/90DaysOfDevOps](https://github.com/MichaelCade/90DaysOfDevOps) (`2023` & `2024`)
+> **[🇹🇷 Türkçe](#-türkçe-bölüm) | [🇬🇧 English](#-english-section)**  
+> **Ana Kaynak Referansı / Source:** [MichaelCade/90DaysOfDevOps](https://github.com/MichaelCade/90DaysOfDevOps) (`2023` & `2024`)
 
 ---
 
-## 📚 Doğrudan Okuma & Video Linkleri
+<a id="-türkçe-bölüm"></a>
+## 🇹🇷 Türkçe Bölüm
 
-### 1. Birebir GitHub Ders Sayfaları (`90DaysOfDevOps` — `2023`)
+### 📚 Doğrudan Okuma & Video Linkleri
+
+#### 1. Birebir GitHub Ders Sayfaları (`90DaysOfDevOps` — `2023`)
 * **Service Mesh (`Mar 18 – Mar 24` — Marino Wijay):**
   - [ ] **Day 77:** [Let's break down a Service Mesh](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day77.md)
   - [ ] **Day 78:** [Install and Test a Service Mesh (Istio)](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day78.md)
@@ -19,7 +23,7 @@
   - [ ] **Day 88:** [Monitoring, Alerting and On-Call](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day88.md)
   - [ ] **Day 89:** [Oops: When something goes wrong - Post Mortems](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2023/day89.md)
 
-### 2. İzlenecek YouTube Videoları (`2024` Community Edition)
+#### 2. İzlenecek YouTube Videoları (`2024` Community Edition)
 - [ ] **2024 / Day 04:** [Manage Kubernetes Add-Ons for Multiple Clusters Using Cluster Run-Time State](https://www.youtube.com/watch?v=9OJSRbyEGVI) — Gianluca Mardente | [Özet MD](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2024/day04.md)
 - [ ] **2024 / Day 06:** [Kubernetes RBAC with Ansible](https://www.youtube.com/watch?v=7m-79KI3xhY) — Elif Samedin & Andrei Buzoianu | [Özet MD](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2024/day06.md)
 - [ ] **2024 / Day 17:** [From Chaos to Resilience: Production Readiness (Linkerd)](https://www.youtube.com/watch?v=zIg_N-EIOQY) — Alejandro Pedraza Borrero | [Özet MD](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2024/day17.md)
@@ -31,17 +35,32 @@
 - [ ] **2024 / Day 68:** [Service Mesh for Kubernetes 101](https://www.youtube.com/watch?v=IyFDGhqpMTs) — Mohd Imran | [Özet MD](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2024/day68.md)
 - [ ] **2024 / Day 90:** [Fighting fire with fire: Incident Documentation & Post Mortems](https://www.youtube.com/watch?v=PJsBQGKkn60) — Anaïs Urlichs | [Özet MD](https://github.com/MichaelCade/90DaysOfDevOps/blob/main/2024/day90.md)
 
----
-
-## 💡 Hap Teori Özeti (Neye Dikkat Etmeli?)
+### 💡 Hap Teori Özeti (Neye Dikkat Etmeli?)
 * **Sidecar Mesh vs Ambient Mesh (`2023 Day 78 & 83`, `2024 Day 43`):** Geleneksel Istio her pod'a Envoy sidecar ekler (`2/2 Ready` görünür). Ambient Mesh ise node başına **L4 Ztunnel** (`HBONE` port `15008`) ve yalnızca L7 policy gereken yerde **Waypoint Proxy** kullanarak kaynak maliyetini düşürür.
 * **Ansible + K8s RBAC (`2024 Day 06`):** Client sertifikası/kubeconfig üretimini ve least-privilege `Role` / `RoleBinding` tanımlamalarını Ansible playbook + Vault KV ile otomatikleştirmek multi-team erişim hatalarını sıfırlar.
 * **Blameless Post-Mortem (`2023 Day 89`):** Kişiyi suçlamak yerine *"Neden sistem buna izin verdi?"* sorusuyla guardrail inşa etmek Day-2 operasyonlarının temelidir.
 
----
-
-## 🧪 Bu Derse Bağlı Lablarım
+### 🧪 Bu Derse Bağlı Lablarım
 
 | Lab | Klasör | Konu / Senaryo | Durum |
 | :-: | :--- | :--- | :---: |
 | **Lab 1** | `./lab-1/` *(oluşturulacak)* | Ansible ile Multi-Team Kubernetes RBAC Otomasyonu veya Istio mTLS Labı | ⬜ Planlandı |
+
+---
+
+<a id="-english-section"></a>
+## 🇬🇧 English Section
+
+### 🎯 Why This Lesson?
+My IaC projects automate Day-1 cluster provisioning (`K3s`/`RKE2`). This lesson focuses on **Day-2 platform operations**: Service Mesh (Istio/Linkerd/Ambient Mesh mTLS), automated multi-team **Kubernetes RBAC via Ansible**, multi-cluster add-on management, and **blameless post-mortem** culture.
+
+### 📚 Key Takeaways
+* **Sidecar vs Sidecarless Ambient Mesh (`2023 Day 78 & 83`):** Replaces per-pod Envoy sidecars with per-node L4 Rust **Ztunnel** (`HBONE` TCP `15008`) and optional L7 **Waypoint Proxies**.
+* **Ansible + Vault for K8s RBAC (`2024 Day 06`):** Automates client certificate/CSR issuance and least-privilege `Role`/`RoleBinding` creation, storing credentials cleanly in Vault KV.
+* **Blameless Culture (`2023 Day 89`):** Post-mortems eliminate single points of human error by asking how systems failed to provide guardrails.
+
+### 🧪 Linked Hands-On Labs
+
+| Lab | Directory | Topic / Scenario | Status |
+| :-: | :--- | :--- | :---: |
+| **Lab 1** | `./lab-1/` *(upcoming)* | Ansible Multi-Team Kubernetes RBAC Automation or Istio mTLS Lab | ⬜ Planned |
