@@ -765,6 +765,133 @@ kubectl get pods,svc,ingress -n default
 
 ---
 
+## Faz 6: Yüksek Erişilebilirlik (HPA & PDB) ve Kaos Mühendisliği (Chaos Mesh)
+
+Uygulama canlı AKS üzerinde sorunsuz çalıştıktan sonra şimdi sistemi yük altında otomatik ölçekleyecek (`HPA`), bakım/kesinti anında ayakta tutacak (`PDB`) ve **Chaos Mesh** ile kasıtlı olarak bozup dayanıklılığını test edeceksin.
+
+---
+
+### Bilet 17: Replica Artışı, `Standard_B2s` Kapasite Ayarı ve HPA (`hpa-express.yaml`, `hpa-nextjs.yaml`)
+
+**a) Görev Tanımı:**
+- **Önce Kapasite Gerçeğini Gör:** AKS `Standard_B2s` düğümünde (2 vCPU, ~3.2 GB kullanılabilir RAM) `kubectl top nodes` ile mevcut kullanımın ~%61 RAM (~1946Mi) civarında olduğunu gördük; oysa gerçekte `express` 58Mi, `nextjs` 129Mi RAM harcıyor!
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde:
+  - Express ve Next.js `resources.requests.memory` değerlerini `256Mi`'dan gerçekçi seviyelere (`128Mi` / `160Mi`, CPU `50m`) çek ki node üzerinde 2–4 kopyaya yer açılsın!
+  - `express.replicaCount` ve `nextjs.replicaCount` değerlerini `2` yap (veya HPA'nın altına `hpa.enabled: true` ile `minReplicas: 2`, `maxReplicas: 4` tanımla).
+- [hpa-express.yaml](./helm/erasmus-connect/templates/hpa-express.yaml) ve [hpa-nextjs.yaml](./helm/erasmus-connect/templates/hpa-nextjs.yaml) içindeki `[Bilet 17]` `# TODO` kısımlarını doldur.
+- **Helm + HPA Çakışması:** `express-deployment.yaml` ve `nextjs-deployment.yaml` içinde `replicas:` satırını `{{- if not .Values.express.hpa.enabled }}` ile sarmalarsan sonraki `helm upgrade` komutları HPA'nın ölçeklediği pod sayısını ezmez!
+
+**b) İpucu ve Referans:**
+- Terminalde çalıştır:
+  `kubectl explain hpa.spec --api-version=autoscaling/v2`
+  `kubectl explain hpa.spec.metrics --api-version=autoscaling/v2`
+- `metrics-server` AKS'te zaten kurulu (`kubectl top pods` çalışıyor); ama **HPA'nın çalışması için Deployment'ta `resources.requests.cpu` tanımlı olmak ZORUNDADIR** (çünkü `averageUtilization: 60`, `requests.cpu`'nun %60'ına göre hesaplanır!).
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): `HorizontalPodAutoscaler` (`autoscaling/v2`) Yapısı</summary>
+
+`spec:` altında (2 boşluk):
+- `scaleTargetRef:` -> `apiVersion: apps/v1`, `kind: Deployment`, `name: <DEPLOYMENT_ADI>`
+- `minReplicas: <SAYI>`
+- `maxReplicas: <SAYI>`
+- `metrics:` (`[]Object`) -> `- type: Resource` -> `resource:` -> `name: cpu`, `target:` -> `type: Utilization`, `averageUtilization: <YÜZDE>`
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+helm template erasmus ./helm/erasmus-connect -s templates/hpa-express.yaml | kubectl apply --dry-run=server -f -
+# Ansible veya helm upgrade sonrası:
+kubectl get hpa -n default
+kubectl get pods -n default -o wide
+```
+- `kubectl get hpa` çıktısında `TARGETS` sütununun `<unknown>/60%` değil, gerçek yüzde (ör. `4%/60%`) gösterdiğini ve her iki Deployment'tan en az 2 podun `Running` olduğunu doğrula.
+
+---
+
+### Bilet 18: `PodDisruptionBudget` (`pdb.yaml`) ve Sıfır Kesinti Koruması
+
+**a) Görev Tanımı:**
+- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `pdb.enabled: true` ve `minAvailable: 1` ayarla (**DİKKAT:** Bilet 17'de replika sayısını en az `2` yaptıktan sonra etkinleştir; aksi halde 1 replikalı podda `minAvailable: 1` node bakımını kilitler!).
+- [pdb.yaml](./helm/erasmus-connect/templates/pdb.yaml) içindeki `[Bilet 18]` `# TODO` kısımlarını hem Express hem Next.js için doldur.
+
+**b) İpucu ve Referans:**
+- Terminalde çalıştır:
+  `kubectl explain pdb.spec --api-version=policy/v1`
+- PDB (`PodDisruptionBudget`), Kubernetes node güncellemesi veya `kubectl drain` sırasında aynı anda kaç podun ayakta kalmak zorunda olduğunu garanti eder.
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): `PodDisruptionBudget` Yapısı</summary>
+
+`spec:` altında:
+- `minAvailable: 1`
+- `selector:` -> `matchLabels:` -> `app: erasmus-express` (ikinci PDB'de `app: erasmus-nextjs`)
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+kubectl get pdb -n default
+```
+- `MIN AVAILABLE: 1` ve `ALLOWED DISRUPTIONS: 1` (2 replika varken 1 podun kesintiye izinli olduğu) görünmelidir.
+
+---
+
+### Bilet 19: Chaos Mesh Kurulumu ve 3 Kaos Deneyi (`chaos/`)
+
+**a) Görev Tanımı:**
+- AKS kümesine **Chaos Mesh** kur (Azure AKS `containerd` kullandığı için daemon soketini doğru parametreyle vermen şart!).
+- [chaos/](./chaos/) klasöründeki 3 deney dosyasının `# TODO` alanlarını kendi ellerinle doldur:
+  1. [01-pod-kill-express.yaml](./chaos/01-pod-kill-express.yaml) (`PodChaos`): Express podlarından sadece 1 tanesini öldürürken dışarıdan sürekli `curl` atarak **sıfır kesinti (0 HTTP hatası)** olduğunu kanıtla!
+  2. [02-network-delay-redis.yaml](./chaos/02-network-delay-redis.yaml) (`NetworkChaos`): Redis poduna `300ms` ağ gecikmesi enjekte edip Express yanıt sürelerinin nasıl etkilendiğini ölç.
+  3. [03-stress-cpu-express.yaml](./chaos/03-stress-cpu-express.yaml) (`StressChaos`): Express poduna %80 CPU yükü verip **Bilet 17'deki HPA'nın** pod sayısını otomatik `2 -> 3+` artırdığını canlı izle!
+
+**b) İpucu ve Referans:**
+- Chaos Mesh Helm kurulumu (**AKS `containerd` ayarlı!**):
+  ```bash
+  helm repo add chaos-mesh https://charts.chaos-mesh.org
+  helm repo update
+  helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
+    --namespace chaos-mesh --create-namespace \
+    --set chaosDaemon.runtime=containerd \
+    --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
+    --set dashboard.securityMode=false
+  ```
+- Chaos Mesh kurulduktan sonra terminalde şemaları incele:
+  `kubectl explain podchaos.spec`
+  `kubectl explain networkchaos.spec`
+  `kubectl explain stresschaos.spec`
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): Chaos Mesh `selector` ve `stressors` Kalıbı</summary>
+
+Her Chaos CRD'sinde `spec.selector:` ortaktır:
+- `selector:`
+  - `namespaces: ["default"]`
+  - `labelSelectors:` -> `app: <ETİKET>`
+`01-pod-kill-express.yaml` için: `action: pod-kill`, `mode: one`, `duration: "30s"`.
+`02-network-delay-redis.yaml` için: `action: delay`, `mode: one`, `direction: both`, `delay: { latency: "300ms", jitter: "50ms" }`, `duration: "60s"`.
+`03-stress-cpu-express.yaml` için: `mode: one`, `stressors: { cpu: { workers: 1, load: 80 } }`, `duration: "120s"`.
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+# 1. Chaos Mesh podlarının çalıştığını doğrula:
+kubectl get pods -n chaos-mesh
+
+# 2. PodKill sırasında sıfır kesinti testi (ayrı bir terminalde sürekli ping atarken deneyi uygula):
+while true; do curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -X POST http://<AKS_INGRESS_IP>.nip.io/api/v1/ping; sleep 0.5; done
+kubectl apply -f ./chaos/01-pod-kill-express.yaml
+
+# 3. CPU Stresi ile HPA ölçekleme testi:
+kubectl apply -f ./chaos/03-stress-cpu-express.yaml
+kubectl get hpa,pods -n default -w
+```
+- PodKill sırasında `200` kodunun kesilmediğini, StressChaos uygulandıktan 30–60 saniye sonra ise `kubectl get hpa` çıktısında `REPLICAS` sayısının arttığını doğrula! *(Test bitince `kubectl delete -f ./chaos/` ile deneyleri temizle.)*
+
+---
+
 ## Kontrol Listesi (Kendini Değerlendir)
 
 - [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
