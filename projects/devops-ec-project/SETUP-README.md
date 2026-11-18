@@ -1,6 +1,9 @@
 # Erasmus Connect — Adım Adım Kurulum ve DevOps Lab Rehberi (Helm + Calico + AKS)
 
-> Mimari özet, proje yapısı ve uçtan uca akış için ana **[README.md](./README.md)** dosyasına bakabilirsin. Bu dosya; yerel Minikube kümesinden Azure AKS + ACR + ArgoCD GitOps kurulumuna kadar tüm süreci adım adım (bilet tabanlı) ve gerçek kurulumda karşılaşılan hataların çözümleriyle anlatır.
+> **[🇹🇷 Türkçe](#-türkçe-bölüm) | [🇬🇧 English](#-english-section)**  
+> Mimari özet, proje yapısı ve uçtan uca akış için ana **[README.md](./README.md)** dosyasına bakabilirsin.
+
+<a id="-türkçe-bölüm"></a> Bu dosya; yerel Minikube kümesinden Azure AKS + ACR + ArgoCD GitOps kurulumuna kadar tüm süreci adım adım (bilet tabanlı) ve gerçek kurulumda karşılaşılan hataların çözümleriyle anlatır.
 
 Bu proje, **Erasmus Connect** uygulamasını (**Next.js** frontend, **Admin Vite** paneli, **Express** backend, **Redis** önbellek/oturum katmanı, harici **MongoDB Atlas** ve **Supabase**) her satırın mühendislik gerekçesini anlayarak **Kubernetes (Helm)** ve **Azure AKS (Terraform + Ansible + ArgoCD + ACR)** üzerine taşımak için hazırlanmış bilet tabanlı (ticket-driven) kurulum ve uygulama rehberidir.
 
@@ -1107,3 +1110,26 @@ kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}
 - [ ] Next.js podu Redis `6379` portuna ulaşamıyor (Calico engelliyor), sadece Express podu ulaşabiliyor.
 - [ ] Express `NetworkPolicy` kuralı **Post-DNAT** gerçekliğini (pod `containerPort` + Ingress `namespaceSelector`) doğru yansıtıyor.
 - [ ] `terraform destroy` veya `az aks stop` ile gereksiz bulut maliyeti önlendi.
+
+---
+
+<a id="-english-section"></a>
+## 🇬🇧 English Section — Step-by-Step Setup & 8-Phase DevOps Lab Roadmap
+
+This guide walks through building **Erasmus Connect** (**Next.js** frontend, **Vite/Nginx** admin SPA, **Express** backend, **Redis** cache, external **MongoDB Atlas** & **Supabase**) from local **Minikube + Calico** all the way to **Azure AKS + Terraform + Ansible + ArgoCD GitOps + ACR** across **8 Phases (23 Tickets)**:
+
+### Phases Overview
+1. **Phases 1–2 — Containerization & Helm Chart Packaging:** Package Express (`:4000`), Next.js (`:3000`, `HOSTNAME=0.0.0.0`), Admin SPA (`:80`), and Redis (`StatefulSet` + Headless `Service`, `clusterIP: None`) under [`helm/erasmus-connect/`](./helm/erasmus-connect/). Keep secrets out of Git using `.env.*` -> Kubernetes `Secret` & `ConfigMap` (`envFrom`), add resource requests/limits and `readinessProbe`/`livenessProbe`.
+2. **Phase 3 — NGINX Ingress & Zero-Trust Post-DNAT Calico Policies:** Configure host/path routing (`/`, `/api`, `admin.*`) via `ingress-nginx`. Enforce **Post-DNAT Calico `NetworkPolicy`** rules targeting Pod `containerPort` (`4000` / `6379`) and `ingress-nginx` `namespaceSelector` so Redis accepts only Express and Express accepts only Ingress + Next.js.
+3. **Phases 4–5 — Azure AKS Provisioning (Terraform) & Automated Bootstrap (Ansible):** Provision AKS (`Standard_B2s`, `Azure CNI` + `Calico`) in `DenmarkEast` via [`terraform/`](./terraform/main.tf). Run [`ansible/playbook.yml`](./ansible/playbook.yml) to fetch `kubeconfig`, deploy `ingress-nginx` with `service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"`, create ConfigMaps/Secrets from `.env.*`, and install the Helm release.
+4. **Phase 6 — High Availability & Chaos Engineering:** Enforce CPU **HPA** (`2–4` replicas @ `60%` CPU), **PodDisruptionBudget (`minAvailable: 1`)**, and run **Chaos Mesh** experiments under [`chaos/`](./chaos/01-pod-kill-express.yaml) (pod kill, Redis network delay, Express CPU stress).
+5. **Phase 7 — Node Scaling & ArgoCD GitOps Migration:** Scale AKS `node_count` from `1 -> 2` in Terraform (overcoming the 30-pods-per-node Azure CNI cap), uninstall the manual `helm release` to avoid NGINX ingress admission ownership conflicts, and onboard [`argocd/erasmus-app.yaml`](./argocd/erasmus-app.yaml) with `prune: true`, `selfHeal: true`, and `ignoreDifferences` on `/spec/replicas`.
+6. **Phase 8 — Passwordless Azure Container Registry (`ACR`) + Managed Identity:** Provision ACR (`Basic`, `admin_enabled = false`) via [`terraform/acr.tf`](./terraform/acr.tf), assign the **`AcrPull`** RBAC role to the AKS `kubelet_identity`, push `:v1` images (`values-aks.yaml`), and remove `imagePullSecrets` (`dockerhub-secret`).
+
+### Verification Checklist
+- [ ] Zero secrets/connection strings committed to Git (`.env.*` and `terraform.tfvars` gitignored).
+- [ ] Containers bind to `0.0.0.0`, and `Service.targetPort` matches `containerPort`.
+- [ ] Redis `StatefulSet` + Headless Service resolves cleanly via DNS.
+- [ ] `NetworkPolicy` isolates Redis (`:6379`) exclusively to Express and enforces Post-DNAT rules on `:4000`.
+- [ ] ArgoCD syncs from ACR without `imagePullSecrets` and preserves HPA replica counts.
+- [ ] Cluster stopped (`az aks stop`) or destroyed (`terraform destroy`) after verification to prevent idle cloud spend.
