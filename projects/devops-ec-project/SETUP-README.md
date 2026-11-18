@@ -586,8 +586,13 @@ Yerel kümede Helm chart'ın kusursuz çalıştıktan sonra şimdi bulut altyap�
 ### Bilet 12: Terraform Provider ve Öğrenci Bütçesi Değişkenleri (`versions.tf` & `variables.tf`)
 
 **a) Görev Tanımı:**
-- [versions.tf](./terraform/versions.tf) içinde `required_version`, `azurerm` provider kaynağı ve boş `features {}` bloğunu yaz.
+- [versions.tf](./terraform/versions.tf) içinde `required_version`, `azurerm` provider kaynağı (`version = "~> 4.0"` sabitlemesi) ve boş `features {}` bloğunu yaz.
 - [variables.tf](./terraform/variables.tf) içindeki tüm değişkenlere `description`, `type` ve öğrenci bütçesine uygun `default` değerlerini tanımla (`node_count = 1`, `vm_size = "Standard_B2s"`).
+
+> [!WARNING]
+> **Provider Sürüm Tuzağı (`azurerm 5.x`):** `versions.tf` içinde `version = "~> 4.0"` sabitlemesi koymazsan Terraform yeni `azurerm 5.x` sürümünü çekip `node_provisioning_profile` gibi yeni zorunlu alanlar veya breaking change hataları çıkarabilir.
+>
+> **Değişken Öncelik Kuralı:** `terraform.tfvars` dosyasındaki değerler her zaman `variables.tf` içindeki `default` değerlerini ezer. İleride `node_count` gibi bir ayarı değiştirdiğinde `terraform.tfvars` dosyanı da kontrol et.
 
 **b) İpucu ve Referans:**
 - Resmi dokümantasyon: `registry.terraform.io/providers/hashicorp/azurerm/latest/docs`
@@ -697,6 +702,7 @@ Terraform ile altyapıyı (AKS kümesini) kurduktan sonra, küme içindeki **NGI
   1. `az aks get-credentials` ile AKS kubeconfig'i al.
   2. `kubernetes.core.helm_repository` ile `ingress-nginx` Helm deposunu ekle.
   3. `kubernetes.core.helm` ile `ingress-nginx` controller'ını `ingress-nginx` namespace'ine kur (`wait: true`).
+  - **Azure LoadBalancer Health Probe Ayarı:** `ingress-nginx` kurulurken Service annotation olarak `service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"` mutlaka verilmelidir. Aksi halde Azure LB, controller'ın `/` yoluna `Host` header'ı olmadan istek atar, NGINX `404` döner ve Azure dış trafiği keser (`Connection timed out`)!
 
 **b) İpucu ve Referans:**
 - Terminalde modül dokümantasyonunu oku:
@@ -735,8 +741,8 @@ kubectl get pods -n ingress-nginx
 
 **a) Görev Tanımı:**
 - [playbook.yml](./ansible/playbook.yml) içindeki **ADIM 4, 5 ve 6** `# TODO` görevlerini doldur:
-  - **ADIM 4:** `../.env.backend-secrets` ve `../.env.backend-config` dosyalarından `erasmus-backend-secrets` ile `erasmus-backend-config` nesnelerini idempotent şekilde (`--dry-run=client -o yaml | kubectl apply -f -`) oluştur. *(Private Docker Hub imajı kullanıyorsan `dockerhub-secret` oluşturma adımını da ekle!)*
-  - **ADIM 5:** `kubernetes.core.helm` modülü ile `../helm/erasmus-connect` chart'ını AKS'e kur (`wait: true`).
+  - **ADIM 4:** `../.env.backend-secrets` ve `../.env.backend-config` dosyalarından `erasmus-backend-secrets` ile `erasmus-backend-config` nesnelerini idempotent şekilde (`--dry-run=client -o yaml | kubectl apply -f -`) oluştur. *(Faz 8'de ACR + `AcrPull`'a geçmeden önce geçici olarak private Docker Hub kullanıyorsan `dockerhub-secret` oluşturma adımını ekle; Docker Hub PAT yetkisi `Public Repo Read-only` değil, **`Read-only` (Private + Public)** olmalıdır, yoksa `insufficient_scope: authorization failed` hatası alırsın.)*
+  - **ADIM 5:** `kubernetes.core.helm` modülü ile `../helm/erasmus-connect` chart'ını AKS'e kur (`wait: true`). *(Not: `kubernetes.core.helm`, `helm diff` eklentisi kurulu değilse lokal template/values değişikliklerini her zaman algılamayabilir; hızlı güncellemeler için doğrudan `helm upgrade --install erasmus ./helm/erasmus-connect -f ./helm/erasmus-connect/values.yaml -f ./helm/erasmus-connect/values-aks.yaml` kullanabilirsin.)*
   - **ADIM 6:** `ingress-nginx-controller` Service'inin Azure LoadBalancer External IP'sini çekip `ansible.builtin.debug` ile ekrana yazdır.
 - **Dikkat (AKS İmaj ve Domain Farkı):** Minikube'daki `yusufk00/erasmus-connect-frontend:local` imajı sadece Minikube içindeydi! AKS'te kullanmak için ya canlı domain ile build alıp registry'ye (Docker Hub / ACR) pushla ya da `values` override'ı ile registry tag'ini ver (`kubernetes.core.helm` modülünün `values:` parametresiyle).
 
