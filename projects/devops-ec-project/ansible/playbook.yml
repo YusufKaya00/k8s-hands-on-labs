@@ -1,0 +1,74 @@
+---
+# ==============================================================================
+# Erasmus Connect - AKS Bootstrap & Helm Orkestrasyon Playbook'u (İskelet)
+# Referans: ansible-doc kubernetes.core.helm | ansible-doc kubernetes.core.helm_repository
+# ==============================================================================
+
+- name: Erasmus Connect AKS Kurulum ve Helm Dagitim Playbook
+  hosts: local
+  gather_facts: false
+
+  vars:
+    # TODO: [Bilet 15] Terraform çıktılarındaki Azure Resource Group ve AKS küme adını tanımla
+    resource_group: ""
+    cluster_name: ""
+    kubeconfig_path: "~/.kube/config"
+    # TODO: [Bilet 16] Helm chart yolu, release adı ve hedef namespace değişkenlerini tanımla
+    chart_path: "../helm/erasmus-connect"
+    release_name: "erasmus"
+    app_namespace: "default"
+
+  tasks:
+    - name: Baslangic kontrolu - degiskenlerin bos olmadigini dogrula
+      ansible.builtin.assert:
+        that:
+          - resource_group | length > 0
+          - cluster_name | length > 0
+        fail_msg: "Once playbook.yml vars bolumundeki resource_group ve cluster_name TODO'larini doldur!"
+
+    # --------------------------------------------------------------------------
+    # TODO: [Bilet 15] ADIM 1 - AKS Kubeconfig cekme (az aks get-credentials)
+    #   - Modül: ansible.builtin.command
+    #   - Komut: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing
+    #   - İpucu: changed_when: false veya kubeconfig dosyasını kontrol et
+    # --------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------
+    # TODO: [Bilet 15] ADIM 2 - NGINX Ingress Helm deposunu ekle
+    #   - Modül: kubernetes.core.helm_repository (ansible-doc kubernetes.core.helm_repository)
+    #   - name: ingress-nginx
+    #   - repo_url: https://kubernetes.github.io/ingress-nginx
+    # --------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------
+    # TODO: [Bilet 15] ADIM 3 - NGINX Ingress Controller'i AKS'e kur
+    #   - Modül: kubernetes.core.helm (ansible-doc kubernetes.core.helm)
+    #   - name: ingress-nginx
+    #   - chart_ref: ingress-nginx/ingress-nginx
+    #   - release_namespace: ingress-nginx
+    #   - create_namespace: true
+    #   - wait: true (LoadBalancer Public IP hazir olana kadar bekle!)
+    # --------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------
+    # TODO: [Bilet 16] ADIM 4 - .env.backend-secrets ve .env.backend-config'ten
+    #   Secret (erasmus-backend-secrets) ve ConfigMap (erasmus-backend-config) olustur
+    #   - İpucu: ansible.builtin.shell ile `kubectl create ... --from-env-file=... --dry-run=client -o yaml | kubectl apply -f -`
+    #     (Idempotent! Tekrar calistirildiginda AlreadyExists hatasi vermez.)
+    #   - Not: Private Docker Hub imaji kullaniyorsan dockerhub-secret da burada veya oncesinde olusturulabilir!
+    # --------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------
+    # TODO: [Bilet 16] ADIM 5 - Erasmus Connect Helm Chart'ini AKS'e deploy et
+    #   - Modül: kubernetes.core.helm
+    #   - name: "{{ release_name }}"
+    #   - chart_ref: "{{ chart_path }}"
+    #   - release_namespace: "{{ app_namespace }}"
+    #   - wait: true
+    #   - values: (Gerekirse AKS'te `nextjs.image.tag` veya `ingress.host` degerini buradan override et!)
+    # --------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------
+    # TODO: [Bilet 16] ADIM 6 - NGINX Ingress External IP adresini al ve ekrana bas (debug)
+    #   - kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+    # --------------------------------------------------------------------------
