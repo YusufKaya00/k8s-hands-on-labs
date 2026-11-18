@@ -11,7 +11,7 @@ namespaces:
 ingress:
   enabled: true
   ingressClassName: nginx
-  adminBackendProtocol: "HTTPS"
+  adminBackendProtocol: "HTTP"
 
 edgeProxy:
   replicaCount: 1
