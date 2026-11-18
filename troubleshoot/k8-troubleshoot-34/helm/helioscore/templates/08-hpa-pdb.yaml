@@ -1,0 +1,36 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-engine-hpa
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: payment-engine
+    app.kubernetes.io/part-of: helioscore
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.paymentEngine.hpa.targetDeploymentName }}
+  minReplicas: {{ .Values.paymentEngine.hpa.minReplicas }}
+  maxReplicas: {{ .Values.paymentEngine.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.paymentEngine.hpa.targetCPUUtilizationPercentage }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: payment-engine-pdb
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: payment-engine
+    app.kubernetes.io/part-of: helioscore
+spec:
+  minAvailable: {{ .Values.paymentEngine.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app: {{ .Values.paymentEngine.pdb.selectorApp }}
