@@ -75,7 +75,7 @@ ordersApi:
     pullPolicy: IfNotPresent
   port: 8084
   podVersion: "v1"
-  serviceSelectorVersion: "v2"
+  serviceSelectorVersion: "v1"
   resources:
     requests:
       cpu: 30m
