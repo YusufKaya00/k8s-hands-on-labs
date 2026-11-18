@@ -44,26 +44,31 @@
         release_namespace: ingress-nginx
         create_namespace: true
         wait: true
+ 
+    - name: Docker Hub private imaj cekme Secret'ini olustur
+      ansible.builtin.shell: >
+        set -a && . ../.env.dockerhub && set +a &&
+        kubectl create secret docker-registry dockerhub-secret
+        --docker-server=https://index.docker.io/v1/
+        --docker-username=yusufk00
+        --docker-password="$DOCKERHUB_TOKEN"
+        --dry-run=client -o yaml | kubectl apply -f -
+      args:
+        executable: /bin/bash
+      no_log: true
 
-    # --------------------------------------------------------------------------
-    # TODO: [Bilet 16] ADIM 4 - .env.backend-secrets ve .env.backend-config'ten
-    #   Secret (erasmus-backend-secrets) ve ConfigMap (erasmus-backend-config) olustur
-    #   - İpucu: ansible.builtin.shell ile `kubectl create ... --from-env-file=... --dry-run=client -o yaml | kubectl apply -f -`
-    #     (Idempotent! Tekrar calistirildiginda AlreadyExists hatasi vermez.)
-    #   - Not: Private Docker Hub imaji kullaniyorsan dockerhub-secret da burada veya oncesinde olusturulabilir!
-    # --------------------------------------------------------------------------
+    - name: Erasmus Connect Helm Chart'ini AKS'e deploy et
+      kubernetes.core.helm:
+        name: "{{ release_name }}"
+        chart_ref: "{{ chart_path }}"
+        release_namespace: "{{ app_namespace }}"
+        wait: true
 
-    # --------------------------------------------------------------------------
-    # TODO: [Bilet 16] ADIM 5 - Erasmus Connect Helm Chart'ini AKS'e deploy et
-    #   - Modül: kubernetes.core.helm
-    #   - name: "{{ release_name }}"
-    #   - chart_ref: "{{ chart_path }}"
-    #   - release_namespace: "{{ app_namespace }}"
-    #   - wait: true
-    #   - values: (Gerekirse AKS'te `nextjs.image.tag` veya `ingress.host` degerini buradan override et!)
-    # --------------------------------------------------------------------------
+    
 
-    # --------------------------------------------------------------------------
-    # TODO: [Bilet 16] ADIM 6 - NGINX Ingress External IP adresini al ve ekrana bas (debug)
-    #   - kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
-    # --------------------------------------------------------------------------
+
+    - name: NGINX Ingress External IP adresini al ve ekrana bas (debug)
+      ansible.builtin.shell: >
+        kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      register: nginx_ingress_ip
+      changed_when: false
