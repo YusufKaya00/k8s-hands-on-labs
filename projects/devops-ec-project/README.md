@@ -1,1092 +1,165 @@
-# Erasmus Connect — Sıfırdan DevOps Uygulama ve Lab Rehberi (Helm + Calico + Azure AKS)
+# Erasmus Connect — Cloud-Native Kubernetes, IaC & GitOps Mimarisi
 
-Bu proje, **Erasmus Connect** uygulamasını (**Next.js** frontend, **Express** backend, **Redis** önbellek/oturum katmanı, harici **MongoDB Atlas** ve **Supabase**) sıfır kopyala-yapıştır ile, her satırın mühendislik gerekçesini anlayarak **Kubernetes (Helm)** ve **Azure AKS (Terraform)** üzerine taşıman için hazırlanmış bilet tabanlı (ticket-driven) bir uygulama labıdır.
+> **Adım Adım Kurulum & Lab Rehberi:** Projeyi sıfırdan Minikube üzerinde kurmak, Azure AKS + ACR + ArgoCD + Chaos Mesh adımlarını tek tek uygulamak ve gerçek ortamda karşılaşılan hata çözümlerini görmek için **[SETUP-README.md](./SETUP-README.md)** dosyasını takip et.
 
-> [!IMPORTANT]
-> **Lab Kuralı:** Bu repodaki [helm/erasmus-connect/](./helm/erasmus-connect/Chart.yaml) ve [terraform/](./terraform/main.tf) dosyaları **bilerek eksik (`# TODO`)** bırakılmıştır. Amacın kodu AI'a yazdırmak değil; kendi terminalindeki `kubectl explain`, `helm template`, `editor.networkpolicy.io` ve `registry.terraform.io` kaynaklarını okuyarak her bileti tek tek çözmektir.
+**Erasmus Connect**, tam yığın bir web platformunun (**Next.js** kullanıcı arayüzü, **Vite/Nginx** yönetim paneli, **Express** backend API ve **Redis** oturum/önbellek katmanı) yerel Kubernetes (Minikube + Calico) ortamından **Azure AKS** üzerine üretime hazır (production-grade) taşınmasını, **Terraform** ile altyapı kodlamasını, **Ansible** ile bootstrap edilmesini, **Chaos Mesh / HPA / PDB** ile dayanıklılık doğrulamasını ve **ArgoCD + Azure Container Registry (`AcrPull`)** ile şifresiz GitOps dağıtımını kapsayan uçtan uca bir DevOps / SRE projesidir.
 
 ---
 
-## Mimari Genel Bakış
+## 1. Uçtan Uca Proje Akışı (Neler Yaptık?)
+
+Proje 8 faz boyunca kademeli olarak inşa edildi:
+
+1. **Konteyner & Helm Orkestrasyonu (Faz 1–2):** Express backend, Next.js frontend, Admin paneli (`nginx:alpine`) ve kalıcı veri gerektiren Redis (`StatefulSet` + `Headless Service`) tek bir [Helm chart](./helm/erasmus-connect/Chart.yaml) altında toplandı. Hassas bilgiler Git dışı `.env` dosyalarından `envFrom` (`Secret` + `ConfigMap`) ile podlara aktarıldı; kaynak sınırları (`requests`/`limits`) ve `readinessProbe`/`livenessProbe` sağlık kontrolleri eklendi.
+2. **Ingress Yönlendirme & Zero-Trust Ağ (Faz 3):** `ingress-nginx` üzerinden host/path bazlı yönlendirme (`/`, `/api`, `admin.*`) kuruldu. Calico CNI altında **Post-DNAT NetworkPolicy** kuralları yazılarak Redis'e Next.js dahil yetkisiz erişimler kapatıldı ve Express poduna yalnızca Ingress ile Next.js'in (`4000` portundan) erişmesine izin verildi.
+3. **Altyapı Kodlama & Otomasyon (Faz 4–5):** **Terraform** ([terraform/](./terraform/main.tf)) ile `DenmarkEast` bölgesinde Calico destekli AKS kümesi (`aks-erasmus-connect-dev`, `Standard_B2s`), **Ansible** ([ansible/playbook.yml](./ansible/playbook.yml)) ile de kubeconfig alma, Azure LB `/healthz` annotation'lı NGINX Ingress kurulumu, Secret/ConfigMap yükleme ve Helm dağıtımı otomatikleştirildi.
+4. **Yüksek Erişilebilirlik & Kaos Mühendisliği (Faz 6):** Express ve Next.js için CPU tabanlı **HPA** (`min: 2`, `max: 4` @ `%60`), bakım kesintilerine karşı **PodDisruptionBudget (`minAvailable: 1`)** tanımlandı ve **Chaos Mesh** ([chaos/](./chaos/01-pod-kill-express.yaml)) ile pod silme, Redis ağ gecikmesi ve CPU stres deneyleri doğrulandı.
+5. **Ölçekleme & ArgoCD GitOps (Faz 7):** Azure CNI'ın node başına `30 pod` sınırını aşmak için Terraform ile node sayısı `1 -> 2` olarak yerinde artırıldı. **ArgoCD** ([argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml)) `prune: true` ve `selfHeal: true` ile devreye alındı; HPA'nın artırdığı replikaların geri düşmemesi için `ignoreDifferences` (`/spec/replicas`) eklendi.
+6. **Şifresiz ACR & Managed Identity (Faz 8):** Docker Hub PAT (`dockerhub-secret`) bağımlılığı kaldırıldı. Terraform ([terraform/acr.tf](./terraform/acr.tf)) ile Azure Container Registry (`erasmusconnectv1.azurecr.io`, `Basic`, `admin_enabled = false`) kuruldu ve AKS `kubelet_identity` hesabına **`AcrPull`** rolü atanarak ArgoCD üzerinden `:v1` imajlarının şifresiz çekilmesi sağlandı.
+
+---
+
+## 2. Sistem ve Trafik Akışı (Runtime Architecture)
+
+```mermaid
+flowchart LR
+    User["Kullanıcı / Tarayıcı"] -->|"HTTP :80"| LB["Azure LoadBalancer<br/>(/healthz probe)"]
+    LB --> Ingress["NGINX Ingress Controller<br/>(ingress-nginx ns)"]
+
+    Ingress -->|"Host: &lt;IP&gt;.nip.io<br/>Path: /"| NextSvc["Next.js Service (:8090)"]
+    Ingress -->|"Host: &lt;IP&gt;.nip.io<br/>Path: /api"| ExpSvc["Express Service (:8080)"]
+    Ingress -->|"Host: admin.&lt;IP&gt;.nip.io<br/>Path: /"| AdmSvc["Admin Service (:80)"]
+
+    NextSvc --> NextPod["Next.js Pod (:3000)<br/>HPA 2-4 | PDB min 1"]
+    ExpSvc --> ExpPod["Express Pod (:4000)<br/>HPA 2-4 | PDB min 1"]
+    AdmSvc --> AdmPod["Admin Nginx Pod (:80)"]
+
+    NextPod -.->|"SSR /api çağrısı"| ExpSvc
+    ExpPod -->|"Calico NetPol: TCP 6379<br/>(Sadece Express izinli)"| RedisSvc["Redis Headless Service<br/>(clusterIP: None)"]
+    RedisSvc --> RedisPod["Redis StatefulSet (:6379)<br/>PVC 1Gi"]
+
+    ExpPod -->|"Egress"| Atlas["Harici: MongoDB Atlas &amp; Supabase"]
+```
+
+### Yaşam Döngüsü ve GitOps Dağıtım Akışı (Build → IaC → GitOps)
+
+```mermaid
+flowchart TD
+    TF["Terraform (versions, main, acr.tf)<br/>AKS (2x Standard_B2s, Azure CNI + Calico)<br/>+ ACR (erasmusconnectv1) + AcrPull IAM"] --> ANS["Ansible Playbook<br/>get-credentials, ingress-nginx (/healthz)<br/>Secret &amp; ConfigMap (.env.*)"]
+    Docker["Docker Build (:v1)<br/>NEXT_PUBLIC_* &amp; VITE_* build-arg"] -->|"az acr login + docker push"| ACR["Azure Container Registry<br/>erasmusconnectv1.azurecr.io"]
+    Git["Git Push (main)<br/>values.yaml + values-aks.yaml"] --> Argo["ArgoCD (argocd ns)<br/>prune: true | selfHeal: true<br/>ignoreDifferences: /spec/replicas"]
+    ANS --> Cluster["Azure AKS (default ns)"]
+    Argo -->|"Helm Sync"| Cluster
+    ACR -->|"Kubelet Managed Identity (AcrPull)<br/>Secret olmadan pull"| Cluster
+```
+
+---
+
+## 3. Dizin ve Dosya Yapısı
 
 ```text
-  [ Kullanıcı Tarayıcısı ]
-             │
-             ▼
-   [ NGINX Ingress Controller ]  ──( / )──────► [ Next.js Service ] ──► [ Next.js Pod (:3000) ]
-             │                                                                    │
-             └──( /api )─────────────────────► [ Express Service ] ◄──(SSR iç çağrı)
-                                                      │
-                                                      ▼
-                                             [ Express Pod (:PORT) ]
-                                                │      │       │
-                          (Calico NetPol) ──────┘      │       └──────► [ Harici: MongoDB Atlas & Supabase ]
-                                  │                    │
-                                  ▼                    ▼
-                     [ Redis Headless Svc ]    [ Secret + ConfigMap (envFrom) ]
-                                  │
-                                  ▼
-                       [ Redis StatefulSet (:6379) ]
+devops-ec-project/
+├── README.md                              # Proje özeti, mimari ve uçtan uca akış (bu dosya)
+├── SETUP-README.md                        # 8 Faz / 23 Biletlik adım adım kurulum ve hata çözüm rehberi
+├── .env.example                           # Yerel/AKS Secret & build-arg ortam değişkeni şablonu
+├── .gitignore                             # .env.* (şifreler), terraform.tfvars ve state dosyalarını Git dışı tutar
+│
+├── helm/erasmus-connect/                  # Uygulama Helm Chart'ı
+│   ├── Chart.yaml                         # Chart metadata (erasmus-connect)
+│   ├── .helmignore                        # Paketleme dışı bırakılacak dosyalar
+│   ├── values.yaml                        # Varsayılan değerler (portlar, HPA, resource request/limit, envFrom adları)
+│   ├── values-aks.yaml                    # AKS & ACR override'ları (*.azurecr.io/...:v1 imajları ve nip.io hostları)
+│   └── templates/
+│       ├── _helpers.tpl                   # Ortak isimlendirme ve label helper şablonları
+│       ├── express-deployment.yaml        # Express API pod şablonu (/health probe, envFrom, resources)
+│       ├── express-service.yaml           # ClusterIP Service (8080 -> 4000)
+│       ├── nextjs-deployment.yaml         # Next.js SSR pod şablonu (HOSTNAME=0.0.0.0, :3000)
+│       ├── nextjs-service.yaml            # ClusterIP Service (8090 -> 3000)
+│       ├── admin-deployment.yaml          # Vite Admin SPA (nginx:alpine, :80)
+│       ├── admin-service.yaml             # ClusterIP Service (80 -> 80)
+│       ├── redis-statefulset.yaml         # Kalıcı diskli (1Gi PVC) Redis (:6379)
+│       ├── redis-service.yaml             # Headless Service (clusterIP: None)
+│       ├── ingress.yaml                   # NGINX Ingress kuralları (<host>/, <host>/api, admin.<host>/)
+│       ├── networkpolicy-express.yaml     # Post-DNAT Calico kuralı (Ingress + Next.js -> Express :4000)
+│       ├── networkpolicy-redis.yaml       # Zero-Trust Calico kuralı (Sadece Express -> Redis :6379)
+│       ├── hpa-express.yaml               # Express HorizontalPodAutoscaler (2-4 replica @ %60 CPU)
+│       ├── hpa-nextjs.yaml                # Next.js HorizontalPodAutoscaler (2-4 replica @ %60 CPU)
+│       └── pdb.yaml                       # PodDisruptionBudget (minAvailable: 1)
+│
+├── terraform/                             # Azure AKS & ACR Infrastructure-as-Code
+│   ├── versions.tf                        # azurerm ~> 4.0 provider sabitlemesi ve features{}
+│   ├── variables.tf                       # Bölge, küme adı, node_count, vm_size (Standard_B2s)
+│   ├── main.tf                            # Resource Group + AKS (SystemAssigned, Azure CNI + Calico)
+│   ├── acr.tf                             # Azure Container Registry (Basic) + kubelet AcrPull rol ataması
+│   ├── outputs.tf                         # Resource group, cluster adı, kube_config_raw, acr_login_server
+│   └── terraform.tfvars.example           # Değişken override şablonu (gerçek terraform.tfvars Git dışıdır)
+│
+├── ansible/                               # Küme Bootstrap Otomasyonu
+│   ├── ansible.cfg                        # Yerel çalışma ve çıktı formatı ayarları
+│   ├── inventory.ini                      # localhost ansible_connection=local tanımı
+│   └── playbook.yml                       # get-credentials, ingress-nginx (/healthz), Secret/ConfigMap, Helm deploy
+│
+├── argocd/                                # GitOps Tanımı
+│   └── erasmus-app.yaml                   # ArgoCD Application (values.yaml + values-aks.yaml, selfHeal, HPA uyumu)
+│
+└── chaos/                                 # Chaos Mesh Dayanıklılık Deneyleri
+    ├── 01-pod-kill-express.yaml           # Express pod öldürme deneyi (replica & PDB kurtarma testi)
+    ├── 02-network-delay-redis.yaml        # Redis ağına gecikme enjeksiyonu (timeout/resilience testi)
+    └── 03-stress-cpu-express.yaml         # Express podlarına yapay CPU yükü (HPA tetikleme testi)
 ```
 
 ---
 
-## Bölüm 0: Sıfırdan YAML ve Terraform Okuma/Yazma Rehberi
+## 4. Öne Çıkan Mühendislik Kararları ve Öğrenilen Dersler
 
-Bugüne kadar YAML veya Terraform'u sıfırdan yazmadıysan korkmana gerek yok. Girintileri ve tire (`-`) işaretlerini ezberlemek yerine şu **4 mekanik kuralı** kullanacaksın:
-
-### 1. `kubectl explain` Çıktısını YAML'a Çevirme Kuralı
-
-Terminalde `kubectl explain <yol>` çalıştırdığında `FIELDS:` altında alan tiplerini görürsün. Her tip YAML'da tek bir anlama gelir:
-
-| `kubectl explain` Çıktısı | YAML'da Karşılığı | Örnek Mantık |
+| Konu | Uygulanan Çözüm | Mühendislik Gerekçesi |
 | :--- | :--- | :--- |
-| `alanAdi <Object>` | Alt satıra geç, **2 boşluk** içeriden yaz | `resources:` yazıp alt satıra 2 boşlukla `requests:` yazmak |
-| `alanAdi <[]Object>` | Alt satıra geç, **2 boşluk + `- ` (tire)** ile liste aç | `ports:` altında `- containerPort: ...` veya `from:` altında `- podSelector:` |
-| `alanAdi <string>` / `<integer>` | Aynı satıra değer yaz | `type: ClusterIP` veya `port: 6379` |
-| `alanAdi <map[string]string>` | Alt satıra **2 boşluk** içeriden `anahtar: değer` yaz | `matchLabels:` altında `app: erasmus-express` |
-| `-required-` etiketi | Bu alan **zorunludur**, yazmazsan Kubernetes reddeder | `selector` veya `serviceName` gibi |
-
-> [!TIP]
-> **Tire (`-`) Ne Zaman Konur?**
-> Sadece `kubectl explain` çıktısında köşeli parantez `[]` gördüğünde (`[]Object` veya `[]string`)! Köşeli parantez yoksa ASLA tire koyma, sadece 2 boşluk girinti bırak.
-
-### 2. Helm Şablon Söz Dizimi (`{{ ... }}`)
-
-Helm, `templates/` içindeki dosyaları alır ve `values.yaml` içindeki değerleri `{{ .Values.<yol> }}` yerlerine yerleştirir:
-- `values.yaml` içinde `express:` -> `containerPort: 8080` yazarsan, şablonda `{{ .Values.express.containerPort }}` yazdığında Helm bunu `8080` olarak üretir.
-- Eğer bir bloğu (`resources` gibi) olduğu gibi aktarmak istiyorsan `{{- toYaml .Values.express.resources | nindent 10 }}` kalıbı kullanılır (`nindent 10`, yeni satıra geçip 10 boşluk girinti verir).
-- **Altın Kural:** Değişiklik yaptıktan sonra kümeye uygulamadan önce mutlaka `helm template` çalıştırıp üretilen ham YAML'ın girintilerini gözünle kontrol et!
-
-### 3. Terraform HCL Söz Dizimi
-
-Terraform dosyaları (`.tf`) `blok_türü "kaynak_türü" "yerel_isim" { ... }` şeklinde yazılır.
-- `registry.terraform.io` dokümantasyonunda **Argument Reference** başlığı altındaki her madde `anahtar = değer` veya `alt_blok { ... }` şeklindedir.
-- Bir başka kaynağın çıktısını referans vermek için `<kaynak_türü>.<yerel_isim>.<özellik>` yazılır (ör. `azurerm_resource_group.erasmus.name`).
+| **Post-DNAT NetworkPolicy** | Kural hedeflerinde Service portu (`8080`) değil Pod `containerPort` (`4000`) ve Ingress için `namespaceSelector` kullanıldı. | Calico kuralları Kubernetes `kube-proxy` DNAT dönüşümünden **sonra** değerlendirir; Ingress trafiği `default` dışındaki `ingress-nginx` namespace'inden gelir. |
+| **Build-Time vs Run-Time Env** | `NEXT_PUBLIC_*` ve `VITE_BACKEND_URL` imaj build aşamasında (`--build-arg`) gömülürken; DB/JWT sırları K8s `Secret` (`envFrom`) üzerinden runtime'da verildi. | İstemci tarafı JS paketleri `next/vite build` anında derlenir; pod ortam değişkeni değişse bile mevcut JS bundle'ı değişmez. |
+| **Azure LB Health Probe** | `ingress-nginx` Service üzerine `service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"` eklendi. | Azure LoadBalancer varsayılan olarak `/` yoluna `Host` header'ı olmadan istek atar; NGINX `404` döndüğü için dış trafik zaman aşımına düşer. |
+| **GitOps & HPA Çakışması** | ArgoCD `Application` manifestosuna `ignoreDifferences` (`/spec/replicas` for `apps/Deployment`) eklendi. | Aksi halde `selfHeal: true` açıkken ArgoCD, HPA'nın trafik altında artırdığı pod sayısını Git'teki değere geri düşürür. |
+| **Node Kapasite Planı** | Terraform ile `node_count` `1 -> 2` (`Standard_B2s`) ölçeklendi. | Azure CNI varsayılan olarak node başına en fazla **30 pod** destekler; ArgoCD + Chaos Mesh + uygulama HPA replikaları tek node sınırını aşar. |
+| **Şifresiz ACR (`AcrPull`)** | `azurerm_role_assignment` ile AKS `kubelet_identity` nesnesine ACR üzerinde `AcrPull` verildi; `dockerhub-secret` kaldırıldı. | Docker Hub PAT ve cluster içinde imaj çekme secret'ı yönetme ihtiyacını ortadan kaldırır (`admin_enabled = false`). |
+| **Release Sahipliği** | ArgoCD'ye geçerken eski manuel `helm uninstall erasmus` temizliği yapıldı. | İki farklı release aynı Ingress host/path'i sahiplenmeye çalıştığında `validate.nginx.ingress.kubernetes.io` webhook'u senkronizasyonu engeller. |
 
 ---
 
-## Faz 1: Helm İskeleti ve Temel İş Yükleri
+## 5. Hızlı İşletim ve Doğrulama Komutları
 
-Bu fazda yerel kümeni kuracak, Express, Next.js ve Redis iş yüklerini (Deployment, StatefulSet, Service) ayağa kaldıracaksın.
+### Küme Maliyet Kontrolü (Öğrenci Bütçesi)
 
----
-
-### Bilet 1: Yerel Calico Kümesini Hazırlama ve İlk Sıfır-AI İskelet Denemesi
-
-**a) Görev Tanımı:**
-- Kendi bilgisayarında NetworkPolicy destekleyen bir yerel Kubernetes kümesi (Calico CNI ile Minikube veya k3d) ayağa kaldır.
-- `helm` aracının yerel iskeletimizi okuyabildiğini doğrula ve `--dry-run=client -o yaml` ile ham Kubernetes manifestosu üretme alışkanlığını test et.
-- Bu aşamada `projects/devops-ec-project/helm/erasmus-connect/` içindeki `# TODO` dosyalarını incele, henüz eksikler olduğu için neden hata/boşluk çıktığını gözlemle.
-
-**b) İpucu ve Referans:**
-- Minikube ile Calico başlatma: `minikube start --network-plugin=cni --cni=calico` (veya `k3d` kullanıyorsan Calico CNI kurulumlu küme).
-- Ingress addon kontrolü (Minikube): `minikube addons enable ingress`
-- Sıfırdan YAML üretme pratiği (örnek referans komutu):
-  `kubectl create deployment deneme --image=nginx --port=80 --dry-run=client -o yaml`
-- Helm ilk durum kontrolü:
-  `helm lint ./helm/erasmus-connect`
-
-**c) Çözüm Kanıtı:**
 ```bash
-kubectl get nodes -o wide
-kubectl get pods -n kube-system | grep -E "calico|coredns"
-kubectl get pods -n ingress-nginx
+# Çalışma bitince VM maliyetini durdur (diskler ve IP korunur):
+az aks stop --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
+
+# Ertesi gün kümeyi tekrar uyandır:
+az aks start --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
 ```
-- Node durumu `Ready`, `calico-node` / `calico-kube-controllers` podları `Running` ve `ingress-nginx-controller` podu `Running` olmalıdır.
 
----
+### ArgoCD Arayüzü ve Helm Doğrulaması
 
-### Bilet 2: Express Backend (`values.yaml` ve `express-deployment.yaml`)
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `express.image` (`repository`, `tag`) ve `express.containerPort` değerlerini doldur.
-- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki `[Bilet 2]` `# TODO` satırını kaldırıp `ports:` bloğunu yaz.
-- **Kritik Mühendislik Kontrolü:** Express kodun içinde `app.listen(PORT, '127.0.0.1')` yazıyorsa Kubernetes Service trafiği pod içine **ulaşamaz**. Uygulamanın `0.0.0.0` (tüm arayüzler) dinlediğinden emin ol.
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain deployment.spec.template.spec.containers.ports`
-- Çıktıda `ports` alanının `<[]Object>` olduğunu gör (`- containerPort: ...` gerektirir).
-- Zorunlu ve opsiyonel alt alanları gör: `containerPort`, `name`, `protocol`.
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `ports` Yapısal Yazım Mantığı</summary>
-
-1. `express-deployment.yaml` içinde `imagePullPolicy:` satırıyla aynı hizada (10 boşluk girinti) `ports:` yaz.
-2. Alt satıra 12 boşluk girintiyle `- name: http` yaz (çünkü `ports` bir `[]Object` listesidir, bu yüzden `-` konur).
-3. `-` işaretinin `n` harfiyle aynı hizada (14 boşluk) `containerPort: {{ .Values.express.containerPort }}` ve `protocol: TCP` ekle.
-4. `values.yaml` içinde `containerPort: <UYGULAMANIN_PORTU>` (ör. `8080` veya `5000`) ve `image.repository` / `image.tag` değerlerini doldurmayı unutma.
-
-</details>
-
-**c) Çözüm Kanıtı:**
 ```bash
-helm template erasmus ./helm/erasmus-connect -s templates/express-deployment.yaml
+# ArgoCD UI erişimi (http://localhost:8085)
+kubectl port-forward svc/argocd-server -n argocd 8085:80
+
+# Helm şablonlarının AKS değerleriyle doğru render edildiğini kontrol et
+helm template erasmus ./helm/erasmus-connect \
+  -f ./helm/erasmus-connect/values.yaml \
+  -f ./helm/erasmus-connect/values-aks.yaml | grep "image:"
 ```
-- Çıktıda `containers:` altında `ports:` ve senin belirlediğin `containerPort` sayısı hatasız YAML olarak görünmeli.
 
----
+### Canlı Uç Nokta Kontrolleri (`nip.io`)
 
-### Bilet 3: Express Service (`express-service.yaml`) — `port` vs `targetPort` Eşleşmesi
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içindeki `express.service` altını (`type`, `port`) doldur.
-- [express-service.yaml](./helm/erasmus-connect/templates/express-service.yaml) içindeki tüm `[Bilet 3]` `# TODO` bloklarını (`type`, `selector`, `ports`) yaz.
-- **Neden Önemli?** `port`, Service'in küme içinde sunduğu porttur (ör. `80` veya `8080`); `targetPort` ise trafiği podun içindeki gerçek `containerPort`'a yönlendirir. Bu ikisi uyuşmazsa `Connection Refused` alırsın!
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain service.spec`
-  `kubectl explain service.spec.ports`
-- Dikkat et: `selector` bir `<map[string]string>` (tire YOK), `ports` ise `<[]Object>` (tire VAR).
-- `selector` değeri, `express-deployment.yaml` içindeki `template.metadata.labels` ile birebir eşleşmelidir (`app: erasmus-express`).
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `Service` Yazım İskeleti</summary>
-
-- `spec:` altında 2 boşlukla:
-  - `type: {{ .Values.express.service.type }}` (values.yaml'da `ClusterIP`)
-  - `selector:` altında 4 boşlukla `app: erasmus-express`
-  - `ports:` altında `- port: {{ .Values.express.service.port }}`
-  - Aynı liste elemanı altında `targetPort: {{ .Values.express.containerPort }}` (ve `protocol: TCP`, `name: http`)
-
-</details>
-
-**c) Çözüm Kanıtı:**
 ```bash
-helm template erasmus ./helm/erasmus-connect -s templates/express-service.yaml
-```
-- Render edilen çıktıdaki `targetPort` değerinin `express-deployment.yaml` çıktıdaki `containerPort` ile birebir aynı olduğunu gözünle doğrula.
-
----
-
-### Bilet 4: Next.js Frontend (`nextjs-deployment.yaml` & `nextjs-service.yaml`)
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içindeki `nextjs` alanlarını (image, service, containerPort) doldur.
-- [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) içine `ports:` ve `env:` bloklarını (`[Bilet 4]`) ekle (`HOSTNAME=0.0.0.0`, `PORT`).
-- [nextjs-service.yaml](./helm/erasmus-connect/templates/nextjs-service.yaml) içindeki `[Bilet 4]` `# TODO` kısımlarını doldur.
-- **Frontend imajını lokal URL'lerle yeniden build et.** Docker Hub'daki `erasmus-connect-frontend:latest` imajı `NEXT_PUBLIC_API_URL=https://api.erasmusconnect.net` ile build edildi. Bu değer JS paketine gömülü olduğu için lokalde tarayıcın **canlı API'ye** gider, senin kümene değil.
-
-> [!WARNING]
-> **`NEXT_PUBLIC_*` = Build-time, Secret değil.** Bu değişkenler `next build` sırasında JavaScript'e yazılır ve tarayıcıda herkes görebilir. Pod'a `env:` olarak vermek **hiçbir şeyi değiştirmez**. Bu yüzden Secret/ConfigMap'e değil, [.env.frontend-build](./.env.frontend-build) dosyasından `docker build --build-arg` ile verilirler.
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain deployment.spec.template.spec.containers.env`
-- `env` bir `<[]Object>` listesidir (`- name: ...` ve `value: "..."` alır).
-
-> [!NOTE]
-> **`containerPort` vs `env` (`PORT` + `| quote`) Kuralı:**
-> - `ports[].containerPort` sadece **Kubernetes'e** bilgi verir (uygulamayı etkilemez, sayı/`<integer>` ister).
-> - `env[].PORT` sadece **uygulama portu `process.env.PORT` üzerinden okuyorsa** (Next.js, Express gibi) yazılır; Redis (`6379`) veya Nginx (`80`) gibi sabit portlu hazır imajlarda `env` olarak `PORT` açmaya gerek yoktur.
-> - `env` altında sayısal bir değer (`PORT` vb.) veriyorsan `| quote` **her zaman zorunludur**, çünkü `env.value` sadece metin (`<string>`) kabul eder.
-- **Build-arg akışı (frontend repo'nda):**
-  1. `Dockerfile`'ı aç. Her `NEXT_PUBLIC_*` için bir `ARG` satırı ve onu `ENV`'e aktaran satır, `RUN npm run build` satırından **önce** var mı? Yoksa ekle. Build sırasında sadece `ENV`'deki değerleri Next.js görür.
-  2. `.env.frontend-build` içindeki her satırı `--build-arg` olarak ver. `docker build --help | grep build-arg` ile sözdizimine bak. Bash'te dosyadan otomatik üretmek için: `sed 's/^/--build-arg /' .env.frontend-build | grep -v '^--build-arg #' | xargs`
-  3. İmajı Minikube'un içinde build et, Docker Hub'a pushlamana gerek kalmaz: `minikube image build --help` ya da `eval $(minikube docker-env)`.
-  4. Lokal imaja farklı bir tag ver (ör. `local`) ve `values.yaml`'da `nextjs.image.tag` değerini ona çevir. `pullPolicy: Never` ya da `IfNotPresent` kullan.
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `env` Bloğu Yazım Kalıbı</summary>
-
-`containers:` altındaki bir container içinde `env:` şu kalıpla yazılır:
-- `env:` (10 boşluk)
-- `  - name: <DEĞİŞKEN_ADI>` (12 boşluk + tire)
-- `    value: "<DEĞER>"` (14 boşluk)
-Dikkat: Sayı veya boolean bile olsa Kubernetes `env.value` alanı `<string>` tipindedir; tırnak (`"..."`) içinde yaz! Helm'de sayıyı string yapmak için: `{{ .Values.nextjs.containerPort | quote }}`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-helm template erasmus ./helm/erasmus-connect -s templates/nextjs-deployment.yaml
-helm template erasmus ./helm/erasmus-connect -s templates/nextjs-service.yaml
-
-# İmaja gerçekten lokal URL gömüldü mü? (canlı domain ÇIKMAMALI)
-minikube image ls | grep frontend
-kubectl exec deploy/erasmus-erasmus-connect-nextjs -- sh -c "grep -rl 'erasmus.local' .next/ | head -3"
-kubectl exec deploy/erasmus-erasmus-connect-nextjs -- sh -c "grep -rl 'api.erasmusconnect.net' .next/ | head -3"
-```
-- İlk `grep` dosya bulmalı, ikincisi boş dönmeli.
-
----
-
-### Bilet 5: Redis StatefulSet ve Headless Service (`clusterIP: None`)
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `redis` portu (`6379`) ve PVC boyutunu (ör. `1Gi`) tanımla.
-- [redis-service.yaml](./helm/erasmus-connect/templates/redis-service.yaml) içinde bu Service'i **Headless Service** yapacak kritik `clusterIP` ayarını, `selector` ve `ports` alanlarını yaz.
-- [redis-statefulset.yaml](./helm/erasmus-connect/templates/redis-statefulset.yaml) içinde `serviceName`, `ports`, `volumeMounts` (`/data`) ve `volumeClaimTemplates` alanlarını tamamla.
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain statefulset.spec`
-  `kubectl explain statefulset.spec.volumeClaimTemplates`
-  `kubectl explain service.spec.clusterIP`
-- **Neden `clusterIP: None`?** StatefulSet podları kararlı DNS kimliklerine (`erasmus-redis-0.erasmus-redis-headless.<namespace>.svc.cluster.local`) ihtiyaç duyar. Normal ClusterIP yerine `clusterIP: None` verdiğinde kube-proxy sanal IP dağıtmaz; CoreDNS doğrudan pod IP'sini döner.
-- `serviceName` alanı `redis-service.yaml` içindeki `metadata.name` (`erasmus-redis-headless`) ile birebir aynı olmalıdır.
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `volumeMounts` ve `volumeClaimTemplates` Bağlantısı</summary>
-
-1. `container` altında:
-   - `volumeMounts:` (`[]Object`) -> `- name: redis-data` ve `mountPath: /data`
-2. `statefulset.spec:` altında (`template:` ile aynı hizada):
-   - `volumeClaimTemplates:` (`[]Object`) -> `- metadata:` -> `name: redis-data` (yukarıdaki `volumeMounts.name` ile birebir aynı!)
-   - Aynı liste elemanı altında `spec:` -> `accessModes: ["ReadWriteOnce"]` ve `resources:` -> `requests:` -> `storage: <BOYUT>`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-helm template erasmus ./helm/erasmus-connect -s templates/redis-service.yaml
-helm template erasmus ./helm/erasmus-connect -s templates/redis-statefulset.yaml
-```
-- Kümeye ilk kurulumu test etmek istersen (`helm install --dry-run`):
-  `helm lint ./helm/erasmus-connect`
-
----
-
-## Faz 2: Secret Yönetimi, Kaynak Sınırları ve Probe'lar
-
-Bu fazda hassas bağlantı dizelerini açık metinden çıkaracak, podların kaynak tüketimini sınırlayacak ve Kubernetes'in kendi kendine iyileşme (self-healing) mekanizmalarını yazacaksın.
-
----
-
-### Bilet 6: `.env` → Secret + ConfigMap → `envFrom` (Secret'lar Git'e Girmeden)
-
-**a) Görev Tanımı:**
-- Railway'den aldığın değişkenler 3 dosyaya ayrıldı (hepsi `.gitignore`'da, Git'e sadece değer içermeyen [.env.example](./.env.example) girer):
-
-| Dosya | Kümede neye dönüşür? | Kural |
-| :--- | :--- | :--- |
-| `.env.backend-secrets` | **Secret** `erasmus-backend-secrets` | Sızarsa zarar verir (DB şifresi, JWT, API key) |
-| `.env.backend-config` | **ConfigMap** `erasmus-backend-config` | Sızsa da sorun olmaz (log level, URL, port) |
-| `.env.frontend-build` | Kümeye **gitmez**, `docker build --build-arg` | `NEXT_PUBLIC_*` build-time değerler (Bilet 4) |
-
-- Bu Secret ve ConfigMap'i **Helm değil, sen** terminalden oluşturacaksın. Chart sadece onların **adını** bilir.
-- [values.yaml](./helm/erasmus-connect/values.yaml) içindeki `envFrom.backendSecretName` ve `envFrom.backendConfigMapName` `# TODO`'larını doldur.
-- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki iki `[Bilet 6]` `# TODO`'yu doldur: küçük bir `env:` (`HOST`, `PORT`) ve `envFrom:`.
-
-**Neden böyle?** Azure'a geçtiğinde (Faz 4) aynı isimli Secret'ı Azure Key Vault CSI Driver oluşturacak. Chart'ta tek satır değişmeyecek, sadece Secret'ı oluşturan şey değişecek.
-
-**b) İpucu ve Referans:**
-- Secret ve ConfigMap'i dosyadan oluşturmanın bayrağını kendin bul:
-  `kubectl create secret generic --help | grep -A3 "from-env-file"`
-  `kubectl create configmap --help | grep -A3 "from-env-file"`
-- `envFrom` yapısını incele:
-  `kubectl explain pod.spec.containers.envFrom`
-  `kubectl explain pod.spec.containers.envFrom.secretRef`
-- `env` + `secretKeyRef` farkı: `secretKeyRef` her key için 5 satır ister (30 değişken için 150 satır). `envFrom` ise Secret'taki **tüm** key'leri tek seferde env değişkeni yapar.
-- **Tekrar çalıştırma tuzağı:** `kubectl create` ikinci kez çalışınca `AlreadyExists` hatası verir. `.env` değişince güncellemek için standart kalıp: `kubectl create ... --dry-run=client -o yaml | kubectl apply -f -`
-- **Değişiklik pod'a otomatik yansımaz:** Secret/ConfigMap'i güncelledikten sonra `envFrom` ile okunan değerler ancak pod yeniden başlayınca değişir: `kubectl rollout restart deploy/<ad>`.
-- `.env` formatı: `--from-env-file` tırnakları **silmez**, değerin parçası olarak alır. Bu yüzden dosyalarda değerler tırnaksız yazıldı (`KEY=value`). Railway'den tırnaklı kopyalarsan dikkat.
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): Terminalden Secret Oluşturma ve `express-deployment.yaml` (`env` + `envFrom`) Yazım Kalıbı</summary>
-
-**Adım 1 — Terminalde `.env` dosyalarından Secret ve ConfigMap'i kümeye yükle (`values.yaml` içine şifre YAZILMAZ!):**
-```bash
-kubectl create secret generic erasmus-backend-secrets \
-  --from-env-file=.env.backend-secrets \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl create configmap erasmus-backend-config \
-  --from-env-file=.env.backend-config \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-**Adım 2 — `express-deployment.yaml` içinde `imagePullPolicy:` ile aynı hizada (10 boşluk) `env:` ve `envFrom:` yaz:**
-```yaml
-          env:
-            - name: HOST
-              value: "0.0.0.0"
-            - name: PORT
-              value: {{ .Values.express.containerPort | quote }}
-          envFrom:
-            - configMapRef:
-                name: {{ .Values.envFrom.backendConfigMapName }}
-            - secretRef:
-                name: {{ .Values.envFrom.backendSecretName }}
-```
-Sıra önemlidir: aynı key iki yerde varsa **listede sonra gelen kazanır**. `env:` ile verilen değerler ise `envFrom`'un hepsini ezer.
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-# 1. Git'e secret girmiyor mu?
-git status --short          # .env.backend-secrets görünMEMELİ
-git check-ignore -v .env.backend-secrets
-
-# 2. Secret ve ConfigMap kümede mi? (describe değerleri GÖSTERMEZ, sadece key ve byte sayısı)
-kubectl describe secret erasmus-backend-secrets
-kubectl describe configmap erasmus-backend-config
-
-# 3. Render edilen YAML'da hiç gerçek değer yok, sadece isimler var mı?
-helm template erasmus ./helm/erasmus-connect -s templates/express-deployment.yaml | grep -A6 envFrom
-helm template erasmus ./helm/erasmus-connect | grep -i "mongodb+srv"   # BOŞ dönmeli
-
-# 4. Pod içinde değişkenler gerçekten yüklendi mi? (değeri basma, sadece varlığını kontrol et)
-kubectl exec deploy/erasmus-erasmus-connect-express -- sh -c 'env | cut -d= -f1 | sort'
-```
-
-> [!NOTE]
-> `kubectl get secret erasmus-backend-secrets -o yaml` çıktısındaki değerler base64'tür, **şifreli değildir**. `echo <değer> | base64 -d` ile herkes çözer. Kümede de Secret'ları kimin okuyabileceğini RBAC ile sınırlamak gerekir.
-
----
-
-### Bilet 7: Kaynak Sınırları (`resources`: `requests` ve `limits`)
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `express`, `nextjs` ve `redis` için `resources:` altında `requests` ve `limits` değerlerini belirle.
-- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml), [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) ve [redis-statefulset.yaml](./helm/erasmus-connect/templates/redis-statefulset.yaml) içindeki `[Bilet 7]` `# TODO` kısımlarına `resources:` bloğunu ekle.
-- **Kısıt Hesabı:** Faz 4'te Azure'da `Standard_B2s` (2 vCPU, 4 GB RAM) tek node kullanacaksın. Sistem podları (`kube-system`, `calico`, `ingress-nginx`) da bu RAM/CPU'dan yiyecektir! Toplam `requests` değerlerin tek bir node'a sığmayacak kadar büyük olursa podlar `Pending` kalır.
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain pod.spec.containers.resources`
-- `cpu` birimleri: `100m` = 0.1 vCPU, `500m` = 0.5 vCPU.
-- `memory` birimleri: `128Mi`, `256Mi`, `512Mi` (`Mi` Mebibyte, `M` Megabyte'tan farklıdır; standart `Mi` kullan).
-- Node.js (Next.js / Express) uygulamaları başlangıçta anlık RAM sıçraması yapabilir; `limits.memory` değerini çok düşük (ör. 64Mi) verirsen `OOMKilled` (Exit Code 137) alırsın.
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `resources` Helm Şablon Bağlantısı</summary>
-
-`values.yaml` içinde her servis için `requests:` (`cpu`, `memory`) ve `limits:` (`cpu`, `memory`) tanımladıktan sonra, şablon dosyalarında her satırı tek tek yazmak yerine container hizasında şu Helm yardımcısını kullanabilirsin:
-`resources:`
-`  {{- toYaml .Values.<servis>.resources | nindent <GIRINTI_SAYISI> }}`
-(`express-deployment` ve `nextjs-deployment` için container içi 10 boşluk olduğundan `resources:` 10 boşluk, altındaki içerik `nindent 12` alır.)
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-helm template erasmus ./helm/erasmus-connect | grep -A 8 "resources:"
-```
-- Çıktıda 3 pod için de `requests` ve `limits` değerlerinin düzgün girintilendiğini doğrula; toplam `cpu` ve `memory` request'lerinin tek bir `Standard_B2s` node kapasitesini aşmadığını hesapla.
-
----
-
-### Bilet 8: Sağlık Kontrolleri (`readinessProbe` & `livenessProbe`)
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `express.healthPath` alanını doldur (uygulaman `/health` veya `/api/health` dönmüyorsa Express koduna 200 OK dönen bir endpoint ekle!).
-- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml), [nextjs-deployment.yaml](./helm/erasmus-connect/templates/nextjs-deployment.yaml) ve [redis-statefulset.yaml](./helm/erasmus-connect/templates/redis-statefulset.yaml) içindeki `[Bilet 8]` `# TODO` kısımlarını doldur.
-- **Karar:** `readinessProbe` başarısız olursa Service bu poda trafik göndermeyi keser (restart etmez). `livenessProbe` başarısız olursa Kubelet container'ı öldürüp yeniden başlatır. Next.js/Express geç açılıyorsa `initialDelaySeconds` değerini kısa tutarsan CrashLoopBackOff yaşarsın!
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain pod.spec.containers.readinessProbe`
-  `kubectl explain pod.spec.containers.readinessProbe.httpGet`
-  `kubectl explain pod.spec.containers.livenessProbe.exec`
-- Express & Next.js için: `httpGet` (`path`, `port`).
-- Redis için: `exec` (`command: ["redis-cli", "ping"]`) veya `tcpSocket` (`port: 6379`). (`redis-cli ping` sadece portun açık olmasını değil, Redis motorunun `PONG` yanıtı verebildiğini de doğrular!)
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `httpGet` ve `exec` Probe Yapısı</summary>
-
-`httpGet` yapısı (Express / Next.js):
-- `readinessProbe:` (container alanlarıyla aynı hizada)
-- `  httpGet:`
-- `    path: <ENDPOINT_YOLU>`
-- `    port: <CONTAINER_PORT>`
-- `  initialDelaySeconds: <SANIYE>`
-- `  periodSeconds: <SANIYE>`
-
-`exec` yapısı (Redis):
-- `readinessProbe:`
-- `  exec:`
-- `    command: ["redis-cli", "ping"]`
-- `  initialDelaySeconds: <SANIYE>`
-- `  periodSeconds: <SANIYE>`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-Kümeye yüklediğinde tüm podlar `1/1 Running` olmalı ve `kubectl describe pod <pod-adi>` çıktısında `Readiness` / `Liveness` hatası olmamalıdır:
-```bash
-# Bilet 9'daki ingress.yaml henüz boşsa kurulumda geçici kapatabilirsin:
-helm upgrade --install erasmus ./helm/erasmus-connect --set ingress.enabled=false
-kubectl get pods -w
-kubectl get endpoints
-```
-- `kubectl get endpoints` çıktısında Express, Next.js ve Redis için IP:Port eşleşmeleri `<none>` DEĞİL, gerçek Pod IP'leri olarak görünmelidir.
-
----
-
-## Faz 3: NGINX Ingress ve Post-DNAT Calico NetworkPolicy
-
-Bu faz projenin ağ ve güvenlik omurgasıdır. Özellikle Calico altında **Post-DNAT** davranışını pratik edeceksin.
-
----
-
-### Bilet 9: NGINX Ingress ile Path Routing (`ingress.yaml`)
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `ingress.className` (`nginx`) ve `ingress.host` (ör. `erasmus.local`) alanlarını doldur.
-- [ingress.yaml](./helm/erasmus-connect/templates/ingress.yaml) dosyasındaki `[Bilet 9]` `# TODO` kısımlarını tamamla:
-  - `/api` yolu -> `erasmus-express-svc`
-  - `/` yolu -> `erasmus-nextjs-svc`
-- **Mimari Soru:** Express uygulaman route'ları `/api/auth`, `/api/users` şeklinde tanımlıyorsa `rewrite-target: /$2` annotation'ı **KOYMAMALISIN** (yoksa `/api` kırpılır ve Express `404` döner). Eğer Express route'ların `/auth`, `/users` ise o zaman rewrite annotation'ı gerekir. Kendi backend koduna göre karar ver!
-
-**b) İpucu ve Referans:**
-- Görsel/terminal referansları:
-  `kubectl explain ingress.spec`
-  `kubectl explain ingress.spec.rules.http.paths`
-  `kubectl explain ingress.spec.rules.http.paths.backend.service`
-- `backend.service.port.number` alanına Deployment `containerPort`'unu değil, **Service'in sunduğu `port` numarasını** yazmalısın!
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): Ingress `rules` ve `paths` Hiyerarşisi</summary>
-
-`spec:` altında:
-- `ingressClassName: <SINIF_ADI>`
-- `rules:` (`[]Object`)
-- `  - host: <DOMAIN>`
-- `    http:`
-- `      paths:` (`[]Object`)
-- `        - path: /api`
-- `          pathType: Prefix`
-- `          backend:`
-- `            service:`
-- `              name: erasmus-express-svc`
-- `              port:`
-- `                number: <EXPRESS_SVC_PORT>`
-(İkinci `- path: /` maddesini de aynı şekilde `erasmus-nextjs-svc` için altına ekle.)
-
-</details>
-
-**c) Çözüm Kanıtı:**
-
-> [!WARNING]
-> **Timeout Tuzağı (Boş NetworkPolicy'ler):** `networkpolicy-redis.yaml` ve `networkpolicy-express.yaml` içindeki `# TODO` kısımları henüz boşken `helm upgrade` yaptığında kümede `podSelector: {}` (Default-Deny-All) uygulanır ve Calico tüm trafiği keser (`Operation timed out`). Bu yüzden:
-> - Ya Bilet 10 & 11'i de doldurduktan sonra `curl` testini çalıştır,
-> - Ya da sadece Ingress'i şimdi görmek için boş policy'leri geçici sil (`kubectl delete netpol erasmus-express-post-dnat erasmus-redis-isolation`), test et ve hemen Bilet 10–11'e geç.
-
-Yerel kümede Ingress Controller IP'sini (`minikube ip` veya `kubectl get ingress`) kullanarak `Host` header'ı ile test et (`--reset-values` ile Bilet 8'deki `--set ingress.enabled=false` önbelleğini temizle):
-```bash
-helm upgrade --install erasmus ./helm/erasmus-connect --reset-values
-kubectl get ingress
-curl -i -H "Host: erasmus.local" http://<INGRESS_IP>/
-curl -i -X POST -H "Host: erasmus.local" http://<INGRESS_IP>/api/v1/ping
-```
-- `/` isteği Next.js HTML/200 dönmeli, `/api/v1/ping` isteği Express `{"ok":true}`/200 dönmelidir.
-
----
-
-### Bilet 10: Redis Zero-Trust İzolasyonu (`networkpolicy-redis.yaml`)
-
-**a) Görev Tanımı:**
-- [networkpolicy-redis.yaml](./helm/erasmus-connect/templates/networkpolicy-redis.yaml) dosyasındaki `[Bilet 10]` `# TODO` kısımlarını doldur.
-- Kural amacı: Redis poduna (`app: erasmus-redis`) **SADECE** Express podları (`app: erasmus-express`) ve **SADECE** TCP `6379` portundan bağlanabilsin. Next.js podu veya kümedeki başka herhangi bir pod Redis'e erişemesin!
-
-**b) İpucu ve Referans:**
-- Görsel araç: Tarayıcıda **`editor.networkpolicy.io`** adresini açıp seçicileri görsel olarak dene ve YAML yapısını incele.
-- Terminalde çalıştır:
-  `kubectl explain netpol.spec`
-  `kubectl explain netpol.spec.ingress`
-  `kubectl explain netpol.spec.ingress.from`
-- **Sınav Tuzağı (AND vs OR Mantığı):**
-  - `from:` ve `ports:` aynı `-` liste elemanı altında yazılırsa: `(Express POD'undan VE 6379 portuna)` demektir (İstediğimiz budur!).
-  - Eğer ayrı `- from:` ve `- ports:` maddeleri yaparsan: `(Express'ten TÜM portlara VEYA HERKESTEN 6379 portuna)` anlamına gelir ve **güvenlik açığı** oluşur!
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `NetworkPolicy` AND Kuralı Yapısı</summary>
-
-`spec:` altında:
-- `podSelector:` -> `matchLabels:` -> `app: erasmus-redis`
-- `policyTypes:` -> `- Ingress`
-- `ingress:` (`[]Object`)
-- `  - from:` (tek bir kural maddesi başlat)
-- `      - podSelector:`
-- `          matchLabels:`
-- `            app: erasmus-express`
-- `    ports:` (`from` ile aynı girintide -> AND mantığı!)
-- `      - protocol: TCP`
-- `        port: 6379`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-Policy uygulandıktan sonra 2 farklı poddan Redis'e bağlantı testi yap (biri başarılı, diğeri timeout olmalı!):
-```bash
-# 1. Next.js podundan Redis'e erişim ENGELLENMELİ (timeout):
-kubectl exec deploy/erasmus-erasmus-connect-nextjs -- sh -c "nc -zv -w 3 erasmus-redis-headless 6379"
-
-# 2. Express podundan Redis'e erişim BAŞARILI OLMALI:
-kubectl exec deploy/erasmus-erasmus-connect-express -- sh -c "nc -zv -w 3 erasmus-redis-headless 6379"
-```
-*(Eğer image içinde `nc` yoksa geçici `busybox` test poduna uygun `app: erasmus-express` vs `app: test-intruder` etiketi vererek `kubectl run --labels=...` ile test edebilirsin.)*
-
----
-
-### Bilet 11: Post-DNAT Calico NetworkPolicy (`networkpolicy-express.yaml`)
-
-**a) Görev Tanımı:**
-- [networkpolicy-express.yaml](./helm/erasmus-connect/templates/networkpolicy-express.yaml) dosyasındaki `[Bilet 11]` `# TODO` kısımlarını doldur.
-- **Post-DNAT Gerçeğini Uygula:**
-  1. Dışarıdan gelen trafik önce NGINX Ingress Controller poduna, oradan `erasmus-express-svc` Service'ine (ör. port `80`) gider. `kube-proxy` (veya eBPF) paketi Express poduna iletmeden **önce DNAT** yapar; yani hedef IP pod IP'sine, hedef port ise Express'in **`containerPort`** değerine dönüşür.
-  2. Bu yüzden Calico NetworkPolicy pod seviyesinde değerlendirme yaparken Service portunu (`80`) DEĞİL, **`containerPort`** değerini görür! `ports:` kısmına Express'in `containerPort` değerini yazmalısın.
-  3. Ayrıca NGINX Ingress Controller genellikle `ingress-nginx` namespace'inde çalışır! Aynı namespace dışındaki bir poddan gelen trafiğe izin vermek için `from:` altında tek başına `podSelector` yazarsan **çalışmaz** (aynı namespace'te arar); **`namespaceSelector`** + **`podSelector`** birlikte kullanmalısın!
-
-**b) İpucu ve Referans:**
-- İlk olarak Ingress Controller'ın hangi namespace'te ve hangi etiketlerle çalıştığını kendi kümeden öğren:
-  `kubectl get pods -A --show-labels | grep ingress`
-  `kubectl get ns ingress-nginx --show-labels`
-- Terminalde çalıştır:
-  `kubectl explain netpol.spec.ingress.from.namespaceSelector`
-- **Kritik Girinti Tuzağı (`namespaceSelector` + `podSelector`):**
-  - Aynı `-` altında `namespaceSelector:` ve `podSelector:` yazarsan = **"O namespace'teki O pod"** (AND).
-  - Ayrı `- namespaceSelector:` ve `- podSelector:` yazarsan = **"O namespace'teki HERKES veya bu namespace'teki o pod"** (OR - aşırı izin!).
-- Next.js SSR podundan gelen iç çağrılar için ayrı bir `- podSelector:` kaynağı daha `from:` listesine eklemelisin.
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): Cross-Namespace `from` Yazımı</summary>
-
-`ingress:` altındaki tek kuralda `from:` listesi iki izinli kaynak içerir:
-1. Kaynak (Next.js - aynı namespace):
-   `- podSelector:` -> `matchLabels:` -> `app: erasmus-nextjs`
-2. Kaynak (NGINX Ingress - farklı namespace):
-   `- namespaceSelector:` -> `matchLabels:` -> `kubernetes.io/metadata.name: <INGRESS_NAMESPACE>`
-   `  podSelector:` (aynı `-` maddesi içinde, tire OLMADAN!) -> `matchLabels:` -> `<INGRESS_POD_ETİKETİ>`
-Ve `ports:` altında:
-- `protocol: TCP`
-- `port: {{ .Values.express.containerPort }}` (Service portu değil, Post-DNAT containerPort!)
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-# 1. Tarayıcı / Ingress üzerinden /api/v1/ping erişimi hala 200 OK dönmeli:
-curl -i -X POST -H "Host: erasmus.local" http://<INGRESS_IP>/api/v1/ping
-
-# 2. Yetkisiz bir test podundan Express'e doğrudan erişim ENGELLENMELİ:
-kubectl run intruder --rm -it --restart=Never --image=busybox:1.36 -- wget -qO- --timeout=3 http://erasmus-express-svc:<SVC_PORT>/health
-```
-- İlk komut başarılı, ikinci komut (`intruder`) timeout ile başarısız olmalıdır.
-
----
-
-## Faz 4: Terraform ile Azure AKS Altyapısı
-
-Yerel kümede Helm chart'ın kusursuz çalıştıktan sonra şimdi bulut altyapısını Terraform ile kodlayacaksın.
-
----
-
-### Bilet 12: Terraform Provider ve Öğrenci Bütçesi Değişkenleri (`versions.tf` & `variables.tf`)
-
-**a) Görev Tanımı:**
-- [versions.tf](./terraform/versions.tf) içinde `required_version`, `azurerm` provider kaynağı ve boş `features {}` bloğunu yaz.
-- [variables.tf](./terraform/variables.tf) içindeki tüm değişkenlere `description`, `type` ve öğrenci bütçesine uygun `default` değerlerini tanımla (`node_count = 1`, `vm_size = "Standard_B2s"`).
-
-**b) İpucu ve Referans:**
-- Resmi dokümantasyon: `registry.terraform.io/providers/hashicorp/azurerm/latest/docs`
-- Azure CLI ile aboneliğinde `Standard_B2s` VM'in seçtiğin bölgede (ör. `polandcentral`, `germanywestcentral`, `westeurope`) kotasının açık olduğunu kontrol et:
-  `az vm list-skus --location westeurope --size Standard_B2s --output table`
-- `azurerm` provider'da `provider "azurerm" { features {} }` bloğu zorunludur; yazmazsan `terraform validate` hata verir.
-
-**c) Çözüm Kanıtı:**
-```bash
-cd terraform
-terraform init
-terraform validate
-```
-- `Success! The configuration is valid.` çıktısını gör.
-
----
-
-### Bilet 13: Azure AKS Kümesi ve Calico `network_profile` (`main.tf` & `outputs.tf`)
-
-**a) Görev Tanımı:**
-- [main.tf](./terraform/main.tf) içindeki `[Bilet 13]` `# TODO` kısımlarını tamamla:
-  - `azurerm_resource_group` argümanları
-  - `azurerm_kubernetes_cluster` temel argümanları (`name`, `location`, `resource_group_name`, `dns_prefix`)
-  - `default_node_pool` (`name`, `node_count`, `vm_size`, `os_disk_size_gb`)
-  - `identity` (`type = "SystemAssigned"`)
-  - `network_profile` (`network_plugin` ve `network_policy = "calico"`)
-- [outputs.tf](./terraform/outputs.tf) içinde küme adı, resource group adı ve `kube_config_raw` (`sensitive = true`) çıktılarını yaz.
-
-**b) İpucu ve Referans:**
-- Resmi dokümantasyon: Google'da `azurerm_kubernetes_cluster terraform` ara ve `registry.terraform.io` sayfasındaki **Example Usage** ve **Argument Reference** bölümlerini incele.
-- **Kritik Mühendislik Kararı (`network_profile`):**
-  - `network_policy = "calico"` ayarını vermezsen Faz 3'te yazdığın tüm `NetworkPolicy` YAML'ları AKS'te **hiçbir işe yaramadan sessizce yok sayılır**!
-  - `network_plugin` için `"azure"` (Azure CNI) veya `"kubenet"` farkını incele: `Standard_B2s` gibi küçük bir VM'de `azure` CNI her pod için VNet IP'si ayırır (`max_pods` varsayılan 30'dur ve subnet boyutunu planlamak gerekir); basit öğrenci/tek-node kurulumlarda `network_plugin = "azure"` + `network_policy = "calico"` standart kombinasyonudur (`kubenet` ile Calico birlikte Azure'da desteklenmez!).
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `azurerm_kubernetes_cluster` Blok İsimleri</summary>
-
-`resource "azurerm_kubernetes_cluster" "erasmus" { ... }` içinde şu alt blokları `Argument Reference`'a bakarak doldur:
-- `default_node_pool { name = ... node_count = ... vm_size = ... }`
-- `identity { type = "SystemAssigned" }`
-- `network_profile { network_plugin = "azure" network_policy = "calico" }`
-`outputs.tf` içinde hassas veri için:
-- `output "kube_config" { value = azurerm_kubernetes_cluster.erasmus.kube_config_raw sensitive = true }`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-cd terraform
-terraform fmt -check
-terraform validate
+INGRESS_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+curl -i "http://${INGRESS_IP}.nip.io/"
+curl -i "http://admin.${INGRESS_IP}.nip.io/"
+curl -i -X POST "http://${INGRESS_IP}.nip.io/api/v1/ping"
 ```
 
 ---
 
-### Bilet 14: `terraform plan`, Canlıya Çıkış, AKS'e Helm Deploy ve Uyku Modu
+## 6. Sıfırdan Kurulum
 
-**a) Görev Tanımı:**
-- [terraform.tfvars.example](./terraform/terraform.tfvars.example) dosyasını `terraform.tfvars` olarak kopyalayıp değerlerini doldur.
-- `terraform plan` çıktısını **satır satır oku**: Oluşacak ücretli kaynakları (VM, Managed Disk, LoadBalancer / Public IP) gör ve `terraform apply` ile kümeyi kur.
-- AKS kubeconfig'i al, NGINX Ingress Controller'ı AKS'e kur ve Faz 1-3'te hazırladığın Helm chart'ını canlı AKS kümesine deploy et.
-- Çalışman bittiğinde öğrenci kredini korumak için kümeyi durdur.
-
-**b) İpucu ve Referans:**
-- Azure girişi ve plan:
-  `az login`
-  `terraform plan -out=tfplan`
-  `terraform apply tfplan`
-- Kubeconfig çekme:
-  `az aks get-credentials --resource-group <RG_ADI> --name <CLUSTER_ADI>`
-- AKS üzerine NGINX Ingress kurulumu:
-  `helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx`
-  `helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx --create-namespace`
-- **Maliyet Koruma Komutu (Akşam Test Bitince Mutlaka Çalıştır!):**
-  `az aks stop --resource-group <RG_ADI> --name <CLUSTER_ADI>`
-  (Ertesi gün devam etmek için `az aks start ...`, işi tamamen bitirdiğinde ise `terraform destroy` kullan.)
-
-**c) Çözüm Kanıtı:**
-```bash
-kubectl get nodes
-kubectl get pods -A
-kubectl get ingress
-curl -i -X POST -H "Host: <DOMAIN>" http://<AKS_INGRESS_EXTERNAL_IP>/api/v1/ping
-```
-- AKS node'unun `Ready`, tüm Erasmus Connect podlarının `Running`, `curl` isteğinin ise `200 OK` döndüğünü doğrula.
-
-*(Elle `az aks get-credentials` ve tek tek `helm` komutları çalıştırmak yerine aşağıdaki **Faz 5 (Ansible)** ile bu adımların tamamını tek komutla otomatikleştirebilirsin!)*
-
----
-
-## Faz 5: Ansible ile AKS Üzerine Otomatik Kurulum ve Helm Orkestrasyonu
-
-Terraform ile altyapıyı (AKS kümesini) kurduktan sonra, küme içindeki **NGINX Ingress Controller + Secret/ConfigMap + Erasmus Connect Helm Chart** kurulumunu tek bir idempotent `ansible-playbook` komutuyla otomatikleştireceksin. İlk kurulumu Ansible ile yapıp, sonraki uygulama güncellemelerini doğrudan `helm upgrade` (veya playbook'u tekrar koşarak) yöneteceksin.
-
-> [!NOTE]
-> **AKS'te Ansible Neden `localhost` Üzerinde Çalışır?**
-> RKE2/K3s lablarında Ansible VM'lere SSH atıp Kubernetes kuruyordu. **Azure AKS yönetilen (managed) bir Kubernetes servisi** olduğu için node'lara SSH atılmaz; Ansible senin bilgisayarında (`ansible_connection=local`) çalışır ve `az` + `kubectl` + `kubernetes.core.helm` modüllerini orkestre eder.
-
----
-
-### Bilet 15: Ansible Envanteri, AKS Kubeconfig ve NGINX Ingress Kurulumu
-
-**a) Görev Tanımı:**
-- [ansible.cfg](./ansible/ansible.cfg) ve [inventory.ini](./ansible/inventory.ini) dosyalarını incele (`localhost ansible_connection=local` yapısını anla).
-- [playbook.yml](./ansible/playbook.yml) içindeki `vars:` bölümünde `resource_group` ve `cluster_name` (`[Bilet 15]`) değişkenlerini doldur.
-- [playbook.yml](./ansible/playbook.yml) içindeki **ADIM 1, 2 ve 3** `# TODO` görevlerini yaz:
-  1. `az aks get-credentials` ile AKS kubeconfig'i al.
-  2. `kubernetes.core.helm_repository` ile `ingress-nginx` Helm deposunu ekle.
-  3. `kubernetes.core.helm` ile `ingress-nginx` controller'ını `ingress-nginx` namespace'ine kur (`wait: true`).
-
-**b) İpucu ve Referans:**
-- Terminalde modül dokümantasyonunu oku:
-  `ansible-doc kubernetes.core.helm_repository`
-  `ansible-doc kubernetes.core.helm`
-- **Idempotency (Tekrar Çalıştırılabilirlik):** Playbook'u 2. kez çalıştırdığında hata vermemeli; `kubernetes.core.helm` zaten `helm upgrade --install` gibi çalışır ve kurulu release'i günceller.
-- `az aks get-credentials` komutuna `--overwrite-existing` eklemezsen ikinci çalıştırmada `y/n` sorusu sorup Ansible'ı kilitler!
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): Bilet 15 Ansible Görev Şeması</summary>
-
-`tasks:` altında her görev `- name: ...` ile başlar:
-- ADIM 1 (`ansible.builtin.command`):
-  `cmd: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing`
-  `changed_when: false`
-- ADIM 2 (`kubernetes.core.helm_repository`):
-  `name: ingress-nginx`
-  `repo_url: https://kubernetes.github.io/ingress-nginx`
-- ADIM 3 (`kubernetes.core.helm`):
-  `name: ingress-nginx`, `chart_ref: ingress-nginx/ingress-nginx`, `release_namespace: ingress-nginx`, `create_namespace: true`, `wait: true`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-cd ansible
-ansible-playbook --syntax-check playbook.yml
-ansible-playbook playbook.yml
-kubectl get pods -n ingress-nginx
-```
-- `ingress-nginx-controller` podunun AKS üzerinde `1/1 Running` olduğunu doğrula.
-
----
-
-### Bilet 16: Secret/ConfigMap Yükleme, Helm Deploy ve Sonraki Güncellemeler
-
-**a) Görev Tanımı:**
-- [playbook.yml](./ansible/playbook.yml) içindeki **ADIM 4, 5 ve 6** `# TODO` görevlerini doldur:
-  - **ADIM 4:** `../.env.backend-secrets` ve `../.env.backend-config` dosyalarından `erasmus-backend-secrets` ile `erasmus-backend-config` nesnelerini idempotent şekilde (`--dry-run=client -o yaml | kubectl apply -f -`) oluştur. *(Private Docker Hub imajı kullanıyorsan `dockerhub-secret` oluşturma adımını da ekle!)*
-  - **ADIM 5:** `kubernetes.core.helm` modülü ile `../helm/erasmus-connect` chart'ını AKS'e kur (`wait: true`).
-  - **ADIM 6:** `ingress-nginx-controller` Service'inin Azure LoadBalancer External IP'sini çekip `ansible.builtin.debug` ile ekrana yazdır.
-- **Dikkat (AKS İmaj ve Domain Farkı):** Minikube'daki `yusufk00/erasmus-connect-frontend:local` imajı sadece Minikube içindeydi! AKS'te kullanmak için ya canlı domain ile build alıp registry'ye (Docker Hub / ACR) pushla ya da `values` override'ı ile registry tag'ini ver (`kubernetes.core.helm` modülünün `values:` parametresiyle).
-
-**b) İpucu ve Referans:**
-- `ansible-doc kubernetes.core.helm` içinde `values:` (dictionary) parametresine bak — sadece AKS'e özel değişen değerleri (`nextjs.image.tag`, `ingress.host` gibi) doğrudan playbook üzerinden override edebilirsin.
-- **Sonraki Güncelleme İş Akışı (Day-2 Operations):**
-  - Altyapı bir kez Ansible ile kurulduktan sonra, uygulama kodunda/Helm chart'ında bir değişiklik yaptığında ister `helm upgrade erasmus ./helm/erasmus-connect` ile doğrudan güncelle, ister `ansible-playbook playbook.yml` komutunu tekrar çalıştır — ikisi de aynı Helm release'ini günceller!
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): ADIM 4 & 5 Görev Şeması</summary>
-
-- ADIM 4 (`ansible.builtin.shell`):
-  `kubectl create secret generic erasmus-backend-secrets --from-env-file=../.env.backend-secrets --dry-run=client -o yaml | kubectl apply -f -`
-  *(Aynısını `configmap` ve `../.env.backend-config` için de yaz.)*
-- ADIM 5 (`kubernetes.core.helm`):
-  `name: "{{ release_name }}"`
-  `chart_ref: "{{ chart_path }}"`
-  `release_namespace: "{{ app_namespace }}"`
-  `wait: true`
-  *(İstersen altına `values:` ekleyip `ingress: { host: "<CANLI_DOMAIN_VEYA_NIP_IO>" }` geçebilirsin.)*
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-cd ansible
-ansible-playbook --syntax-check playbook.yml
-ansible-playbook playbook.yml
-helm list -A
-kubectl get pods,svc,ingress -n default
-```
-- `helm list -A` çıktısında hem `ingress-nginx` hem `erasmus` release'lerinin `deployed` olduğunu ve Ingress External IP'sinin alındığını doğrula.
-
----
-
-## Faz 6: Yüksek Erişilebilirlik (HPA & PDB) ve Kaos Mühendisliği (Chaos Mesh)
-
-Uygulama canlı AKS üzerinde sorunsuz çalıştıktan sonra şimdi sistemi yük altında otomatik ölçekleyecek (`HPA`), bakım/kesinti anında ayakta tutacak (`PDB`) ve **Chaos Mesh** ile kasıtlı olarak bozup dayanıklılığını test edeceksin.
-
----
-
-### Bilet 17: Replica Artışı, `Standard_B2s` Kapasite Ayarı ve HPA (`hpa-express.yaml`, `hpa-nextjs.yaml`)
-
-**a) Görev Tanımı:**
-- **Önce Kapasite Gerçeğini Gör:** AKS `Standard_B2s` düğümünde (2 vCPU, ~3.2 GB kullanılabilir RAM) `kubectl top nodes` ile mevcut kullanımın ~%61 RAM (~1946Mi) civarında olduğunu gördük; oysa gerçekte `express` 58Mi, `nextjs` 129Mi RAM harcıyor!
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde:
-  - Express ve Next.js `resources.requests.memory` değerlerini `256Mi`'dan gerçekçi seviyelere (`128Mi` / `160Mi`, CPU `50m`) çek ki node üzerinde 2–4 kopyaya yer açılsın!
-  - `express.replicaCount` ve `nextjs.replicaCount` değerlerini `2` yap (veya HPA'nın altına `hpa.enabled: true` ile `minReplicas: 2`, `maxReplicas: 4` tanımla).
-- [hpa-express.yaml](./helm/erasmus-connect/templates/hpa-express.yaml) ve [hpa-nextjs.yaml](./helm/erasmus-connect/templates/hpa-nextjs.yaml) içindeki `[Bilet 17]` `# TODO` kısımlarını doldur.
-- **Helm + HPA Çakışması:** `express-deployment.yaml` ve `nextjs-deployment.yaml` içinde `replicas:` satırını `{{- if not .Values.express.hpa.enabled }}` ile sarmalarsan sonraki `helm upgrade` komutları HPA'nın ölçeklediği pod sayısını ezmez!
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain hpa.spec --api-version=autoscaling/v2`
-  `kubectl explain hpa.spec.metrics --api-version=autoscaling/v2`
-- `metrics-server` AKS'te zaten kurulu (`kubectl top pods` çalışıyor); ama **HPA'nın çalışması için Deployment'ta `resources.requests.cpu` tanımlı olmak ZORUNDADIR** (çünkü `averageUtilization: 60`, `requests.cpu`'nun %60'ına göre hesaplanır!).
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `HorizontalPodAutoscaler` (`autoscaling/v2`) Yapısı</summary>
-
-`spec:` altında (2 boşluk):
-- `scaleTargetRef:` -> `apiVersion: apps/v1`, `kind: Deployment`, `name: <DEPLOYMENT_ADI>`
-- `minReplicas: <SAYI>`
-- `maxReplicas: <SAYI>`
-- `metrics:` (`[]Object`) -> `- type: Resource` -> `resource:` -> `name: cpu`, `target:` -> `type: Utilization`, `averageUtilization: <YÜZDE>`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-helm template erasmus ./helm/erasmus-connect -s templates/hpa-express.yaml | kubectl apply --dry-run=server -f -
-# Ansible veya helm upgrade sonrası:
-kubectl get hpa -n default
-kubectl get pods -n default -o wide
-```
-- `kubectl get hpa` çıktısında `TARGETS` sütununun `<unknown>/60%` değil, gerçek yüzde (ör. `4%/60%`) gösterdiğini ve her iki Deployment'tan en az 2 podun `Running` olduğunu doğrula.
-
----
-
-### Bilet 18: `PodDisruptionBudget` (`pdb.yaml`) ve Sıfır Kesinti Koruması
-
-**a) Görev Tanımı:**
-- [values.yaml](./helm/erasmus-connect/values.yaml) içinde `pdb.enabled: true` ve `minAvailable: 1` ayarla (**DİKKAT:** Bilet 17'de replika sayısını en az `2` yaptıktan sonra etkinleştir; aksi halde 1 replikalı podda `minAvailable: 1` node bakımını kilitler!).
-- [pdb.yaml](./helm/erasmus-connect/templates/pdb.yaml) içindeki `[Bilet 18]` `# TODO` kısımlarını hem Express hem Next.js için doldur.
-
-**b) İpucu ve Referans:**
-- Terminalde çalıştır:
-  `kubectl explain pdb.spec --api-version=policy/v1`
-- PDB (`PodDisruptionBudget`), Kubernetes node güncellemesi veya `kubectl drain` sırasında aynı anda kaç podun ayakta kalmak zorunda olduğunu garanti eder.
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `PodDisruptionBudget` Yapısı</summary>
-
-`spec:` altında:
-- `minAvailable: 1`
-- `selector:` -> `matchLabels:` -> `app: erasmus-express` (ikinci PDB'de `app: erasmus-nextjs`)
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-kubectl get pdb -n default
-```
-- `MIN AVAILABLE: 1` ve `ALLOWED DISRUPTIONS: 1` (2 replika varken 1 podun kesintiye izinli olduğu) görünmelidir.
-
----
-
-### Bilet 19: Chaos Mesh Kurulumu ve 3 Kaos Deneyi (`chaos/`)
-
-**a) Görev Tanımı:**
-- AKS kümesine **Chaos Mesh** kur (Azure AKS `containerd` kullandığı için daemon soketini doğru parametreyle vermen şart!).
-- [chaos/](./chaos/) klasöründeki 3 deney dosyasının `# TODO` alanlarını kendi ellerinle doldur:
-  1. [01-pod-kill-express.yaml](./chaos/01-pod-kill-express.yaml) (`PodChaos`): Express podlarından sadece 1 tanesini öldürürken dışarıdan sürekli `curl` atarak **sıfır kesinti (0 HTTP hatası)** olduğunu kanıtla!
-  2. [02-network-delay-redis.yaml](./chaos/02-network-delay-redis.yaml) (`NetworkChaos`): Redis poduna `300ms` ağ gecikmesi enjekte edip Express yanıt sürelerinin nasıl etkilendiğini ölç.
-  3. [03-stress-cpu-express.yaml](./chaos/03-stress-cpu-express.yaml) (`StressChaos`): Express poduna %80 CPU yükü verip **Bilet 17'deki HPA'nın** pod sayısını otomatik `2 -> 3+` artırdığını canlı izle!
-
-**b) İpucu ve Referans:**
-- Chaos Mesh Helm kurulumu (**AKS `containerd` ayarlı!**):
-  ```bash
-  helm repo add chaos-mesh https://charts.chaos-mesh.org
-  helm repo update
-  helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
-    --namespace chaos-mesh --create-namespace \
-    --set chaosDaemon.runtime=containerd \
-    --set chaosDaemon.socketPath=/run/containerd/containerd.sock \
-    --set dashboard.securityMode=false
-  ```
-- Chaos Mesh kurulduktan sonra terminalde şemaları incele:
-  `kubectl explain podchaos.spec`
-  `kubectl explain networkchaos.spec`
-  `kubectl explain stresschaos.spec`
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): Chaos Mesh `selector` ve `stressors` Kalıbı</summary>
-
-Her Chaos CRD'sinde `spec.selector:` ortaktır:
-- `selector:`
-  - `namespaces: ["default"]`
-  - `labelSelectors:` -> `app: <ETİKET>`
-`01-pod-kill-express.yaml` için: `action: pod-kill`, `mode: one`, `duration: "30s"`.
-`02-network-delay-redis.yaml` için: `action: delay`, `mode: one`, `direction: both`, `delay: { latency: "300ms", jitter: "50ms" }`, `duration: "60s"`.
-`03-stress-cpu-express.yaml` için: `mode: one`, `stressors: { cpu: { workers: 1, load: 80 } }`, `duration: "120s"`.
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-# 1. Chaos Mesh podlarının çalıştığını doğrula:
-kubectl get pods -n chaos-mesh
-
-# 2. PodKill sırasında sıfır kesinti testi (ayrı bir terminalde sürekli ping atarken deneyi uygula):
-while true; do curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -X POST http://<AKS_INGRESS_IP>.nip.io/api/v1/ping; sleep 0.5; done
-kubectl apply -f ./chaos/01-pod-kill-express.yaml
-
-# 3. CPU Stresi ile HPA ölçekleme testi:
-kubectl apply -f ./chaos/03-stress-cpu-express.yaml
-kubectl get hpa,pods -n default -w
-```
-- PodKill sırasında `200` kodunun kesilmediğini, StressChaos uygulandıktan 30–60 saniye sonra ise `kubectl get hpa` çıktısında `REPLICAS` sayısının arttığını doğrula! *(Test bitince `kubectl delete -f ./chaos/` ile deneyleri temizle.)*
-
----
-
-## Faz 7: ArgoCD ile GitOps Otomatik Dağıtım
-
-Bu fazda artık `helm upgrade` veya `ansible-playbook` çalıştırmayı bırakıp, **GitHub'a yaptığın her push'un AKS kümesine otomatik yansıdığı (GitOps)** ArgoCD yapısını kuracaksın.
-
----
-
-### Bilet 20: Node Ölçekleme (`node_count = 2`) ve ArgoCD Kurulumu
-
-**a) Görev Tanımı:**
-- Tek `Standard_B2s` node'un 30 pod limitini (`Too many pods`) ve RAM sınırını açmak için [variables.tf](./terraform/variables.tf) içindeki `node_count` değerini `2` yap ve `terraform apply` ile kümeyi silmeden **yerinde** 2. node'u ekle (`60 pod`, `4 vCPU`, `8 GB RAM`).
-- AKS üzerine `argocd` namespace'ini açıp resmi ArgoCD Helm chart'ını (veya resmi manifestosunu) kur.
-- ArgoCD arayüzüne internete açmadan `kubectl port-forward` ile eriş ve ilk `admin` şifresini al.
-
-**b) İpucu ve Referans:**
-- Terraform ile node artırma:
-  ```bash
-  cd terraform
-  terraform apply   # Plan'da ~ node_count: 1 -> 2 (in-place update) görmelisin, destroy OLMAMALI!
-  ```
-- ArgoCD Helm kurulumu (öğrenci kümesinde gereksiz HA kopyaları yerine hafif kurulum):
-  ```bash
-  helm repo add argo https://argoproj.github.io/argo-helm
-  helm repo update
-  helm upgrade --install argocd argo/argo-cd \
-    --namespace argocd --create-namespace \
-    --set configs.params."server\.insecure"=true
-  ```
-  *(Not: `server.insecure=true` iç TLS'i kapatır, `port-forward` yaparken tarayıcıda sertifika uyarısı görmeden bağlanmanı sağlar.)*
-- İlk `admin` şifresini çekme:
-  `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo`
-- ArgoCD Web UI erişimi:
-  `kubectl port-forward svc/argocd-server -n argocd 8085:80` → Tarayıcıda **`http://localhost:8085`** (Kullanıcı: `admin`).
-
-**c) Çözüm Kanıtı:**
-```bash
-kubectl get nodes
-kubectl get pods -n argocd
-```
-- 2 adet `Ready` node ve tüm `argocd-*` podlarının `Running` olduğunu doğrula.
-
----
-
-### Bilet 21: ArgoCD `Application` Manifestosu, `values-aks.yaml` ve HPA Çakışma Koruması
-
-**a) Görev Tanımı:**
-- [argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml) dosyasındaki tüm `[Bilet 21]` `# TODO` kısımlarını doldur:
-  1. `source`: Reponun GitHub URL'si (`https://github.com/YusufKaya00/k8s-hands-on-labs.git`), `targetRevision: main`, `path: projects/devops-ec-project/helm/erasmus-connect`.
-  2. `source.helm.valueFiles`: `values.yaml` ve `values-aks.yaml` (`values-aks.yaml` sona yazılır ki AKS imaj tag'lerini ve `nip.io` hostlarını üzerine yazsın!).
-  3. `syncPolicy.automated`: `prune: true` ve `selfHeal: true`.
-  4. `ignoreDifferences`: `apps/Deployment` kaynaklarında `/spec/replicas` alanını yoksay (**KRİTİK:** HPA replika sayısını artırdığında ArgoCD'nin geri düşürmemesi için!).
-- **Secret Kuralı:** `erasmus-backend-secrets`, `erasmus-backend-config` ve `dockerhub-secret` yine Git'te değildir (kümede hazır durur).
-
-**b) İpucu ve Referans:**
-- Terminalde CRD şemasını incele:
-  `kubectl explain application.spec.source.helm`
-  `kubectl explain application.spec.syncPolicy.automated`
-  `kubectl explain application.spec.ignoreDifferences`
-- **Dikkat (Helm Release Devralma):** Daha önce `helm install erasmus ...` ile kurduğun nesneler zaten kümede duruyor. ArgoCD `Application` uyguladığında mevcut Deployment/Service'leri devralıp senkronlar (eğer eski bir sahipsiz kaynakla çakışırsa `kubectl get app -n argocd` / ArgoCD UI'dan hangi kaynağın `OutOfSync` olduğunu görebilirsin).
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `Application` CRD Yapısal Şeması</summary>
-
-`spec.source:` altında:
-```yaml
-    repoURL: https://github.com/YusufKaya00/k8s-hands-on-labs.git
-    targetRevision: main
-    path: projects/devops-ec-project/helm/erasmus-connect
-    helm:
-      valueFiles:
-        - values.yaml
-        - values-aks.yaml
-```
-`spec:` altında `syncPolicy:` ve `ignoreDifferences:`:
-```yaml
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-  ignoreDifferences:
-    - group: apps
-      kind: Deployment
-      jsonPointers:
-        - /spec/replicas
-```
-
-</details>
-
-**c) Çözüm Kanıtı (Canlı GitOps Testi!):**
-```bash
-# 1. Application manifestosunu kümede oluştur:
-kubectl apply -f ./argocd/erasmus-app.yaml
-kubectl get applications -n argocd
-
-# 2. Otomatik Sync testi:
-#    - Kümeden örneğin bir Service'i veya PDB'yi elle sil:
-kubectl delete pdb erasmus-erasmus-connect-express-pdb -n default
-#    - 10-15 saniye bekle ve geri geldiğini gör (selfHeal!):
-kubectl get pdb -n default
-
-# 3. Git Push testi:
-#    - values.yaml içinde küçük bir değişiklik (ör. hpa maxReplicas: 4 -> 5) yapıp GitHub'a pushla.
-#    - ArgoCD UI'da (http://localhost:8085) veya CLI'da birkaç dakika içinde otomatik Synced olduğunu gör!
-```
-
----
-
-## Faz 8: Azure Container Registry (ACR) ve Şifresiz İmaj Çekme (`AcrPull`)
-
-Bu fazda Docker Hub ve `dockerhub-secret` bağımlılığını kaldırıp Azure'un kendi özel registry'sini (**ACR**) kuracak, AKS'in imajları **Azure Managed Identity** ile şifresiz çekmesini sağlayacaksın.
-
----
-
-### Bilet 22: Terraform ile ACR Kurulumu ve `AcrPull` Rol Ataması (`acr.tf` & `outputs.tf`)
-
-**a) Görev Tanımı:**
-- [terraform/acr.tf](./terraform/acr.tf) dosyasındaki `[Bilet 22]` `# TODO` bloklarını doldur:
-  1. `azurerm_container_registry.erasmus`: `Basic` SKU, `admin_enabled = false`, global olarak benzersiz **tiresiz** bir isim (ör. `acrerasmusconnectysf01`).
-  2. `azurerm_role_assignment.aks_acr_pull`: AKS düğümlerinin (`kubelet_identity[0].object_id`) ACR üzerinde **`AcrPull`** yetkisi almasını sağla.
-- [terraform/outputs.tf](./terraform/outputs.tf) içine `acr_login_server` çıktısını ekle.
-- `terraform plan` ve `terraform apply` çalıştır.
-
-**b) İpucu ve Referans:**
-- Resmi dokümantasyon: `registry.terraform.io` üzerinde `azurerm_container_registry` ve `azurerm_role_assignment` sayfalarına bak.
-- **İsim Tuzağı:** ACR adında tire (`-`), alt çizgi (`_`) veya büyük harf **olamaz**; aksi halde Azure reddeder.
-- **Yetki Notu:** `azurerm_role_assignment` için Azure hesabının abonelikte `Owner` veya `User Access Administrator` yetkisine sahip olması gerekir (Azure for Students'ta varsayılan olarak açıktır).
-
-<details>
-<summary>🆘 Takılırsan Aç (Reveal): `acr.tf` Yapısal Şeması</summary>
-
-`azurerm_container_registry`:
-- `name = "<BENZERSIZ_KUCUK_HARF_RAKAM>"`
-- `resource_group_name = azurerm_resource_group.erasmus.name`
-- `location = azurerm_resource_group.erasmus.location`
-- `sku = "Basic"`
-- `admin_enabled = false`
-
-`azurerm_role_assignment`:
-- `principal_id = azurerm_kubernetes_cluster.erasmus.kubelet_identity[0].object_id`
-- `role_definition_name = "AcrPull"`
-- `scope = azurerm_container_registry.erasmus.id`
-- `skip_service_principal_aad_check = true`
-
-</details>
-
-**c) Çözüm Kanıtı:**
-```bash
-cd terraform
-terraform validate
-terraform plan -out=tfplan   # Mevcut AKS silinmeden sadece +2 yeni kaynak (ACR + Role Assignment) görmelisin!
-terraform apply tfplan
-terraform output acr_login_server
-```
-
----
-
-### Bilet 23: İmajları ACR'ye Pushlama ve `dockerhub-secret` Olmadan ArgoCD ile Yayınlama
-
-**a) Görev Tanımı:**
-- Mevcut `backend:latest`, `frontend:aks` ve `admin:aks` imajlarını ACR login server adınla (`<ACR_NAME>.azurecr.io/...`) etiketleyip ACR'ye pushla.
-- [values-aks.yaml](./helm/erasmus-connect/values-aks.yaml) içinde `express.image.repository`, `nextjs.image.repository` ve `admin.image.repository` adreslerini ACR adresine çevir.
-- [express-deployment.yaml](./helm/erasmus-connect/templates/express-deployment.yaml) içindeki `imagePullSecrets` (`dockerhub-secret`) bloğunu kaldır (artık `AcrPull` sayesinde şifre gerekmiyor!) ve `kubectl delete secret dockerhub-secret -n default` ile eski secret'ı sil.
-- Değişiklikleri GitHub'a pushla ve ArgoCD'nin imajları ACR'den şifresiz çekip podları ayağa kaldırdığını doğrula!
-
-**b) İpucu ve Referans:**
-- ACR'ye Docker girişi (`az login` açıkken şifre sormaz!):
-  `az acr login --name <ACR_ADIN>`
-- İmaj etiketleme ve pushlama kalıbı:
-  ```bash
-  ACR="<ACR_ADIN>.azurecr.io"
-  docker tag yusufk00/erasmus-connect-backend:latest  $ACR/erasmus-connect-backend:v1
-  docker tag yusufk00/erasmus-connect-frontend:aks    $ACR/erasmus-connect-frontend:v1
-  docker tag yusufk00/erasmus-connect-admin:aks       $ACR/erasmus-connect-admin:v1
-  docker push $ACR/erasmus-connect-backend:v1
-  docker push $ACR/erasmus-connect-frontend:v1
-  docker push $ACR/erasmus-connect-admin:v1
-  ```
-
-**c) Çözüm Kanıtı:**
-```bash
-# 1. ACR içindeki depoları listele:
-az acr repository list --name <ACR_ADIN> -o table
-
-# 2. Git push sonrası ArgoCD Synced + Podların ACR imajlarıyla Running olduğunu doğrula:
-kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .spec.containers[*]}{.image}{"\n"}{end}{end}'
-```
-- Pod imajlarının artık `*.azurecr.io/...:v1` olduğunu ve `dockerhub-secret` olmadan `1/1 Running` çalıştığını gör! *(Not: ACR Basic ~5$/ay yazar; işin bittiğinde `terraform destroy` ile temizlemeyi unutma.)*
-
----
-
-## Kontrol Listesi (Kendini Değerlendir)
-
-- [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
-- [ ] `express-deployment.yaml` ve `nextjs-deployment.yaml` podları `0.0.0.0` dinliyor ve `containerPort` ile Service `targetPort` eşleşiyor.
-- [ ] Redis `StatefulSet` ve `Headless Service` (`clusterIP: None`) kararlı DNS ile çalışıyor.
-- [ ] Tüm podların `requests` ve `limits` değerleri tek `Standard_B2s` node kapasitesine sığıyor.
-- [ ] Next.js podu Redis `6379` portuna ulaşamıyor (Calico engelliyor), sadece Express podu ulaşabiliyor.
-- [ ] Express `NetworkPolicy` kuralı **Post-DNAT** gerçekliğini (pod `containerPort` + Ingress `namespaceSelector`) doğru yansıtıyor.
-- [ ] `terraform destroy` veya `az aks stop` ile gereksiz bulut maliyeti önlendi.
+Kendi ortamında tüm fazları sıfırdan ayağa kaldırmak ve her adımın teknik açıklamasını görmek için **[SETUP-README.md](./SETUP-README.md)** rehberiyle devam et.
