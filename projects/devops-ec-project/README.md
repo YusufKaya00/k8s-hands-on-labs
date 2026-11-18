@@ -663,9 +663,105 @@ terraform validate
 kubectl get nodes
 kubectl get pods -A
 kubectl get ingress
-curl -i -H "Host: <DOMAIN>" http://<AKS_INGRESS_EXTERNAL_IP>/api/health
+curl -i -X POST -H "Host: <DOMAIN>" http://<AKS_INGRESS_EXTERNAL_IP>/api/v1/ping
 ```
 - AKS node'unun `Ready`, tüm Erasmus Connect podlarının `Running`, `curl` isteğinin ise `200 OK` döndüğünü doğrula.
+
+*(Elle `az aks get-credentials` ve tek tek `helm` komutları çalıştırmak yerine aşağıdaki **Faz 5 (Ansible)** ile bu adımların tamamını tek komutla otomatikleştirebilirsin!)*
+
+---
+
+## Faz 5: Ansible ile AKS Üzerine Otomatik Kurulum ve Helm Orkestrasyonu
+
+Terraform ile altyapıyı (AKS kümesini) kurduktan sonra, küme içindeki **NGINX Ingress Controller + Secret/ConfigMap + Erasmus Connect Helm Chart** kurulumunu tek bir idempotent `ansible-playbook` komutuyla otomatikleştireceksin. İlk kurulumu Ansible ile yapıp, sonraki uygulama güncellemelerini doğrudan `helm upgrade` (veya playbook'u tekrar koşarak) yöneteceksin.
+
+> [!NOTE]
+> **AKS'te Ansible Neden `localhost` Üzerinde Çalışır?**
+> RKE2/K3s lablarında Ansible VM'lere SSH atıp Kubernetes kuruyordu. **Azure AKS yönetilen (managed) bir Kubernetes servisi** olduğu için node'lara SSH atılmaz; Ansible senin bilgisayarında (`ansible_connection=local`) çalışır ve `az` + `kubectl` + `kubernetes.core.helm` modüllerini orkestre eder.
+
+---
+
+### Bilet 15: Ansible Envanteri, AKS Kubeconfig ve NGINX Ingress Kurulumu
+
+**a) Görev Tanımı:**
+- [ansible.cfg](./ansible/ansible.cfg) ve [inventory.ini](./ansible/inventory.ini) dosyalarını incele (`localhost ansible_connection=local` yapısını anla).
+- [playbook.yml](./ansible/playbook.yml) içindeki `vars:` bölümünde `resource_group` ve `cluster_name` (`[Bilet 15]`) değişkenlerini doldur.
+- [playbook.yml](./ansible/playbook.yml) içindeki **ADIM 1, 2 ve 3** `# TODO` görevlerini yaz:
+  1. `az aks get-credentials` ile AKS kubeconfig'i al.
+  2. `kubernetes.core.helm_repository` ile `ingress-nginx` Helm deposunu ekle.
+  3. `kubernetes.core.helm` ile `ingress-nginx` controller'ını `ingress-nginx` namespace'ine kur (`wait: true`).
+
+**b) İpucu ve Referans:**
+- Terminalde modül dokümantasyonunu oku:
+  `ansible-doc kubernetes.core.helm_repository`
+  `ansible-doc kubernetes.core.helm`
+- **Idempotency (Tekrar Çalıştırılabilirlik):** Playbook'u 2. kez çalıştırdığında hata vermemeli; `kubernetes.core.helm` zaten `helm upgrade --install` gibi çalışır ve kurulu release'i günceller.
+- `az aks get-credentials` komutuna `--overwrite-existing` eklemezsen ikinci çalıştırmada `y/n` sorusu sorup Ansible'ı kilitler!
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): Bilet 15 Ansible Görev Şeması</summary>
+
+`tasks:` altında her görev `- name: ...` ile başlar:
+- ADIM 1 (`ansible.builtin.command`):
+  `cmd: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing`
+  `changed_when: false`
+- ADIM 2 (`kubernetes.core.helm_repository`):
+  `name: ingress-nginx`
+  `repo_url: https://kubernetes.github.io/ingress-nginx`
+- ADIM 3 (`kubernetes.core.helm`):
+  `name: ingress-nginx`, `chart_ref: ingress-nginx/ingress-nginx`, `release_namespace: ingress-nginx`, `create_namespace: true`, `wait: true`
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+cd ansible
+ansible-playbook --syntax-check playbook.yml
+ansible-playbook playbook.yml
+kubectl get pods -n ingress-nginx
+```
+- `ingress-nginx-controller` podunun AKS üzerinde `1/1 Running` olduğunu doğrula.
+
+---
+
+### Bilet 16: Secret/ConfigMap Yükleme, Helm Deploy ve Sonraki Güncellemeler
+
+**a) Görev Tanımı:**
+- [playbook.yml](./ansible/playbook.yml) içindeki **ADIM 4, 5 ve 6** `# TODO` görevlerini doldur:
+  - **ADIM 4:** `../.env.backend-secrets` ve `../.env.backend-config` dosyalarından `erasmus-backend-secrets` ile `erasmus-backend-config` nesnelerini idempotent şekilde (`--dry-run=client -o yaml | kubectl apply -f -`) oluştur. *(Private Docker Hub imajı kullanıyorsan `dockerhub-secret` oluşturma adımını da ekle!)*
+  - **ADIM 5:** `kubernetes.core.helm` modülü ile `../helm/erasmus-connect` chart'ını AKS'e kur (`wait: true`).
+  - **ADIM 6:** `ingress-nginx-controller` Service'inin Azure LoadBalancer External IP'sini çekip `ansible.builtin.debug` ile ekrana yazdır.
+- **Dikkat (AKS İmaj ve Domain Farkı):** Minikube'daki `yusufk00/erasmus-connect-frontend:local` imajı sadece Minikube içindeydi! AKS'te kullanmak için ya canlı domain ile build alıp registry'ye (Docker Hub / ACR) pushla ya da `values` override'ı ile registry tag'ini ver (`kubernetes.core.helm` modülünün `values:` parametresiyle).
+
+**b) İpucu ve Referans:**
+- `ansible-doc kubernetes.core.helm` içinde `values:` (dictionary) parametresine bak — sadece AKS'e özel değişen değerleri (`nextjs.image.tag`, `ingress.host` gibi) doğrudan playbook üzerinden override edebilirsin.
+- **Sonraki Güncelleme İş Akışı (Day-2 Operations):**
+  - Altyapı bir kez Ansible ile kurulduktan sonra, uygulama kodunda/Helm chart'ında bir değişiklik yaptığında ister `helm upgrade erasmus ./helm/erasmus-connect` ile doğrudan güncelle, ister `ansible-playbook playbook.yml` komutunu tekrar çalıştır — ikisi de aynı Helm release'ini günceller!
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): ADIM 4 & 5 Görev Şeması</summary>
+
+- ADIM 4 (`ansible.builtin.shell`):
+  `kubectl create secret generic erasmus-backend-secrets --from-env-file=../.env.backend-secrets --dry-run=client -o yaml | kubectl apply -f -`
+  *(Aynısını `configmap` ve `../.env.backend-config` için de yaz.)*
+- ADIM 5 (`kubernetes.core.helm`):
+  `name: "{{ release_name }}"`
+  `chart_ref: "{{ chart_path }}"`
+  `release_namespace: "{{ app_namespace }}"`
+  `wait: true`
+  *(İstersen altına `values:` ekleyip `ingress: { host: "<CANLI_DOMAIN_VEYA_NIP_IO>" }` geçebilirsin.)*
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+cd ansible
+ansible-playbook --syntax-check playbook.yml
+ansible-playbook playbook.yml
+helm list -A
+kubectl get pods,svc,ingress -n default
+```
+- `helm list -A` çıktısında hem `ingress-nginx` hem `erasmus` release'lerinin `deployed` olduğunu ve Ingress External IP'sinin alındığını doğrula.
 
 ---
 
