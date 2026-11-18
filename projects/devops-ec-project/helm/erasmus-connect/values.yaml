@@ -23,7 +23,11 @@ express:
       cpu: 300m
       memory: 512Mi
   hpa:
-    enabled: false
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 60
     # TODO: [Bilet 17] Express HPA için minReplicas (ör. 2), maxReplicas (ör. 4) ve targetCPUUtilizationPercentage (ör. 60) tanımla; sonra enabled: true yap
   
 
