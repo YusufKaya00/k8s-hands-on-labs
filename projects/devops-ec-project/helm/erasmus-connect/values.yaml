@@ -79,11 +79,31 @@ redis:
     initialDelaySeconds: 15
     periodSeconds: 10
 
+admin:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: "yusufk00/erasmus-connect-admin"
+    tag: "aks"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  containerPort: 80
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
 
 ingress:
   enabled: true
   ingressClassName: nginx
   host: erasmus.local
+  adminHost: admin.erasmus.local
 
 
 envFrom:
