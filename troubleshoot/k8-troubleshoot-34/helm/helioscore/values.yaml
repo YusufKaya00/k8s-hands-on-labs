@@ -124,9 +124,9 @@ workerEngine:
   port: 8088
   warmupSeconds: "8"
   livenessProbe:
-    initialDelaySeconds: 2
-    periodSeconds: 2
-    failureThreshold: 2
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 10
   resources:
     requests:
       cpu: 30m
