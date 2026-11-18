@@ -160,11 +160,11 @@ archiveWorker:
     pullPolicy: IfNotPresent
   port: 8090
   storage:
-    storageClassName: "helios-local"
+    storageClassName: "managed-csi"
     pvName: "archive-pv"
     pvSize: "2Gi"
     pvcName: "archive-pvc"
-    pvcSize: "5Gi"
+    pvcSize: "1Gi"
   resources:
     requests:
       cpu: 30m
