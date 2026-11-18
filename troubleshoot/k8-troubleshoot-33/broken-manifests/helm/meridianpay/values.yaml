@@ -1,0 +1,271 @@
+global:
+  ingressHost: ""
+  domain: meridianpay.local
+  environment: production
+
+namespaces:
+  edge: meridian-edge
+  core: meridian-core
+  data: meridian-data
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  paymentsIngressClassName: "external-lb"
+
+edgeProxy:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+  port: 80
+  reportsReadTimeout: "1s"
+  resources:
+    requests:
+      cpu: 40m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+
+paymentsApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8081
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+riskGateway:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8082
+  networkPolicy:
+    ingress:
+      - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: meridian-edge
+            podSelector:
+              matchLabels:
+                app: edge-proxy
+        ports:
+          - protocol: TCP
+            port: 8082
+    egressRules:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: meridian-data
+            podSelector:
+              matchLabels:
+                app: risk-engine
+        ports:
+          - protocol: TCP
+            port: 8082
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+riskEngine:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8082
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+fxService:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8083
+  containerPortName: "http-api"
+  service:
+    port: 8083
+    targetPort: "grpc-web"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+slowReporter:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8084
+  delaySeconds: "2.5"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+billingApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8085
+  configVaultUrl: "http://vault-core.meridian-data.svc.cluster.local:8086/verify"
+  overrideVaultUrl: "http://vault-core:8086/verify"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+vaultCore:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8086
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+fraudChecker:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8087
+  allocMb: 32
+  resources:
+    requests:
+      cpu: 30m
+      memory: 16Mi
+    limits:
+      cpu: 150m
+      memory: 24Mi
+
+invoiceArchiver:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8088
+  storage:
+    pvcName: "invoice-archive-pvc"
+    storageClassName: "managed-csi"
+    accessMode: "ReadWriteMany"
+    size: "1Gi"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+auditCollector:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8089
+  rbacServiceAccountName: "audit-collector-sa"
+  serviceAccountName: ""
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+dataQuota:
+  enabled: true
+  requestsMemory: "256Mi"
+  limitsMemory: "512Mi"
+  pods: "10"
+
+sessionApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8090
+  resources:
+    requests:
+      cpu: 30m
+      memory: "512Mi"
+    limits:
+      cpu: 150m
+      memory: "512Mi"
+
+cacheDb:
+  replicas: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 6379
+  headlessServiceName: "cache-headless"
+  statefulSetServiceName: "cache-internal"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+cacheProxy:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8091
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
