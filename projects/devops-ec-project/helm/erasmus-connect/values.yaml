@@ -22,6 +22,9 @@ express:
     limits:
       cpu: 300m
       memory: 512Mi
+  hpa:
+    enabled: false
+    # TODO: [Bilet 17] Express HPA için minReplicas (ör. 2), maxReplicas (ör. 4) ve targetCPUUtilizationPercentage (ör. 60) tanımla; sonra enabled: true yap
   
 
 nextjs:
@@ -109,3 +112,7 @@ ingress:
 envFrom:
   backendSecretName: "erasmus-backend-secrets"
   backendConfigMapName: "erasmus-backend-config"
+
+pdb:
+  enabled: false
+  # TODO: [Bilet 18] Express ve Next.js için minAvailable (ör. 1 - sadece replica >= 2 iken!) değerini tanımlayıp enabled: true yap
