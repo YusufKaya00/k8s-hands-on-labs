@@ -17,8 +17,8 @@ express:
   healthPath: /health
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 50m
+      memory: 128Mi
     limits:
       cpu: 300m
       memory: 512Mi
@@ -39,8 +39,8 @@ nextjs:
   containerPort: 3000
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 50m
+      memory: 128Mi
     limits:
       cpu: 300m
       memory: 512Mi
