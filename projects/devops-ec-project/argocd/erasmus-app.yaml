@@ -1,0 +1,26 @@
+# ==============================================================================
+# ArgoCD Application Manifestosu (GitOps İskeleti)
+# Referans: kubectl explain application.spec (ArgoCD kurulduktan sonra)
+# ==============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: erasmus-connect
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # TODO: [Bilet 21] `repoURL` (https://github.com/YusufKaya00/k8s-hands-on-labs.git),
+    #   `targetRevision` (main) ve `path` (projects/devops-ec-project/helm/erasmus-connect) alanlarını yaz
+    helm:
+      # TODO: [Bilet 21] `valueFiles` listesini ekle ve sırasıyla `values.yaml` ile `values-aks.yaml` dosyalarını bağla!
+      #   (Böylece ArgoCD :aks tag'lerini ve nip.io hostlarını uygular, :local ile ezmez.)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  # TODO: [Bilet 21] `syncPolicy.automated` bloğunu ekle:
+  #   - `prune: true` (Git'ten sildiğin kaynakları kümeden de silsin)
+  #   - `selfHeal: true` (Kümeden elle değiştirilen/silinen kaynakları Git'teki haline geri çevirsin)
+  # TODO: [Bilet 21] `ignoreDifferences` bloğunu ekle (KRİTİK - HPA Çakışması!):
+  #   - group: apps, kind: Deployment için `/spec/replicas` alanını yoksay
+  #   - Neden? HPA replika sayısını 2 -> 4 yaptığında ArgoCD'nin bunu tekrar 1'e düşürmemesi için!
