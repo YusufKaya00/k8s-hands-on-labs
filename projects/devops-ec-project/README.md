@@ -1,5 +1,7 @@
 # Erasmus Connect — Cloud-Native Kubernetes, IaC & GitOps Mimarisi
 
+🇹🇷 Türkçe (aşağıda) · 🇬🇧 [English version](#english-version)
+
 > **Adım Adım Kurulum & Lab Rehberi:** Projeyi sıfırdan Minikube üzerinde kurmak, Azure AKS + ACR + ArgoCD + Chaos Mesh adımlarını tek tek uygulamak ve gerçek ortamda karşılaşılan hata çözümlerini görmek için **[SETUP-README.md](./SETUP-README.md)** dosyasını takip et.
 
 **Erasmus Connect**, tam yığın bir web platformunun (**Next.js** kullanıcı arayüzü, **Vite/Nginx** yönetim paneli, **Express** backend API ve **Redis** oturum/önbellek katmanı) yerel Kubernetes (Minikube + Calico) ortamından **Azure AKS** üzerine üretime hazır (production-grade) taşınmasını, **Terraform** ile altyapı kodlamasını, **Ansible** ile bootstrap edilmesini, **Chaos Mesh / HPA / PDB** ile dayanıklılık doğrulamasını ve **ArgoCD + Azure Container Registry (`AcrPull`)** ile şifresiz GitOps dağıtımını kapsayan uçtan uca bir DevOps / SRE projesidir.
@@ -163,3 +165,80 @@ curl -i -X POST "http://${INGRESS_IP}.nip.io/api/v1/ping"
 ## 6. Sıfırdan Kurulum
 
 Kendi ortamında tüm fazları sıfırdan ayağa kaldırmak ve her adımın teknik açıklamasını görmek için **[SETUP-README.md](./SETUP-README.md)** rehberiyle devam et.
+
+---
+
+<a id="english-version"></a>
+
+# 🇬🇧 English Version
+
+> **Step-by-step setup & lab guide:** to build the project from scratch on Minikube, then Azure AKS + ACR + ArgoCD + Chaos Mesh, and to see real-world troubleshooting notes, follow **[SETUP-README.md](./SETUP-README.md)** (written in Turkish).
+
+**Erasmus Connect** is an end-to-end DevOps / SRE project that moves a full-stack web platform (**Next.js** frontend, **Vite/Nginx** admin panel, **Express** backend API, **Redis** session/cache layer) from a local Kubernetes (Minikube + Calico) environment to **Azure AKS**. It covers infrastructure as code with **Terraform**, bootstrap automation with **Ansible**, resilience validation with **Chaos Mesh / HPA / PDB**, and secret-less GitOps delivery with **ArgoCD + Azure Container Registry (`AcrPull`)**.
+
+## 1. End-to-End Flow (What We Did)
+
+1. **Containers & Helm (Phases 1–2):** Express, Next.js, the Admin panel (`nginx:alpine`) and Redis (`StatefulSet` + headless Service) live in one [Helm chart](./helm/erasmus-connect/Chart.yaml). Sensitive values come from Git-ignored `.env` files via `envFrom` (`Secret` + `ConfigMap`); `requests`/`limits` and readiness/liveness probes were added.
+2. **Ingress & Zero-Trust Networking (Phase 3):** host/path routing through `ingress-nginx` (`/`, `/api`, `admin.*`). Under Calico, **Post-DNAT NetworkPolicies** block unauthorized access to Redis and restrict Express to Ingress and Next.js on port `4000`.
+3. **IaC & Automation (Phases 4–5):** **Terraform** ([terraform/](./terraform/main.tf)) provisions a Calico-enabled AKS cluster (`aks-erasmus-connect-dev`, `Standard_B2s`) in `DenmarkEast`; **Ansible** ([ansible/playbook.yml](./ansible/playbook.yml)) fetches kubeconfig, installs NGINX Ingress with the Azure LB `/healthz` probe annotation, loads Secrets/ConfigMaps and deploys via Helm.
+4. **High Availability & Chaos (Phase 6):** CPU-based **HPA** for Express and Next.js (`min: 2`, `max: 4` @ 60%), a **PodDisruptionBudget**, and **Chaos Mesh** experiments ([chaos/](./chaos/01-pod-kill-express.yaml)): pod kill, Redis network delay, CPU stress.
+5. **Scaling & ArgoCD GitOps (Phase 7):** `node_count` raised `1 -> 2` in place to get past Azure CNI's 30-pods-per-node limit. **ArgoCD** ([argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml)) runs with `prune: true` and `selfHeal: true`; `ignoreDifferences` on `/spec/replicas` keeps it from reverting HPA scaling.
+6. **Secret-less ACR (Phase 8):** the Docker Hub PAT (`dockerhub-secret`) dependency was removed. Terraform ([terraform/acr.tf](./terraform/acr.tf)) creates the registry (`erasmusconnectv1.azurecr.io`, `Basic`, `admin_enabled = false`) and grants the AKS `kubelet_identity` the **`AcrPull`** role, so `:v1` images are pulled without credentials.
+
+## 2. Architecture
+
+The runtime traffic flow and the build → IaC → GitOps lifecycle diagrams are in the Turkish section above (section 2). In short:
+
+`User -> Azure LoadBalancer (/healthz probe) -> NGINX Ingress -> { Next.js (/), Express (/api), Admin (admin.*) } -> Redis (only Express allowed via Calico) / external MongoDB Atlas & Supabase`
+
+`Terraform (AKS + ACR + AcrPull) -> Ansible (bootstrap) · Docker build -> ACR · Git push -> ArgoCD -> AKS`
+
+## 3. Repository Layout
+
+| Path | Purpose |
+| :--- | :--- |
+| `README.md` / `SETUP-README.md` | Overview & flow / step-by-step setup guide (8 phases, 23 tickets) |
+| `.env.example`, `.gitignore` | Env template; `.env.*`, `terraform.tfvars` and state files stay out of Git |
+| `helm/erasmus-connect/` | App chart: `values.yaml`, `values-aks.yaml` (ACR images + nip.io hosts) and `templates/` (Deployments, Services, Redis StatefulSet, Ingress, NetworkPolicies, HPAs, PDB) |
+| `terraform/` | `versions.tf` (`azurerm ~> 4.0`), `variables.tf`, `main.tf` (AKS), `acr.tf` (ACR + `AcrPull`), `outputs.tf`, `terraform.tfvars.example` |
+| `ansible/` | `ansible.cfg`, `inventory.ini`, `playbook.yml` (cluster bootstrap) |
+| `argocd/` | `erasmus-app.yaml` (ArgoCD Application) |
+| `chaos/` | Three Chaos Mesh experiments (pod kill, network delay, CPU stress) |
+
+## 4. Key Engineering Decisions
+
+| Topic | Decision | Rationale |
+| :--- | :--- | :--- |
+| **Post-DNAT NetworkPolicy** | Rules target the pod `containerPort` (`4000`), not the Service port (`8080`), and use a `namespaceSelector` for Ingress. | Calico evaluates rules after kube-proxy DNAT; Ingress traffic originates in the `ingress-nginx` namespace. |
+| **Build-time vs run-time env** | `NEXT_PUBLIC_*` and `VITE_BACKEND_URL` are baked in via `--build-arg`; DB/JWT secrets are injected at runtime via `Secret`. | Client JS bundles are compiled at build time; changing pod env does not change them. |
+| **Azure LB health probe** | `azure-load-balancer-health-probe-request-path: "/healthz"` on the ingress-nginx Service. | Azure probes `/` without a `Host` header, NGINX returns `404`, and external traffic times out. |
+| **GitOps vs HPA** | `ignoreDifferences` on `/spec/replicas`. | With `selfHeal: true`, ArgoCD would otherwise reset HPA-scaled replicas. |
+| **Node capacity** | `node_count` `1 -> 2`. | Azure CNI defaults to 30 pods per node. |
+| **Secret-less ACR** | `AcrPull` for `kubelet_identity`; `dockerhub-secret` removed. | No registry credentials to manage (`admin_enabled = false`). |
+| **Release ownership** | `helm uninstall erasmus` before ArgoCD takes over. | Two releases owning the same Ingress host/path trip the NGINX admission webhook. |
+
+## 5. Quick Operations
+
+```bash
+# Stop / start the cluster to save credits
+az aks stop  --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
+az aks start --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
+
+# ArgoCD UI at http://localhost:8085
+kubectl port-forward svc/argocd-server -n argocd 8085:80
+
+# Verify rendered images
+helm template erasmus ./helm/erasmus-connect \
+  -f ./helm/erasmus-connect/values.yaml \
+  -f ./helm/erasmus-connect/values-aks.yaml | grep "image:"
+
+# Live endpoint checks
+INGRESS_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+curl -i "http://${INGRESS_IP}.nip.io/"
+curl -i "http://admin.${INGRESS_IP}.nip.io/"
+curl -i -X POST "http://${INGRESS_IP}.nip.io/api/v1/ping"
+```
+
+## 6. Setup From Scratch
+
+Continue with **[SETUP-README.md](./SETUP-README.md)** for the full step-by-step guide.
