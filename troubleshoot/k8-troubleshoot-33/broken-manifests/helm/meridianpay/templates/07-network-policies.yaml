@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: risk-gateway-netpol
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: risk-gateway
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  podSelector:
+    matchLabels:
+      app: risk-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    {{- toYaml .Values.riskGateway.networkPolicy.ingress | nindent 4 }}
+  egress:
+    {{- toYaml .Values.riskGateway.networkPolicy.egressRules | nindent 4 }}

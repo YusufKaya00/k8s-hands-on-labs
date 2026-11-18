@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-config
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: billing-api
+    app.kubernetes.io/part-of: meridianpay
+data:
+  VAULT_URL: {{ .Values.billingApi.configVaultUrl | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-proxy-conf
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: edge-proxy
+    app.kubernetes.io/part-of: meridianpay
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /var/log/nginx/error.log warn;
+    pid /tmp/nginx.pid;
+
+    events {
+      worker_connections 512;
+    }
+
+    http {
+      proxy_temp_path /tmp/proxy_temp;
+      client_body_temp_path /tmp/client_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+
+      resolver kube-dns.kube-system.svc.cluster.local valid=5s ipv6=off;
+
+      server {
+        listen {{ .Values.edgeProxy.port }};
+        server_name _;
+
+        location /healthz {
+          access_log off;
+          default_type application/json;
+          return 200 '{"service":"edge-proxy","status":"ok","version":"16.0.0"}\n';
+        }
+
+        location /api/payments {
+          set $up_payments "payments-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.paymentsApi.port }}";
+          proxy_pass http://$up_payments;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 3s;
+        }
+
+        location /api/risk {
+          set $up_risk "risk-gateway.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.riskGateway.port }}";
+          proxy_pass http://$up_risk;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 6s;
+        }
+
+        location /api/fx {
+          set $up_fx "fx-service.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.fxService.service.port }}";
+          proxy_pass http://$up_fx;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 3s;
+        }
+
+        location /api/reports {
+          set $up_reports "slow-reporter.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.slowReporter.port }}";
+          proxy_pass http://$up_reports;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout {{ .Values.edgeProxy.reportsReadTimeout }};
+        }
+
+        location /api/billing {
+          set $up_billing "billing-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.billingApi.port }}";
+          proxy_pass http://$up_billing;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 4s;
+        }
+
+        location /api/fraud {
+          set $up_fraud "fraud-checker.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.fraudChecker.port }}";
+          proxy_pass http://$up_fraud;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 3s;
+        }
+
+        location /api/invoices {
+          set $up_invoices "invoice-archiver.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.invoiceArchiver.port }}";
+          proxy_pass http://$up_invoices;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 3s;
+        }
+
+        location /api/audit {
+          set $up_audit "audit-collector.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.auditCollector.port }}";
+          proxy_pass http://$up_audit;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 3s;
+        }
+
+        location /api/session {
+          set $up_session "session-api.{{ .Values.namespaces.data }}.svc.cluster.local:{{ .Values.sessionApi.port }}";
+          proxy_pass http://$up_session;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 3s;
+        }
+
+        location /api/cache {
+          set $up_cache "cache-proxy.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.cacheProxy.port }}";
+          proxy_pass http://$up_cache;
+          proxy_http_version 1.1;
+          proxy_connect_timeout 2s;
+          proxy_read_timeout 4s;
+        }
+      }
+    }

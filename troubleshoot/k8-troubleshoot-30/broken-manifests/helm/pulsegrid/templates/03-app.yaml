@@ -1,0 +1,466 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: gateway-api
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  replicas: {{ .Values.gatewayApi.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway-api
+        app.kubernetes.io/part-of: pulsegrid
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: gateway-api
+          image: "{{ .Values.gatewayApi.image.repository }}:{{ .Values.gatewayApi.image.tag }}"
+          imagePullPolicy: {{ .Values.gatewayApi.image.pullPolicy }}
+          env:
+            - name: VAULT_HOST
+              value: {{ .Values.gatewayApi.vaultHost | quote }}
+            - name: STORE_NS
+              value: {{ .Values.namespaces.store | quote }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import os
+              import socket
+              import socketserver
+              import urllib.error
+              import urllib.request
+
+              STORE_NS = os.environ["STORE_NS"]
+              VAULT_HOST = os.environ["VAULT_HOST"]
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              def fetch_upstream(url, timeout=1.2):
+                  try:
+                      with urllib.request.urlopen(url, timeout=timeout) as resp:
+                          return resp.status, resp.read().decode("utf-8")
+                  except urllib.error.HTTPError as e:
+                      return e.code, e.read().decode("utf-8")
+                  except urllib.error.URLError as e:
+                      if isinstance(e.reason, (socket.timeout, TimeoutError)):
+                          return 504, json.dumps({"error": "upstream timeout", "target": url, "detail": str(e.reason)})
+                      return 502, json.dumps({"error": "upstream unreachable", "target": url, "detail": str(e.reason)})
+                  except (socket.timeout, TimeoutError) as e:
+                      return 504, json.dumps({"error": "upstream timeout", "target": url, "detail": str(e)})
+                  except Exception as e:
+                      return 502, json.dumps({"error": "upstream error", "target": url, "detail": str(e)})
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def _send(self, code, body):
+                      data = body.encode("utf-8") if isinstance(body, str) else body
+                      try:
+                          self.send_response(code)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(data)))
+                          self.end_headers()
+                          self.wfile.write(data)
+                      except BrokenPipeError:
+                          pass
+
+                  def do_GET(self):
+                      path = self.path.split("?")[0]
+                      if path in ("/", "/api/v1/health"):
+                          self._send(200, json.dumps({"status": "ok", "service": "gateway-api"}))
+                      elif path == "/orders/status":
+                          self._send(200, json.dumps({"status": "orders-ok", "service": "gateway-api"}))
+                      elif path == "/admin/info":
+                          self._send(200, json.dumps({"status": "admin-ok", "service": "gateway-api"}))
+                      elif path == "/billing/summary":
+                          self._send(200, json.dumps({"status": "billing-ok", "service": "gateway-api"}))
+                      elif path == "/api/v1/metrics":
+                          code, body = fetch_upstream("http://metrics-agent:8081/metrics", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/auth":
+                          code, body = fetch_upstream("http://auth-engine:8082/auth", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/worker":
+                          code, body = fetch_upstream("http://worker-service:8083/run", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/ledger":
+                          code, body = fetch_upstream(f"http://ledger-store.{STORE_NS}.svc.cluster.local:8084/ledger", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/vault":
+                          code, body = fetch_upstream(f"http://{VAULT_HOST}:8085/status", timeout=1.2)
+                          self._send(code, body)
+                      elif path == "/api/v1/archive":
+                          code, body = fetch_upstream(f"http://archive-service.{STORE_NS}.svc.cluster.local:8086/archive", timeout=1.2)
+                          self._send(code, body)
+                      else:
+                          self._send(404, json.dumps({"error": "not found", "received_path": path}))
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.gatewayApi.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.gatewayApi.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.gatewayApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: gateway-api
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  type: {{ .Values.gatewayApi.service.type }}
+  selector:
+    app.kubernetes.io/name: gateway-api
+  ports:
+    - name: http
+      port: {{ .Values.gatewayApi.service.port }}
+      targetPort: {{ .Values.gatewayApi.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-agent
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: metrics-agent
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  replicas: {{ .Values.metricsAgent.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: metrics-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: metrics-agent
+        app.kubernetes.io/part-of: pulsegrid
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: metrics-agent
+          image: "{{ .Values.metricsAgent.image.repository }}:{{ .Values.metricsAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.metricsAgent.image.pullPolicy }}
+          env:
+            - name: BIND_ADDRESS
+              value: {{ .Values.metricsAgent.bindAddress | quote }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import os
+              import socketserver
+
+              BIND_ADDR = os.environ["BIND_ADDRESS"]
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "metrics-agent", "cpu_pct": 18}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer((BIND_ADDR, {{ .Values.metricsAgent.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.metricsAgent.containerPort }}
+          readinessProbe:
+            exec:
+              command:
+                - wget
+                - -qO-
+                - -T
+                - "2"
+                - "http://127.0.0.1:{{ .Values.metricsAgent.containerPort }}/metrics"
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - wget
+                - -qO-
+                - -T
+                - "2"
+                - "http://127.0.0.1:{{ .Values.metricsAgent.containerPort }}/metrics"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.metricsAgent.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-agent
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: metrics-agent
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  type: {{ .Values.metricsAgent.service.type }}
+  selector:
+    app.kubernetes.io/name: metrics-agent
+  ports:
+    - name: http
+      port: {{ .Values.metricsAgent.service.port }}
+      targetPort: {{ .Values.metricsAgent.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-engine
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: auth-engine
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  replicas: {{ .Values.authEngine.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-engine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: auth-engine
+        app.kubernetes.io/part-of: pulsegrid
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: auth-engine
+          image: "{{ .Values.authEngine.image.repository }}:{{ .Values.authEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.authEngine.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import socketserver
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "auth-engine", "authenticated": True}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.authEngine.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.authEngine.containerPort }}
+          readinessProbe:
+            exec:
+              command:
+                - wget
+                - -qO-
+                - -T
+                - "2"
+                - "http://127.0.0.1:{{ .Values.authEngine.containerPort }}/auth"
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - wget
+                - -qO-
+                - -T
+                - "2"
+                - "http://127.0.0.1:{{ .Values.authEngine.containerPort }}/auth"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.authEngine.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-engine
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: auth-engine
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  type: {{ .Values.authEngine.service.type }}
+  selector:
+    app.kubernetes.io/name: auth-engine
+  ports:
+    - name: http
+      port: {{ .Values.authEngine.service.port }}
+      targetPort: {{ .Values.authEngine.service.targetPort }}
+{{- if .Values.authEngine.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-netpol
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: auth-engine
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: auth-engine
+  policyTypes:
+    - Ingress
+{{- if .Values.authEngine.networkPolicy.ingressRules }}
+  ingress:
+    {{- toYaml .Values.authEngine.networkPolicy.ingressRules | nindent 4 }}
+{{- else }}
+  ingress: []
+{{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: worker-service
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  replicas: {{ .Values.workerService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-service
+        app.kubernetes.io/part-of: pulsegrid
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: worker-service
+          image: "{{ .Values.workerService.image.repository }}:{{ .Values.workerService.image.tag }}"
+          imagePullPolicy: {{ .Values.workerService.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server
+              import json
+              import socketserver
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "worker-service", "job": "completed"}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.workerService.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: {{ .Values.workerService.containerPortName }}
+              containerPort: {{ .Values.workerService.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /run
+              port: {{ .Values.workerService.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /run
+              port: {{ .Values.workerService.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.workerService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: worker-service
+    app.kubernetes.io/part-of: pulsegrid
+spec:
+  type: {{ .Values.workerService.service.type }}
+  selector:
+    app.kubernetes.io/name: worker-service
+  ports:
+    - name: http
+      port: {{ .Values.workerService.service.port }}
+      targetPort: {{ .Values.workerService.service.targetPort }}

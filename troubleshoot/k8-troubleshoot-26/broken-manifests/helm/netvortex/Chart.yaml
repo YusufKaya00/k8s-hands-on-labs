@@ -1,0 +1,9 @@
+apiVersion: v2
+name: netvortex
+description: NetVortex v9.0 — High-Throughput Financial Routing Mesh
+type: application
+version: 9.0.0
+appVersion: "9.0.0"
+maintainers:
+  - name: Core Architecture Team
+    email: netvortex-arch@internal.netvortex.io

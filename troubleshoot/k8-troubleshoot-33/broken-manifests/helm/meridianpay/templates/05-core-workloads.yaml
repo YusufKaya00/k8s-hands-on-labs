@@ -1,0 +1,799 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: payments-api
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: payments-api
+  ports:
+    - name: http
+      port: {{ .Values.paymentsApi.port }}
+      targetPort: {{ .Values.paymentsApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: payments-api
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.paymentsApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: payments-api
+  template:
+    metadata:
+      labels:
+        app: payments-api
+    spec:
+      containers:
+        - name: payments-api
+          image: "{{ .Values.paymentsApi.image.repository }}:{{ .Values.paymentsApi.image.tag }}"
+          imagePullPolicy: {{ .Values.paymentsApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.paymentsApi.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/payments/summary", "/healthz"):
+                          body = json.dumps({"service": "payments-api", "daily_volume": 12450, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.paymentsApi.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.paymentsApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.paymentsApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-gateway
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: risk-gateway
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: risk-gateway
+  ports:
+    - name: http
+      port: {{ .Values.riskGateway.port }}
+      targetPort: {{ .Values.riskGateway.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-gateway
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: risk-gateway
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.riskGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: risk-gateway
+  template:
+    metadata:
+      labels:
+        app: risk-gateway
+    spec:
+      dnsConfig:
+        options:
+          - name: timeout
+            value: "1"
+          - name: attempts
+            value: "1"
+      containers:
+        - name: risk-gateway
+          image: "{{ .Values.riskGateway.image.repository }}:{{ .Values.riskGateway.image.tag }}"
+          imagePullPolicy: {{ .Values.riskGateway.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.riskGateway.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, urllib.request
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              TARGET = "http://risk-engine.{{ .Values.namespaces.data }}.svc.cluster.local:{{ .Values.riskEngine.port }}/score"
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          body = b'{"status":"ok"}\n'
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      elif self.path == "/api/risk/score":
+                          try:
+                              with urllib.request.urlopen(TARGET, timeout=2) as resp:
+                                  upstream = json.loads(resp.read().decode())
+                              body = json.dumps({"service": "risk-gateway", "upstream": upstream, "status": "ok"}).encode()
+                              self.send_response(200)
+                          except Exception as e:
+                              body = json.dumps({"service": "risk-gateway", "error": str(e), "target": TARGET}).encode()
+                              self.send_response(502)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.riskGateway.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.riskGateway.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.riskGateway.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fx-service
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: fx-service
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: fx-service
+  ports:
+    - name: http
+      port: {{ .Values.fxService.service.port }}
+      targetPort: {{ .Values.fxService.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fx-service
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: fx-service
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.fxService.replicaCount }}
+  selector:
+    matchLabels:
+      app: fx-service
+  template:
+    metadata:
+      labels:
+        app: fx-service
+    spec:
+      containers:
+        - name: fx-service
+          image: "{{ .Values.fxService.image.repository }}:{{ .Values.fxService.image.tag }}"
+          imagePullPolicy: {{ .Values.fxService.image.pullPolicy }}
+          ports:
+            - name: {{ .Values.fxService.containerPortName }}
+              containerPort: {{ .Values.fxService.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/fx/rates", "/healthz"):
+                          body = json.dumps({"service": "fx-service", "EUR_USD": 1.09, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.fxService.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.fxService.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.fxService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: slow-reporter
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: slow-reporter
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: slow-reporter
+  ports:
+    - name: http
+      port: {{ .Values.slowReporter.port }}
+      targetPort: {{ .Values.slowReporter.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slow-reporter
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: slow-reporter
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.slowReporter.replicaCount }}
+  selector:
+    matchLabels:
+      app: slow-reporter
+  template:
+    metadata:
+      labels:
+        app: slow-reporter
+    spec:
+      containers:
+        - name: slow-reporter
+          image: "{{ .Values.slowReporter.image.repository }}:{{ .Values.slowReporter.image.tag }}"
+          imagePullPolicy: {{ .Values.slowReporter.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.slowReporter.port }}
+          env:
+            - name: DELAY_SEC
+              value: {{ .Values.slowReporter.delaySeconds | quote }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os, time
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              DELAY = float(os.environ.get("DELAY_SEC", "2.5"))
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          body = b'{"status":"ok"}\n'
+                          self.send_response(200)
+                      elif self.path == "/api/reports/slow":
+                          time.sleep(DELAY)
+                          body = json.dumps({"service": "slow-reporter", "elapsed_s": DELAY, "status": "ok"}).encode()
+                          self.send_response(200)
+                      else:
+                          body = b'{"error":"not_found"}\n'
+                          self.send_response(404)
+                      try:
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              ReusableServer(("0.0.0.0", {{ .Values.slowReporter.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.slowReporter.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.slowReporter.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: billing-api
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: billing-api
+  ports:
+    - name: http
+      port: {{ .Values.billingApi.port }}
+      targetPort: {{ .Values.billingApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: billing-api
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.billingApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: billing-api
+  template:
+    metadata:
+      labels:
+        app: billing-api
+    spec:
+      containers:
+        - name: billing-api
+          image: "{{ .Values.billingApi.image.repository }}:{{ .Values.billingApi.image.tag }}"
+          imagePullPolicy: {{ .Values.billingApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.billingApi.port }}
+          envFrom:
+            - configMapRef:
+                name: billing-config
+          {{- if .Values.billingApi.overrideVaultUrl }}
+          env:
+            - name: VAULT_URL
+              value: {{ .Values.billingApi.overrideVaultUrl | quote }}
+          {{- end }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os, urllib.request
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              VAULT_URL = os.environ.get("VAULT_URL", "")
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          body = b'{"status":"ok"}\n'
+                          self.send_response(200)
+                      elif self.path == "/api/billing/status":
+                          try:
+                              with urllib.request.urlopen(VAULT_URL, timeout=2) as resp:
+                                  vault = json.loads(resp.read().decode())
+                              body = json.dumps({"service": "billing-api", "vault_url": VAULT_URL, "vault": vault, "status": "ok"}).encode()
+                              self.send_response(200)
+                          except Exception as e:
+                              body = json.dumps({"service": "billing-api", "vault_url": VAULT_URL, "error": str(e)}).encode()
+                              self.send_response(502)
+                      else:
+                          body = b'{"error":"not_found"}\n'
+                          self.send_response(404)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+
+              ReusableServer(("0.0.0.0", {{ .Values.billingApi.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.billingApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.billingApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-checker
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: fraud-checker
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: fraud-checker
+  ports:
+    - name: http
+      port: {{ .Values.fraudChecker.port }}
+      targetPort: {{ .Values.fraudChecker.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-checker
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: fraud-checker
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.fraudChecker.replicaCount }}
+  selector:
+    matchLabels:
+      app: fraud-checker
+  template:
+    metadata:
+      labels:
+        app: fraud-checker
+    spec:
+      containers:
+        - name: fraud-checker
+          image: "{{ .Values.fraudChecker.image.repository }}:{{ .Values.fraudChecker.image.tag }}"
+          imagePullPolicy: {{ .Values.fraudChecker.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.fraudChecker.port }}
+          env:
+            - name: ALLOC_MB
+              value: {{ .Values.fraudChecker.allocMb | quote }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              alloc_mb = int(os.environ.get("ALLOC_MB", "32"))
+              print(f"Preloading fraud model weights ({alloc_mb} MiB)...")
+              MODEL_CACHE = b"x" * (alloc_mb * 1024 * 1024)
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/fraud/check", "/healthz"):
+                          body = json.dumps({"service": "fraud-checker", "cache_mb": len(MODEL_CACHE) // (1024 * 1024), "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.fraudChecker.port }}), Handler).serve_forever()
+          resources:
+            {{- toYaml .Values.fraudChecker.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: invoice-archiver
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: invoice-archiver
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: invoice-archiver
+  ports:
+    - name: http
+      port: {{ .Values.invoiceArchiver.port }}
+      targetPort: {{ .Values.invoiceArchiver.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invoice-archiver
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: invoice-archiver
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.invoiceArchiver.replicaCount }}
+  selector:
+    matchLabels:
+      app: invoice-archiver
+  template:
+    metadata:
+      labels:
+        app: invoice-archiver
+    spec:
+      containers:
+        - name: invoice-archiver
+          image: "{{ .Values.invoiceArchiver.image.repository }}:{{ .Values.invoiceArchiver.image.tag }}"
+          imagePullPolicy: {{ .Values.invoiceArchiver.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.invoiceArchiver.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              os.makedirs("/data/invoices", exist_ok=True)
+              marker_path = "/data/invoices/status.txt"
+              with open(marker_path, "w") as f:
+                  f.write("invoices-volume=mounted\n")
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/invoices/status", "/healthz"):
+                          with open(marker_path) as f:
+                              val = f.read().strip()
+                          body = json.dumps({"service": "invoice-archiver", "volume": val, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.invoiceArchiver.port }}), Handler).serve_forever()
+          volumeMounts:
+            - name: invoice-vol
+              mountPath: /data/invoices
+          resources:
+            {{- toYaml .Values.invoiceArchiver.resources | nindent 12 }}
+      volumes:
+        - name: invoice-vol
+          persistentVolumeClaim:
+            claimName: {{ .Values.invoiceArchiver.storage.pvcName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-collector
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: audit-collector
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: audit-collector
+  ports:
+    - name: http
+      port: {{ .Values.auditCollector.port }}
+      targetPort: {{ .Values.auditCollector.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-collector
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: audit-collector
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.auditCollector.replicaCount }}
+  selector:
+    matchLabels:
+      app: audit-collector
+  template:
+    metadata:
+      labels:
+        app: audit-collector
+    spec:
+      {{- if .Values.auditCollector.serviceAccountName }}
+      serviceAccountName: {{ .Values.auditCollector.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: audit-collector
+          image: "{{ .Values.auditCollector.image.repository }}:{{ .Values.auditCollector.image.tag }}"
+          imagePullPolicy: {{ .Values.auditCollector.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.auditCollector.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, ssl, sys, urllib.request
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                  token = f.read().strip()
+              with open("/var/run/secrets/kubernetes.io/serviceaccount/namespace") as f:
+                  ns = f.read().strip()
+              ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+              def fetch_k8s(resource):
+                  url = f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/{resource}"
+                  req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+                  with urllib.request.urlopen(req, context=ctx, timeout=4) as resp:
+                      return len(json.loads(resp.read().decode()).get("items", []))
+
+              try:
+                  evt_count = fetch_k8s("events")
+                  print(f"Audit collector initialized: {evt_count} events visible in {ns}")
+              except Exception as e:
+                  print(f"FATAL: Kubernetes API access denied: {e}", file=sys.stderr)
+                  sys.exit(1)
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/audit/events", "/healthz"):
+                          events = fetch_k8s("events")
+                          body = json.dumps({"service": "audit-collector", "namespace": ns, "events": events, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.auditCollector.port }}), Handler).serve_forever()
+          resources:
+            {{- toYaml .Values.auditCollector.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-proxy
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: cache-proxy
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  selector:
+    app: cache-proxy
+  ports:
+    - name: http
+      port: {{ .Values.cacheProxy.port }}
+      targetPort: {{ .Values.cacheProxy.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-proxy
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: cache-proxy
+    app.kubernetes.io/part-of: meridianpay
+spec:
+  replicas: {{ .Values.cacheProxy.replicaCount }}
+  selector:
+    matchLabels:
+      app: cache-proxy
+  template:
+    metadata:
+      labels:
+        app: cache-proxy
+    spec:
+      containers:
+        - name: cache-proxy
+          image: "{{ .Values.cacheProxy.image.repository }}:{{ .Values.cacheProxy.image.tag }}"
+          imagePullPolicy: {{ .Values.cacheProxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.cacheProxy.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, urllib.request
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              TARGET = "http://cache-db-0.{{ .Values.cacheDb.headlessServiceName }}.{{ .Values.namespaces.data }}.svc.cluster.local:{{ .Values.cacheDb.port }}/ping"
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          body = b'{"status":"ok"}\n'
+                          self.send_response(200)
+                      elif self.path == "/api/cache/ping":
+                          try:
+                              with urllib.request.urlopen(TARGET, timeout=2) as resp:
+                                  upstream = json.loads(resp.read().decode())
+                              body = json.dumps({"service": "cache-proxy", "target": TARGET, "upstream": upstream, "status": "ok"}).encode()
+                              self.send_response(200)
+                          except Exception as e:
+                              body = json.dumps({"service": "cache-proxy", "target": TARGET, "error": str(e)}).encode()
+                              self.send_response(502)
+                      else:
+                          body = b'{"error":"not_found"}\n'
+                          self.send_response(404)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+
+              ReusableServer(("0.0.0.0", {{ .Values.cacheProxy.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.cacheProxy.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.cacheProxy.resources | nindent 12 }}

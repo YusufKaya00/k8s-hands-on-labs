@@ -1,0 +1,195 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-engine
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: payment-engine
+spec:
+  selector:
+    app: payment-engine
+    component: {{ .Values.paymentEngine.serviceSelectorComponent }}
+  ports:
+    - name: http
+      port: {{ .Values.paymentEngine.port }}
+      targetPort: {{ .Values.paymentEngine.serviceTargetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-engine
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  replicas: {{ .Values.paymentEngine.replicas }}
+  selector:
+    matchLabels:
+      app: payment-engine
+      component: core-engine
+  template:
+    metadata:
+      labels:
+        app: payment-engine
+        component: core-engine
+    spec:
+      serviceAccountName: {{ .Values.paymentEngine.serviceAccountName }}
+      initContainers:
+        - name: init-verify-endpoints
+          image: {{ .Values.paymentEngine.image }}
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              import urllib.request, ssl, sys
+
+              token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+              ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+              ns_path = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+              token = open(token_path).read().strip()
+              ns = open(ns_path).read().strip()
+              ctx = ssl.create_default_context(cafile=ca_path)
+
+              for res in ("services", "endpoints"):
+                  url = f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/{res}"
+                  req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+                  try:
+                      with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+                          print(f"[init-verify-endpoints] RBAC check OK for '{res}' (HTTP {resp.status})")
+                  except Exception as e:
+                      print(f"[init-verify-endpoints] RBAC ERROR querying '{res}' in namespace '{ns}': {e}")
+                      print("Hint: Does the Role 'core-endpoint-reader' include both 'services' and 'endpoints' in its resources list?")
+                      sys.exit(1)
+              print("[init-verify-endpoints] All RBAC checks passed!")
+        - name: init-wait-ledger
+          image: {{ .Values.paymentEngine.image }}
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              import os, socket, sys, urllib.request
+
+              ledger_host = os.environ["LEDGER_HOST"]
+              ledger_port = int(os.environ["LEDGER_PORT"])
+              signer_url = os.environ["SIGNER_URL"]
+
+              print(f"[init-wait-ledger] Step 1: Resolving DNS for '{ledger_host}'...")
+              try:
+                  ip = socket.gethostbyname(ledger_host)
+                  print(f"[init-wait-ledger] DNS resolved: {ledger_host} -> {ip}")
+              except Exception as e:
+                  print(f"[init-wait-ledger] DNS FAILURE for '{ledger_host}': {e}")
+                  print("Hint 1: Does core-netpol allow Egress to UDP/TCP port 53 (CoreDNS)?")
+                  print("Hint 2: Does StatefulSet 'ledger-db' spec.serviceName match Headless Service 'ledger-headless'?")
+                  sys.exit(1)
+
+              print(f"[init-wait-ledger] Step 2: Connecting to Redis ledger at {ledger_host}:{ledger_port}...")
+              try:
+                  with socket.create_connection((ledger_host, ledger_port), timeout=4) as s:
+                      print(f"[init-wait-ledger] TCP connection to {ledger_host}:{ledger_port} succeeded!")
+              except Exception as e:
+                  print(f"[init-wait-ledger] TCP CONNECTION FAILED to {ledger_host}:{ledger_port}: {e}")
+                  print("Hint: Check 'data-zero-trust' NetworkPolicy in netpulse-data (namespaceSelector label & port 6379).")
+                  sys.exit(1)
+
+              print(f"[init-wait-ledger] Step 3: Verifying HTTP signature endpoint '{signer_url}'...")
+              try:
+                  with urllib.request.urlopen(signer_url, timeout=4) as r:
+                      print(f"[init-wait-ledger] Signer responded HTTP {r.status}: {r.read().decode()}")
+              except Exception as e:
+                  print(f"[init-wait-ledger] SIGNER CONNECTION FAILED to '{signer_url}': {e}")
+                  print("Hint 1: Is token-signer listening on 0.0.0.0 instead of 127.0.0.1?")
+                  print("Hint 2: Does core-netpol Egress allow port 9000, and does data-zero-trust Ingress allow port 9000?")
+                  sys.exit(1)
+
+              print("[init-wait-ledger] All data-tier network checks succeeded!")
+          envFrom:
+            - configMapRef:
+                name: payment-engine-config
+      containers:
+        - name: engine
+          image: {{ .Values.paymentEngine.image }}
+          command: ["python3", "-u", "-c"]
+          args:
+            - |
+              import http.server, json, os, socket, urllib.request
+
+              PORT = {{ .Values.paymentEngine.port }}
+              LEDGER_HOST = os.environ["LEDGER_HOST"]
+              LEDGER_PORT = int(os.environ["LEDGER_PORT"])
+              REDIS_PASS = os.environ["REDIS_PASSWORD"]
+              SIGNER_URL = os.environ["SIGNER_URL"]
+              POD_NAME = socket.gethostname()
+
+              def check_redis():
+                  with socket.create_connection((LEDGER_HOST, LEDGER_PORT), timeout=3) as s:
+                      s.sendall(f"AUTH {REDIS_PASS}\r\nGET ledger:schema_version\r\n".encode())
+                      data = s.recv(1024).decode(errors="ignore")
+                      return "v8.0-ready" if "v8.0-ready" in data else "connected"
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.end_headers()
+                          self.wfile.write(b'{"status":"healthy"}')
+                          return
+                      if self.path.startswith("/api/v1/status"):
+                          try:
+                              ledger_state = check_redis()
+                              with urllib.request.urlopen(SIGNER_URL, timeout=3) as r:
+                                  signer_data = json.loads(r.read().decode())
+                              payload = {
+                                  "platform": "NetPulse v8.0",
+                                  "status": "operational",
+                                  "ledger_db": ledger_state,
+                                  "token_signer": signer_data.get("signature", "unknown"),
+                                  "pod": POD_NAME
+                              }
+                              self.send_response(200)
+                              self.send_header("Content-Type", "application/json")
+                              self.end_headers()
+                              self.wfile.write(json.dumps(payload).encode())
+                          except Exception as e:
+                              self.send_response(500)
+                              self.send_header("Content-Type", "application/json")
+                              self.end_headers()
+                              self.wfile.write(json.dumps({"status": "error", "detail": str(e)}).encode())
+                          return
+                      self.send_response(404)
+                      self.end_headers()
+
+              print(f"[payment-engine] Starting HTTP server on 0.0.0.0:{PORT} ...")
+              http.server.HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+          envFrom:
+            - configMapRef:
+                name: payment-engine-config
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ledgerDb.secretName }}
+                  key: {{ .Values.ledgerDb.secretKey }}
+          ports:
+            - name: {{ .Values.paymentEngine.containerPortName }}
+              containerPort: {{ .Values.paymentEngine.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.paymentEngine.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 4
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.paymentEngine.livenessProbe.path }}
+              port: {{ .Values.paymentEngine.livenessProbe.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 2
+          volumeMounts:
+            - name: archive-vol
+              mountPath: /mnt/audit-archive
+          resources:
+{{ toYaml .Values.paymentEngine.resources | indent 12 }}
+      volumes:
+        - name: archive-vol
+          persistentVolumeClaim:
+            claimName: {{ .Values.sharedStorage.pvcName }}

@@ -1,0 +1,79 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ledger-seed
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: ledger-seed
+        job-role: seed
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seeder
+          image: {{ .Values.batch.seedJob.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              HOST="ledger-db-0.{{ .Values.ledgerDb.headlessServiceName }}.{{ .Values.namespaces.data }}.svc.cluster.local"
+              PORT="{{ .Values.batch.seedJob.targetRedisPort }}"
+              echo "[ledger-seed] Connecting to ${HOST}:${PORT} ..."
+              redis-cli -h "${HOST}" -p "${PORT}" -a "${REDIS_PASSWORD}" SET ledger:schema_version "v8.0-ready"
+              RES=$(redis-cli -h "${HOST}" -p "${PORT}" -a "${REDIS_PASSWORD}" GET ledger:schema_version)
+              if [ "${RES}" = "v8.0-ready" ]; then
+                echo "[ledger-seed] SUCCESS: Seeded ledger:schema_version = v8.0-ready"
+                exit 0
+              fi
+              echo "[ledger-seed] ERROR: Failed to seed ledger!"
+              exit 1
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ledgerDb.secretName }}
+                  key: {{ .Values.ledgerDb.secretKey }}
+          resources:
+            requests:
+              cpu: "25m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: reconcile-cron
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  schedule: {{ .Values.batch.reconcileCron.schedule | quote }}
+  suspend: {{ .Values.batch.reconcileCron.suspend }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: reconcile-cron
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: reconciler
+              image: {{ .Values.batch.reconcileCron.image }}
+              command: ["sh", "-c", "date >> /mnt/audit-archive/reconcile.log && echo 'Reconciliation snapshot written.'"]
+              volumeMounts:
+                - name: archive-vol
+                  mountPath: /mnt/audit-archive
+              resources:
+                requests:
+                  cpu: "20m"
+                  memory: "32Mi"
+                limits:
+                  cpu: "100m"
+                  memory: "64Mi"
+          volumes:
+            - name: archive-vol
+              persistentVolumeClaim:
+                claimName: {{ .Values.sharedStorage.pvcName }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pulsegrid
+description: PulseGrid v13.0 — Production Kubernetes Networking Troubleshooting Lab
+type: application
+version: 1.0.0
+appVersion: "13.0.0"
