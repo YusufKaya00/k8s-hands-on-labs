@@ -27,6 +27,18 @@ spec:
               name: erasmus-nextjs-svc
               port: 
                 number: {{.Values.nextjs.service.port}}
+  {{- if and .Values.admin.enabled .Values.ingress.adminHost }}
+  - host: {{ .Values.ingress.adminHost }}
+    http:
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: erasmus-admin-svc
+              port:
+                number: {{ .Values.admin.service.port }}
+  {{- end }}
 
   
 {{- end }}
