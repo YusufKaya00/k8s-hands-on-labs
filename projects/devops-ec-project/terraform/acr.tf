@@ -4,7 +4,7 @@
 # ==============================================================================
 
 resource "azurerm_container_registry" "erasmus" {
-  - name                 = "erasmusconnect"
+  - name                = "erasmusconnect"
   - resource_group_name = azurerm_resource_group.erasmus.name
   - location            = azurerm_resource_group.erasmus.location
   - sku                 = "Basic"
