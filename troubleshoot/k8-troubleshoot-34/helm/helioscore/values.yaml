@@ -198,7 +198,7 @@ paymentEngine:
     pullPolicy: IfNotPresent
   port: 8082
   hpa:
-    targetDeploymentName: "payment-api-v1"
+    targetDeploymentName: "payment-v1"
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
