@@ -1,9 +1,11 @@
-# Erasmus Connect — Sıfırdan DevOps Uygulama ve Lab Rehberi (Helm + Calico + Azure AKS)
+# Erasmus Connect — Adım Adım Kurulum ve DevOps Lab Rehberi (Helm + Calico + AKS)
 
-Bu proje, **Erasmus Connect** uygulamasını (**Next.js** frontend, **Express** backend, **Redis** önbellek/oturum katmanı, harici **MongoDB Atlas** ve **Supabase**) sıfır kopyala-yapıştır ile, her satırın mühendislik gerekçesini anlayarak **Kubernetes (Helm)** ve **Azure AKS (Terraform)** üzerine taşıman için hazırlanmış bilet tabanlı (ticket-driven) bir uygulama labıdır.
+> Mimari özet, proje yapısı ve uçtan uca akış için ana **[README.md](./README.md)** dosyasına bakabilirsin. Bu dosya; yerel Minikube kümesinden Azure AKS + ACR + ArgoCD GitOps kurulumuna kadar tüm süreci adım adım (bilet tabanlı) ve gerçek kurulumda karşılaşılan hataların çözümleriyle anlatır.
 
-> [!IMPORTANT]
-> **Lab Kuralı:** Bu repodaki [helm/erasmus-connect/](./helm/erasmus-connect/Chart.yaml) ve [terraform/](./terraform/main.tf) dosyaları **bilerek eksik (`# TODO`)** bırakılmıştır. Amacın kodu AI'a yazdırmak değil; kendi terminalindeki `kubectl explain`, `helm template`, `editor.networkpolicy.io` ve `registry.terraform.io` kaynaklarını okuyarak her bileti tek tek çözmektir.
+Bu proje, **Erasmus Connect** uygulamasını (**Next.js** frontend, **Admin Vite** paneli, **Express** backend, **Redis** önbellek/oturum katmanı, harici **MongoDB Atlas** ve **Supabase**) her satırın mühendislik gerekçesini anlayarak **Kubernetes (Helm)** ve **Azure AKS (Terraform + Ansible + ArgoCD + ACR)** üzerine taşımak için hazırlanmış bilet tabanlı (ticket-driven) kurulum ve uygulama rehberidir.
+
+> [!NOTE]
+> **Rehber Yapısı:** Her bilet önce ne yapılacağını, ardından `kubectl explain` / `helm template` / `registry.terraform.io` referanslarını ve gerçek ortamda yaşanan tuzakları (troubleshooting notlarını) verir. `.env.*` ve `terraform.tfvars` gibi gizli dosyalar `.gitignore` içindedir; kendi değerlerini `.env.example` ve `terraform.tfvars.example` şablonlarından üretmelisin.
 
 ---
 
@@ -82,6 +84,9 @@ Bu fazda yerel kümeni kuracak, Express, Next.js ve Redis iş yüklerini (Deploy
 **b) İpucu ve Referans:**
 - Minikube ile Calico başlatma: `minikube start --network-plugin=cni --cni=calico` (veya `k3d` kullanıyorsan Calico CNI kurulumlu küme).
 - Ingress addon kontrolü (Minikube): `minikube addons enable ingress`
+
+> [!WARNING]
+> **Eski Docker Volume Tuzağı (`K8S_APISERVER_MISSING`):** Daha önce Minikube kurup sildiysen ve geride eski `minikube` Docker volume'u kaldıysa, yeni başlatmada `kubelet` `/etc/kubernetes/bootstrap-kubelet.conf` hatasıyla API server ayağa kalkmayabilir. Çözüm: `minikube delete && docker volume rm minikube` veya izole yeni profil (`minikube start -p erasmus --network-plugin=cni --cni=calico`).
 - Sıfırdan YAML üretme pratiği (örnek referans komutu):
   `kubectl create deployment deneme --image=nginx --port=80 --dry-run=client -o yaml`
 - Helm ilk durum kontrolü:
@@ -170,7 +175,9 @@ helm template erasmus ./helm/erasmus-connect -s templates/express-service.yaml
 - **Frontend imajını lokal URL'lerle yeniden build et.** Docker Hub'daki `erasmus-connect-frontend:latest` imajı `NEXT_PUBLIC_API_URL=https://api.erasmusconnect.net` ile build edildi. Bu değer JS paketine gömülü olduğu için lokalde tarayıcın **canlı API'ye** gider, senin kümene değil.
 
 > [!WARNING]
-> **`NEXT_PUBLIC_*` = Build-time, Secret değil.** Bu değişkenler `next build` sırasında JavaScript'e yazılır ve tarayıcıda herkes görebilir. Pod'a `env:` olarak vermek **hiçbir şeyi değiştirmez**. Bu yüzden Secret/ConfigMap'e değil, [.env.frontend-build](./.env.frontend-build) dosyasından `docker build --build-arg` ile verilirler.
+> **`NEXT_PUBLIC_*` & `VITE_*` = Build-time, Secret değil.** Frontend (`NEXT_PUBLIC_API_URL`) ve Admin paneli (`VITE_BACKEND_URL` / Vite `define`) değişkenleri build sırasında JavaScript'e gömülür; Pod'a `env:` olarak vermek **hiçbir şeyi değiştirmez**. Bu yüzden Secret/ConfigMap'e değil, [.env.frontend-build](./.env.frontend-build) dosyasından `docker build --build-arg` ile verilirler. Ayrıca Admin paneli Vite `base: '/'` ve `nginx:alpine` (:80) kullandığı için ayrı bir alt alan adına (`admin.<DOMAIN>`) yönlendirilir.
+>
+> **Mobil Tarayıcı Mixed Content Tuzağı:** Telefonda Chrome gibi tarayıcılar *HTTPS-First* moduyla `http://<IP>.nip.io` adresini otomatik `https://`ye yükseltip HTTP/WS API isteklerini bloklayabilir. Dev ortamında adresi açıkça `http://` ile açmalı veya prod için `cert-manager` ile TLS eklemelisin.
 
 **b) İpucu ve Referans:**
 - Terminalde çalıştır:
