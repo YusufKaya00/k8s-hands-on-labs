@@ -1,0 +1,549 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reverse-proxy-conf
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: reverse-proxy
+    app.kubernetes.io/part-of: streamcart
+data:
+  nginx.conf: |
+    worker_processes 1;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        access_log /dev/stdout;
+        error_log  /dev/stderr warn;
+
+        resolver {{ .Values.reverseProxy.resolver }} valid=5s ipv6=off;
+        resolver_timeout 2s;
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+
+        server {
+            listen {{ .Values.reverseProxy.containerPort }};
+
+            location = / {
+                default_type application/json;
+                return 200 '{"status":"ok","proxy":"nginx-reverse-proxy","platform":"StreamCart v14.0"}';
+            }
+
+            location = /health {
+                default_type application/json;
+                return 200 '{"status":"ok","proxy":"nginx-reverse-proxy"}';
+            }
+
+            location /payments {
+                default_type application/json;
+                return 200 '{"status":"payments-ok","proxy":"nginx-reverse-proxy"}';
+            }
+
+            location /webhooks {
+                default_type application/json;
+                return 200 '{"status":"webhooks-ok","proxy":"nginx-reverse-proxy"}';
+            }
+
+            location /api/catalog {
+                resolver {{ .Values.reverseProxy.catalogResolver }} valid=5s ipv6=off;
+                resolver_timeout 2s;
+                set $catalog_upstream "http://catalog-service.{{ .Values.namespaces.app }}.svc.cluster.local:8081";
+                proxy_pass $catalog_upstream;
+            }
+
+            location /api/orders {
+                set $orders_upstream "http://orders-service.{{ .Values.namespaces.app }}.svc.cluster.local:8082";
+                proxy_read_timeout {{ .Values.reverseProxy.ordersReadTimeout }};
+                proxy_pass $orders_upstream;
+            }
+
+            location /api/profile {
+                set $profile_upstream "http://profile-service.{{ .Values.namespaces.app }}.svc.cluster.local:{{ .Values.reverseProxy.profileUpstreamPort }}";
+                proxy_pass $profile_upstream;
+            }
+
+            location /api/metrics {
+                set $metrics_upstream "http://metrics-service.{{ .Values.namespaces.app }}.svc.cluster.local:8084";
+                proxy_pass $metrics_upstream;
+            }
+
+            location /api/ledger {
+                set $ledger_upstream "http://ledger-db.{{ .Values.namespaces.store }}.svc.cluster.local:8085";
+                proxy_pass $ledger_upstream;
+            }
+
+            location /api/vault {
+                set $vault_upstream "http://vault-service.{{ .Values.namespaces.store }}.svc.cluster.local:8086";
+                proxy_pass $vault_upstream;
+            }
+
+            location /api/audit {
+                set $audit_upstream "http://audit-service.{{ .Values.namespaces.store }}.svc.cluster.local:8087";
+                proxy_pass $audit_upstream;
+            }
+        }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reverse-proxy
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: reverse-proxy
+    app.kubernetes.io/part-of: streamcart
+spec:
+  replicas: {{ .Values.reverseProxy.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: reverse-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: reverse-proxy
+        app.kubernetes.io/part-of: streamcart
+      annotations:
+        checksum/config: {{ printf "%s-%s-%s-%v" .Values.reverseProxy.resolver .Values.reverseProxy.catalogResolver .Values.reverseProxy.ordersReadTimeout .Values.reverseProxy.profileUpstreamPort | sha256sum }}
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: nginx
+          image: "{{ .Values.reverseProxy.image.repository }}:{{ .Values.reverseProxy.image.tag }}"
+          imagePullPolicy: {{ .Values.reverseProxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.reverseProxy.containerPort }}
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.reverseProxy.resources | nindent 12 }}
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: reverse-proxy-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: reverse-proxy
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: reverse-proxy
+    app.kubernetes.io/part-of: streamcart
+spec:
+  type: {{ .Values.reverseProxy.service.type }}
+  selector:
+    app.kubernetes.io/name: reverse-proxy
+  ports:
+    - name: http
+      port: {{ .Values.reverseProxy.service.port }}
+      targetPort: {{ .Values.reverseProxy.service.targetPort }}
+{{- if .Values.reverseProxy.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: proxy-egress-netpol
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: reverse-proxy
+    app.kubernetes.io/part-of: streamcart
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: reverse-proxy
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml .Values.reverseProxy.networkPolicy.egressRules | nindent 4 }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  replicas: {{ .Values.catalogService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: catalog-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: catalog-service
+        app.kubernetes.io/part-of: streamcart
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: catalog-service
+          image: "{{ .Values.catalogService.image.repository }}:{{ .Values.catalogService.image.tag }}"
+          imagePullPolicy: {{ .Values.catalogService.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server, json, socketserver
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "catalog-service", "items": 24}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.catalogService.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.catalogService.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.catalogService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: catalog-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  type: {{ .Values.catalogService.service.type }}
+  selector:
+    app.kubernetes.io/name: catalog-service
+  ports:
+    - name: http
+      port: {{ .Values.catalogService.service.port }}
+      targetPort: {{ .Values.catalogService.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: orders-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  replicas: {{ .Values.ordersService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orders-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: orders-service
+        app.kubernetes.io/part-of: streamcart
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: orders-service
+          image: "{{ .Values.ordersService.image.repository }}:{{ .Values.ordersService.image.tag }}"
+          imagePullPolicy: {{ .Values.ordersService.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server, json, socketserver, time
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      path = self.path.split("?")[0]
+                      if path == "/healthz":
+                          body = json.dumps({"status": "ok", "service": "orders-service"}).encode("utf-8")
+                      else:
+                          time.sleep(2.5)
+                          body = json.dumps({"status": "ok", "service": "orders-service", "recent_orders": 8}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.ordersService.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.ordersService.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.ordersService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: orders-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  type: {{ .Values.ordersService.service.type }}
+  selector:
+    app.kubernetes.io/name: orders-service
+  ports:
+    - name: http
+      port: {{ .Values.ordersService.service.port }}
+      targetPort: {{ .Values.ordersService.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: profile-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: profile-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  replicas: {{ .Values.profileService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: profile-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: profile-service
+        app.kubernetes.io/part-of: streamcart
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: profile-service
+          image: "{{ .Values.profileService.image.repository }}:{{ .Values.profileService.image.tag }}"
+          imagePullPolicy: {{ .Values.profileService.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server, json, socketserver
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "profile-service", "tier": "enterprise"}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer(("0.0.0.0", {{ .Values.profileService.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.profileService.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.profileService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: profile-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: profile-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  type: {{ .Values.profileService.service.type }}
+  selector:
+    app.kubernetes.io/name: profile-service
+  ports:
+    - name: http
+      port: {{ .Values.profileService.service.port }}
+      targetPort: {{ .Values.profileService.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: metrics-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  replicas: {{ .Values.metricsService.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: metrics-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: metrics-service
+        app.kubernetes.io/part-of: streamcart
+    spec:
+      terminationGracePeriodSeconds: 2
+      containers:
+        - name: metrics-service
+          image: "{{ .Values.metricsService.image.repository }}:{{ .Values.metricsService.image.tag }}"
+          imagePullPolicy: {{ .Values.metricsService.image.pullPolicy }}
+          env:
+            - name: BIND_ADDRESS
+              value: {{ .Values.metricsService.bindAddress | quote }}
+          command:
+            - python3
+            - -c
+            - |
+              import http.server, json, os, socketserver
+
+              BIND_ADDR = os.environ["BIND_ADDRESS"]
+
+              class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+                  allow_reuse_address = True
+                  daemon_threads = True
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+
+                  def log_message(self, format, *args):
+                      pass
+
+                  def do_GET(self):
+                      body = json.dumps({"status": "ok", "service": "metrics-service", "rps": 420}).encode("utf-8")
+                      try:
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except BrokenPipeError:
+                          pass
+
+              with ThreadedTCPServer((BIND_ADDR, {{ .Values.metricsService.containerPort }}), Handler) as httpd:
+                  httpd.serve_forever()
+          ports:
+            - name: http
+              containerPort: {{ .Values.metricsService.containerPort }}
+          readinessProbe:
+            exec:
+              command:
+                - wget
+                - -qO-
+                - -T
+                - "2"
+                - "http://127.0.0.1:{{ .Values.metricsService.containerPort }}/api/metrics"
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - wget
+                - -qO-
+                - -T
+                - "2"
+                - "http://127.0.0.1:{{ .Values.metricsService.containerPort }}/api/metrics"
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.metricsService.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-service
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/name: metrics-service
+    app.kubernetes.io/part-of: streamcart
+spec:
+  type: {{ .Values.metricsService.service.type }}
+  selector:
+    app.kubernetes.io/name: metrics-service
+  ports:
+    - name: http
+      port: {{ .Values.metricsService.service.port }}
+      targetPort: {{ .Values.metricsService.service.targetPort }}

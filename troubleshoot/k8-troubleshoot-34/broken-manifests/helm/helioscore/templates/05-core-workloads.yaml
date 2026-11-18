@@ -1,0 +1,710 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: notification-api
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: notification-api
+  ports:
+    - name: http
+      protocol: {{ .Values.notificationApi.service.protocol }}
+      port: {{ .Values.notificationApi.service.port }}
+      targetPort: {{ .Values.notificationApi.service.targetPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: notification-api
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.notificationApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: notification-api
+  template:
+    metadata:
+      labels:
+        app: notification-api
+    spec:
+      containers:
+        - name: notification-api
+          image: "{{ .Values.notificationApi.image.repository }}:{{ .Values.notificationApi.image.tag }}"
+          imagePullPolicy: {{ .Values.notificationApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.notificationApi.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/notify/status", "/healthz"):
+                          body = json.dumps({"service": "notification-api", "queue_depth": 0, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.notificationApi.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.notificationApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.notificationApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: orders-api
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: orders-api
+    version: {{ .Values.ordersApi.serviceSelectorVersion | quote }}
+  ports:
+    - name: http
+      port: {{ .Values.ordersApi.port }}
+      targetPort: {{ .Values.ordersApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: orders-api
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.ordersApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: orders-api
+      version: {{ .Values.ordersApi.podVersion | quote }}
+  template:
+    metadata:
+      labels:
+        app: orders-api
+        version: {{ .Values.ordersApi.podVersion | quote }}
+    spec:
+      containers:
+        - name: orders-api
+          image: "{{ .Values.ordersApi.image.repository }}:{{ .Values.ordersApi.image.tag }}"
+          imagePullPolicy: {{ .Values.ordersApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ordersApi.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/orders/list", "/healthz"):
+                          body = json.dumps({"service": "orders-api", "orders": [1001, 1002], "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.ordersApi.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.ordersApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.ordersApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: settlement-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: settlement-api
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: settlement-api
+  ports:
+    - name: http
+      port: {{ .Values.settlementApi.port }}
+      targetPort: {{ .Values.settlementApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: settlement-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: settlement-api
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.settlementApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: settlement-api
+  template:
+    metadata:
+      labels:
+        app: settlement-api
+    spec:
+      initContainers:
+        - name: init-verify-vault
+          image: "{{ .Values.settlementApi.image.repository }}:{{ .Values.settlementApi.image.tag }}"
+          imagePullPolicy: {{ .Values.settlementApi.image.pullPolicy }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import socket, sys
+
+              host = "vault-service.{{ .Values.namespaces.data }}.svc.cluster.local"
+              port = {{ .Values.settlementApi.initVaultPort }}
+              print(f"Checking upstream vault dependency at {host}:{port}...")
+              try:
+                  s = socket.create_connection((host, port), timeout=3)
+                  s.close()
+                  print("Vault TCP connectivity verified!")
+              except Exception as e:
+                  print(f"FATAL: Cannot connect to {host}:{port} -> {e}", file=sys.stderr)
+                  sys.exit(1)
+          resources:
+            requests:
+              cpu: "20m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+      containers:
+        - name: settlement-api
+          image: "{{ .Values.settlementApi.image.repository }}:{{ .Values.settlementApi.image.tag }}"
+          imagePullPolicy: {{ .Values.settlementApi.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.settlementApi.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/settlement/info", "/healthz"):
+                          body = json.dumps({"service": "settlement-api", "batch": "synced", "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.settlementApi.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.settlementApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.settlementApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-engine
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: worker-engine
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: worker-engine
+  ports:
+    - name: http
+      port: {{ .Values.workerEngine.port }}
+      targetPort: {{ .Values.workerEngine.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-engine
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: worker-engine
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.workerEngine.replicaCount }}
+  selector:
+    matchLabels:
+      app: worker-engine
+  template:
+    metadata:
+      labels:
+        app: worker-engine
+    spec:
+      containers:
+        - name: worker-engine
+          image: "{{ .Values.workerEngine.image.repository }}:{{ .Values.workerEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.workerEngine.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.workerEngine.port }}
+          env:
+            - name: WARMUP_SECONDS
+              value: {{ .Values.workerEngine.warmupSeconds | quote }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os, time
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              warmup = int(os.environ.get("WARMUP_SECONDS", "8"))
+              print(f"Loading model index into worker-engine ({warmup}s warmup)...")
+              time.sleep(warmup)
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/worker/status", "/healthz"):
+                          body = json.dumps({"service": "worker-engine", "warmup_s": warmup, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              print("worker-engine ready and listening.")
+              ReusableServer(("0.0.0.0", {{ .Values.workerEngine.port }}), Handler).serve_forever()
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.workerEngine.port }}
+            initialDelaySeconds: {{ .Values.workerEngine.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.workerEngine.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.workerEngine.livenessProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.workerEngine.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          resources:
+            {{- toYaml .Values.workerEngine.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetry-sink
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: telemetry-sink
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: telemetry-sink
+  ports:
+    - name: http
+      port: {{ .Values.telemetrySink.port }}
+      targetPort: {{ .Values.telemetrySink.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetry-sink
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: telemetry-sink
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.telemetrySink.replicaCount }}
+  selector:
+    matchLabels:
+      app: telemetry-sink
+  template:
+    metadata:
+      labels:
+        app: telemetry-sink
+    spec:
+      containers:
+        - name: telemetry-sink
+          image: "{{ .Values.telemetrySink.image.repository }}:{{ .Values.telemetrySink.image.tag }}"
+          imagePullPolicy: {{ .Values.telemetrySink.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.telemetrySink.port }}
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.telemetrySink.readOnlyRootFilesystem }}
+          {{- if .Values.telemetrySink.cacheMountEnabled }}
+          volumeMounts:
+            - name: cache-dir
+              mountPath: /var/cache/telemetry
+          {{- end }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              os.makedirs("/var/cache/telemetry", exist_ok=True)
+              state_file = "/var/cache/telemetry/state.json"
+              with open(state_file, "w") as f:
+                  f.write('{"sink":"writable"}\n')
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/telemetry/ping", "/healthz"):
+                          with open(state_file) as f:
+                              state = json.loads(f.read())
+                          body = json.dumps({"service": "telemetry-sink", "cache": state, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.telemetrySink.port }}), Handler).serve_forever()
+          resources:
+            {{- toYaml .Values.telemetrySink.resources | nindent 12 }}
+      {{- if .Values.telemetrySink.cacheMountEnabled }}
+      volumes:
+        - name: cache-dir
+          emptyDir: {}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: archive-worker
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: archive-worker
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: archive-worker
+  ports:
+    - name: http
+      port: {{ .Values.archiveWorker.port }}
+      targetPort: {{ .Values.archiveWorker.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: archive-worker
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: archive-worker
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.archiveWorker.replicaCount }}
+  selector:
+    matchLabels:
+      app: archive-worker
+  template:
+    metadata:
+      labels:
+        app: archive-worker
+    spec:
+      containers:
+        - name: archive-worker
+          image: "{{ .Values.archiveWorker.image.repository }}:{{ .Values.archiveWorker.image.tag }}"
+          imagePullPolicy: {{ .Values.archiveWorker.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.archiveWorker.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              os.makedirs("/data/archive", exist_ok=True)
+              marker = "/data/archive/ready.flag"
+              with open(marker, "w") as f:
+                  f.write("archive-bound=ok\n")
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/archive/status", "/healthz"):
+                          with open(marker) as f:
+                              flag = f.read().strip()
+                          body = json.dumps({"service": "archive-worker", "volume": flag, "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.archiveWorker.port }}), Handler).serve_forever()
+          volumeMounts:
+            - name: archive-vol
+              mountPath: /data/archive
+          resources:
+            {{- toYaml .Values.archiveWorker.resources | nindent 12 }}
+      volumes:
+        - name: archive-vol
+          persistentVolumeClaim:
+            claimName: {{ .Values.archiveWorker.storage.pvcName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-inspector
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: node-inspector
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: node-inspector
+  ports:
+    - name: http
+      port: {{ .Values.nodeInspector.port }}
+      targetPort: {{ .Values.nodeInspector.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-inspector
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: node-inspector
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.nodeInspector.replicaCount }}
+  selector:
+    matchLabels:
+      app: node-inspector
+  template:
+    metadata:
+      labels:
+        app: node-inspector
+    spec:
+      serviceAccountName: {{ .Values.nodeInspector.serviceAccountName }}
+      containers:
+        - name: node-inspector
+          image: "{{ .Values.nodeInspector.image.repository }}:{{ .Values.nodeInspector.image.tag }}"
+          imagePullPolicy: {{ .Values.nodeInspector.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.nodeInspector.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, ssl, sys, urllib.request
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                  token = f.read().strip()
+              ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+              def fetch_nodes():
+                  req = urllib.request.Request("https://kubernetes.default.svc/api/v1/nodes", headers={"Authorization": f"Bearer {token}"})
+                  with urllib.request.urlopen(req, context=ctx, timeout=4) as resp:
+                      return len(json.loads(resp.read().decode()).get("items", []))
+
+              try:
+                  n = fetch_nodes()
+                  print(f"Cluster node inspection ready: {n} nodes")
+              except Exception as e:
+                  print(f"FATAL: Cluster-wide node lookup denied: {e}", file=sys.stderr)
+                  sys.exit(1)
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/nodes/summary", "/healthz"):
+                          body = json.dumps({"service": "node-inspector", "nodes": fetch_nodes(), "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.nodeInspector.port }}), Handler).serve_forever()
+          resources:
+            {{- toYaml .Values.nodeInspector.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-engine
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: payment-engine
+    app.kubernetes.io/part-of: helioscore
+spec:
+  selector:
+    app: payment-engine
+  ports:
+    - name: http
+      port: {{ .Values.paymentEngine.port }}
+      targetPort: {{ .Values.paymentEngine.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-engine
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: payment-engine
+    app.kubernetes.io/part-of: helioscore
+spec:
+  replicas: {{ .Values.paymentEngine.replicaCount }}
+  selector:
+    matchLabels:
+      app: payment-engine
+  template:
+    metadata:
+      labels:
+        app: payment-engine
+    spec:
+      containers:
+        - name: payment-engine
+          image: "{{ .Values.paymentEngine.image.repository }}:{{ .Values.paymentEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.paymentEngine.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.paymentEngine.port }}
+          command:
+            - python3
+            - -u
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+              class ReusableServer(ThreadingHTTPServer):
+                  allow_reuse_address = True
+
+              class Handler(BaseHTTPRequestHandler):
+                  def address_string(self):
+                      return self.client_address[0]
+                  def log_message(self, fmt, *args):
+                      pass
+                  def do_GET(self):
+                      if self.path in ("/api/payments/health", "/healthz"):
+                          body = json.dumps({"service": "payment-engine", "pod": os.environ.get("HOSTNAME"), "status": "ok"}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      else:
+                          self.send_response(404)
+                          self.end_headers()
+
+              ReusableServer(("0.0.0.0", {{ .Values.paymentEngine.port }}), Handler).serve_forever()
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.paymentEngine.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.paymentEngine.resources | nindent 12 }}

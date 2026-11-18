@@ -1,0 +1,9 @@
+apiVersion: v2
+name: cloudapex
+description: CloudApex v10.0 — Enterprise Multi-Tier Mesh & Cloud LoadBalancer Outage
+type: application
+version: 10.0.0
+appVersion: "10.0.0"
+maintainers:
+  - name: Enterprise Cloud Architecture Team
+    email: platform-arch@cloudapex.io

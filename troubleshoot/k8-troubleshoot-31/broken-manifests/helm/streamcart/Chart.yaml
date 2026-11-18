@@ -1,0 +1,6 @@
+apiVersion: v2
+name: streamcart
+description: StreamCart v14.0 — Reverse Proxy & Kubernetes Production Networking Troubleshooting Lab
+type: application
+version: 1.0.0
+appVersion: "14.0.0"
