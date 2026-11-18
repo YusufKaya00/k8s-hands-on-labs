@@ -56,6 +56,9 @@ nextjs:
     port: 3000
    initialDelaySeconds: 20
    periodSeconds: 10
+  hpa:
+    enabled: false
+    # TODO: [Bilet 17] Next.js HPA için minReplicas, maxReplicas ve targetCPUUtilizationPercentage tanımla; sonra enabled: true yap
 
 redis:
   image:
