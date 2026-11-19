@@ -22,8 +22,8 @@ catalogIngress:
   rewriteTarget: ""
 
 coreLimitRange:
-  maxMemory: "256Mi"
-  maxCpu: "500m"
+  maxMemory: "1000Mi"
+  maxCpu: "1000m"
   defaultMemory: "128Mi"
   defaultRequestMemory: "48Mi"
 
