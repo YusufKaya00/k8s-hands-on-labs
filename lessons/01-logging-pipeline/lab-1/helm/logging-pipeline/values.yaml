@@ -32,19 +32,21 @@ fluentbit:
       effect: NoSchedule
   rbac:
     resources:
-      - configmaps
+      - pods  
+      - namespaces
 
     verbs:
       - get
       - list
       - watch
-      - read
+    
       
   parser:
     mergeLog: "Off"
     keepLog: "Off"
   filters:
-    modifyRules: []
+    modifyRules: 
+      
       
   output:
     lokiHost: "loki.kube-logging.svc.cluster.local"
