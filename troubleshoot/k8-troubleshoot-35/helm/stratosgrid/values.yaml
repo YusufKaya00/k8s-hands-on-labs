@@ -11,7 +11,7 @@ namespaces:
 ingress:
   enabled: true
   ingressClassName: nginx
-  proxyBodySize: "512k"
+  proxyBodySize: "10m"
 
 catalogIngress:
   enabled: true
