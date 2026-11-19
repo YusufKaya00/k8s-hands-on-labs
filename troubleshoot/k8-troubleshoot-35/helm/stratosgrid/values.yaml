@@ -214,7 +214,7 @@ nodeAgent:
     pullPolicy: IfNotPresent
   tolerationKey: "stratos-role"
   tolerationValue: "dedicated"
-  tolerationEffect: "NoExecute"
+  tolerationEffect: "NoSchedule"
   resources:
     requests:
       cpu: 10m
