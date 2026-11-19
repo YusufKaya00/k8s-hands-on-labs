@@ -37,11 +37,15 @@ fluentbit:
       - get
       - list
       - watch
+      - read
+      
   parser:
     mergeLog: "Off"
     keepLog: "Off"
   filters:
-    modifyRules: []
+    modifyRules: 
+      - rule: "Set log to ${log} | truncate 1000"
+        match: "
   output:
     lokiHost: "loki.kube-logging.svc.cluster.local"
     lokiPort: 3101
