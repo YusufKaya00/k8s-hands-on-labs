@@ -43,7 +43,7 @@ fluentbit:
     mergeLog: "Off"
     keepLog: "Off"
   filters:
-    modifyRules: ""
+    modifyRules: []
       
   output:
     lokiHost: "loki.kube-logging.svc.cluster.local"
