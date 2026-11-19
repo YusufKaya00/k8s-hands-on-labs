@@ -132,7 +132,7 @@ reportApi:
     pullPolicy: IfNotPresent
   port: 8088
   securityContext:
-    runAsNonRoot: true
+    runAsNonRoot: false
     runAsUser: null
     runAsGroup: null
   resources:
