@@ -135,9 +135,12 @@
       tags: [argocd]
        
 
-            
-              
-      tags: [argocd]
-    # TODO: ArgoCD initial admin sifresini debug ile yazdir (no_log kullanma kararini sen ver)
 
-    - name
+    - name: ArgoCD initial admin password'i al
+      ansible.builtin.shell: >
+        kubectl -n argocd get secret argocd-initial-admin-secret
+        -o jsonpath="{.data.password}" | base64 -d
+      register: argocd_initial_admin_password
+      no_log: true
+      tags: [argocd]
+
