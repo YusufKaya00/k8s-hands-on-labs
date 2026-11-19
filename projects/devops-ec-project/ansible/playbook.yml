@@ -51,8 +51,10 @@
         values:
           controller:
             service:
+              loadBalancerIP: "{{ tf_ingress_ip_stdout }}"
               annotations:
                 service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"
+                service.beta.kubernetes.io/azure-load-balancer-resource-group: "{{ resource_group }}"
       tags: [ingress]
 
     - name: NGINX Ingress External IP adresini al
@@ -98,6 +100,10 @@
     # TODO: [Ingress sabit IP] ingress-nginx values'una Terraform'dan gelen sabit IP'yi ekle:
     #       controller.service.loadBalancerIP ve
     #       annotation service.beta.kubernetes.io/azure-load-balancer-resource-group
+    -
+
+
+
     # TODO: argo Helm repo ekle (https://argoproj.github.io/argo-helm)
     # TODO: argo/argo-cd chart'ini `argocd` namespace'ine kur (create_namespace, wait,
     #       configs.params."server.insecure" = true)
