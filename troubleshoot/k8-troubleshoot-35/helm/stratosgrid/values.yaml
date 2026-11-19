@@ -110,7 +110,7 @@ pricingApi:
 
 checkoutApi:
   replicaCount: 3
-  antiAffinityMode: ""
+  antiAffinityMode: "lightweight"
   image:
     repository: python
     tag: "3.11-alpine"
