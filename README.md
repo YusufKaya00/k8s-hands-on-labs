@@ -19,6 +19,7 @@ All projects and troubleshooting scenarios are fully reproducible on local clust
 k8s-hands-on-labs/
 ├── lessons/                         # Curated DevOps Deep-Dive Tracks & Topic-Specific Labs (90DaysOfDevOps)
 │   ├── 01-logging-pipeline/         # Centralized Logging & Tracing (ELK, Fluentd, FluentBit, EFK, OpenTelemetry)
+│   │   └── lab-1/                   # Local Minikube FluentBit DaemonSet + Loki + Grafana Break-and-Fix Lab
 │   ├── 02-backup-disaster-recovery/ # Stateful Backup, Velero/Kasten/Kanister & Disaster Recovery
 │   ├── 03-secrets-management-vault/ # HashiCorp Vault, Dynamic Credentials & TLS
 │   ├── 04-devsecops-runtime-security/ # SAST/DAST, Auditing, Falco, Tetragon & Runtime Defense
@@ -206,6 +207,7 @@ k8s-hands-on-labs/
 
 ### 3. Curated Deep-Dive Tracks & Topic Labs (`lessons/`)
 * [**lessons/README.md:** Selected DevOps Mastery Tracks (`90DaysOfDevOps` Reference)](./lessons/README.md) — Structured theory links, YouTube sessions, and topic-specific labs across [**Logging & Tracing**](./lessons/01-logging-pipeline/README.md), [**Backup & Disaster Recovery**](./lessons/02-backup-disaster-recovery/README.md), [**Vault Secrets & Dynamic Credentials**](./lessons/03-secrets-management-vault/README.md), [**DevSecOps SAST/DAST & Runtime Defense**](./lessons/04-devsecops-runtime-security/README.md), and [**Day-2 Ops, Service Mesh & Ansible RBAC**](./lessons/05-day2-ops-rbac-platform/README.md).
+  * [**Lesson 01 / Lab 1:** Centralized Logging Pipeline (FluentBit DaemonSet + Loki + Grafana)](./lessons/01-logging-pipeline/lab-1/README.md) — 100% local Minikube blind-mode break-and-fix lab covering DaemonSet taint/toleration, least-privilege Kubernetes filter RBAC, CRI JSON merging + PII redaction, Loki delivery, and cross-service `X-Request-ID` correlation in Grafana.
 
 ---
 
@@ -300,6 +302,7 @@ Tüm projeler ve sorun giderme laboratuvarları hem yerel kümelerde (**Minikube
 
 #### 3. Konu Bazlı Teori & Spesifik Lab Serisi (`lessons/`)
 * [**lessons/README.md:** DevOps Maceram — Seçili Dersler & Konu Bazlı Lablar (`90DaysOfDevOps` Referanslı)](./lessons/README.md) — [**Merkezi Loglama & Tracing**](./lessons/01-logging-pipeline/README.md), [**Backup & Disaster Recovery**](./lessons/02-backup-disaster-recovery/README.md), [**HashiCorp Vault Secrets**](./lessons/03-secrets-management-vault/README.md), [**İleri DevSecOps (SAST & Runtime Defense)**](./lessons/04-devsecops-runtime-security/README.md) ve [**Day-2 Ops, Service Mesh & Ansible RBAC**](./lessons/05-day2-ops-rbac-platform/README.md) dersleri ve bağlı labları.
+  * [**Ders 01 / Lab 1:** Merkezi Loglama Hattı (FluentBit DaemonSet + Loki + Grafana)](./lessons/01-logging-pipeline/lab-1/README.md) — %100 yerel Minikube üzerinde DaemonSet taint/toleration, en az yetki RBAC, JSON parse + PII maskeleme, Loki teslimi ve Grafana'da mikroservisler arası `X-Request-ID` korelasyonu kör mod labı.
 
 ---
 
