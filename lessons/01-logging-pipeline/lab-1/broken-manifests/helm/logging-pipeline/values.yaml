@@ -1,0 +1,44 @@
+namespaces:
+  app: shop-app
+  logging: kube-logging
+
+nodeTaint:
+  key: dedicated
+  value: logging-lab
+  effect: NoSchedule
+
+shopApp:
+  image: python:3.11-alpine
+  checkoutPort: 8080
+  paymentPort: 8081
+  trafficIntervalSeconds: 5
+
+loki:
+  image: grafana/loki:3.1.1
+  port: 3100
+
+grafana:
+  image: grafana/grafana:11.2.0
+  port: 3000
+  adminUser: admin
+  adminPassword: admin
+
+fluentbit:
+  image: fluent/fluent-bit:3.1.8
+  httpPort: 2020
+  tolerations: []
+  rbac:
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  parser:
+    mergeLog: "Off"
+    keepLog: "Off"
+  filters:
+    modifyRules: []
+  output:
+    lokiHost: "loki.kube-logging.svc.cluster.local"
+    lokiPort: 3101
