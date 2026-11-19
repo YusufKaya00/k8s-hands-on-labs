@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-proxy-conf
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app.kubernetes.io/part-of: stratosgrid
+data:
+  nginx.conf: |
+    worker_processes 1;
+    events { worker_connections 256; }
+    http {
+      resolver kube-dns.kube-system.svc.cluster.local valid=5s ipv6=off;
+      client_max_body_size 20m;
+
+      server {
+        listen {{ .Values.edgeProxy.port }};
+
+        location = /healthz {
+          default_type application/json;
+          return 200 '{"service":"edge-proxy","status":"healthy","version":"18.0"}';
+        }
+
+        location /api/uploads/ {
+          set $up "upload-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.uploadApi.port }}";
+          proxy_pass http://$up;
+          proxy_connect_timeout 3s;
+          proxy_read_timeout 5s;
+        }
+
+        location /api/vault/ {
+          set $up "auth-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.authApi.port }}";
+          proxy_pass http://$up;
+          proxy_connect_timeout 3s;
+          proxy_read_timeout 5s;
+        }
+
+        location /api/tokens/ {
+          set $up "token-issuer.{{ .Values.namespaces.data }}.svc.cluster.local:{{ .Values.tokenIssuer.port }}";
+          proxy_pass http://$up;
+          proxy_connect_timeout 3s;
+          proxy_read_timeout 5s;
+        }
+
+        location /api/pricing/ {
+          set $up "pricing-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.pricingApi.port }}";
+          proxy_pass http://$up;
+          proxy_connect_timeout 3s;
+          proxy_read_timeout 5s;
+        }
+
+        location /api/checkout/ {
+          set $up "checkout-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.checkoutApi.port }}";
+          proxy_pass http://$up;
+          proxy_connect_timeout 3s;
+          proxy_read_timeout 5s;
+        }
+
+        location /api/reports/ {
+          set $up "report-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.reportApi.port }}";
+          proxy_pass http://$up;
+          proxy_connect_timeout 3s;
+          proxy_read_timeout 5s;
+        }
+
+        location /api/billing/ {
+          set $up "billing-api.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.billingApi.port }}";
+          proxy_pass http://$up;
+          proxy_connect_timeout 3s;
+          proxy_read_timeout 5s;
+        }
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pricing-config
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/part-of: stratosgrid
+data:
+  {{ .Values.pricingApi.actualConfigKey }}: "EUR"
+  REGION: "eu-north"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: core-apps-code
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/part-of: stratosgrid
+data:
+  catalog.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            if self.path == "/items":
+                body = json.dumps({"service": "catalog-api", "items": ["compute", "storage", "mesh"], "status": "ok"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body); return
+            body = json.dumps({"error": "not_found", "received_path": self.path}).encode()
+            self.send_response(404); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8081"))), H).serve_forever()
+
+  upload.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            _ = self.rfile.read(length)
+            body = json.dumps({"service": "upload-api", "received_bytes": length, "status": "accepted"}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8082"))), H).serve_forever()
+
+  auth.py: |
+    import json, os, urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    VAULT_URL = os.environ.get("VAULT_URL", "http://vault-bridge:8085/verify")
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            try:
+                with urllib.request.urlopen(VAULT_URL, timeout=3) as r:
+                    upstream = json.loads(r.read().decode())
+                body = json.dumps({"service": "auth-api", "vault": upstream, "status": "verified"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+            except Exception as e:
+                body = json.dumps({"service": "auth-api", "error": str(e), "target": VAULT_URL}).encode()
+                self.send_response(502); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8083"))), H).serve_forever()
+
+  simple.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    SVC = os.environ.get("SERVICE_NAME", "app")
+    EXTRA = os.environ.get("EXTRA_VAL", "")
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"service": SVC, "status": "ok", "meta": EXTRA, "uid": os.getuid()}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), H).serve_forever()
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-apps-code
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: stratosgrid
+data:
+  simple.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    SVC = os.environ.get("SERVICE_NAME", "data-svc")
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"service": SVC, "status": "ok"}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8085"))), H).serve_forever()

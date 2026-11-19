@@ -1,0 +1,6 @@
+apiVersion: v2
+name: stratosgrid
+description: StratosGrid v18.0 — Blind-Mode Full-Spectrum Kubernetes General Review #4
+type: application
+version: 18.0.0
+appVersion: "18.0.0"

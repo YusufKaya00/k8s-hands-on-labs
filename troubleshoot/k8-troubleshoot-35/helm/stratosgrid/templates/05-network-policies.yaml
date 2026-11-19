@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: token-issuer-netpol
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  podSelector:
+    matchLabels:
+      app: token-issuer
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.tokenIssuer.networkPolicy.allowedNamespace }}
+          podSelector:
+            matchLabels:
+              app: {{ .Values.tokenIssuer.networkPolicy.allowedPodApp }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.tokenIssuer.port }}
