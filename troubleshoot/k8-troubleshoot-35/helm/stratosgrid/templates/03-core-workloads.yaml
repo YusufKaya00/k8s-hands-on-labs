@@ -224,7 +224,6 @@ spec:
           configMap:
             name: core-apps-code
 ---
-# 4. pricing-api (Ticket 5: ConfigMap key mismatch)
 apiVersion: v1
 kind: Service
 metadata:
@@ -293,7 +292,6 @@ spec:
           configMap:
             name: core-apps-code
 ---
-# 5. checkout-api (Ticket 6: Hard podAntiAffinity deadlock on 2 nodes)
 apiVersion: v1
 kind: Service
 metadata:
@@ -379,7 +377,6 @@ spec:
           configMap:
             name: core-apps-code
 ---
-# 6. report-api (Ticket 7: runAsNonRoot without runAsUser)
 apiVersion: v1
 kind: Service
 metadata:
@@ -452,7 +449,6 @@ spec:
           configMap:
             name: core-apps-code
 ---
-# 7. billing-api (Ticket 10: Exceeds LimitRange max memory)
 apiVersion: v1
 kind: Service
 metadata:
