@@ -41,6 +41,14 @@
         state: present
       tags: [ingress]
 
+   
+    - name: Terraformdan gelen sabir ingress IP'yi al
+      ansible.builtin.command:
+        cmd: terraform output -raw ingress_public_ip
+        chdir: ../terraform
+      register: tf_ingress_ip
+      tags: [ingress]
+
     - name: NGINX Ingress Controller to AKS
       kubernetes.core.helm:
         name: ingress-nginx
@@ -51,7 +59,7 @@
         values:
           controller:
             service:
-              loadBalancerIP: "{{ tf_ingress_ip_stdout }}"
+              loadBalancerIP: "{{ tf_ingress_ip.stdout }}"
               annotations:
                 service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"
                 service.beta.kubernetes.io/azure-load-balancer-resource-group: "{{ resource_group }}"
