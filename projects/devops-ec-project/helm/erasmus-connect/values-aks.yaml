@@ -7,18 +7,15 @@
 nextjs:
   image:
     repository: "erasmusconnectv1.azurecr.io/erasmus-connect-frontend"
-    tag: "v1"
-
+    tag: "2e37bda"
 admin:
   image:
     repository: "erasmusconnectv1.azurecr.io/erasmus-connect-admin"
-    tag: "v1"
-
+    tag: "2e37bda"
 express:
   image:
     repository: "erasmusconnectv1.azurecr.io/erasmus-connect-backend"
-    tag: "v1"
-
+    tag: "2e37bda"
 ingress:
   host: "<IP>.nip.io"
   adminHost: "admin.<IP>.nip.io"
