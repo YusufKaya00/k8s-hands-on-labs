@@ -46,7 +46,7 @@ fluentbit:
   filters:
     modifyRules: 
      - key: auth_token
-       value: "[REDACTED]""
+       value: "[REDACTED]"
      - key: card_token
        value: "[REDACTED]"
       
