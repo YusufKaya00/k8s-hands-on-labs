@@ -36,7 +36,7 @@
 
 | Lab | Klasör | Konu / Senaryo | Durum |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(oluşturulacak)* | FluentBit DaemonSet + Loki/EFK Log Pipeline & Break-and-Fix (Parser / RBAC / Taint) | ⬜ Planlandı |
+| **Lab 1** | [`./lab-1/`](./lab-1/README.md) | FluentBit DaemonSet + Loki + Grafana Log Pipeline & Break-and-Fix (Taint / RBAC / Parser + PII Maskeleme / Loki Output) — %100 Yerel Minikube | 🟡 Hazır |
 
 ---
 
@@ -55,4 +55,4 @@ My existing labs already cover **metrics and alerting** (Prometheus, Grafana, Al
 
 | Lab | Directory | Topic / Scenario | Status |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(upcoming)* | FluentBit DaemonSet + Loki/EFK Log Pipeline & Break-and-Fix (Parser / RBAC / Taint) | ⬜ Planned |
+| **Lab 1** | [`./lab-1/`](./lab-1/README.md) | FluentBit DaemonSet + Loki + Grafana Log Pipeline & Break-and-Fix (Taint / RBAC / Parser + PII Redaction / Loki Output) — 100% Local Minikube | 🟡 Ready |
