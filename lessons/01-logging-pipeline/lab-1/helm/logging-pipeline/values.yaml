@@ -46,6 +46,10 @@ fluentbit:
     keepLog: "on"
   filters:
     modifyRules: 
+    - key: auth_token
+        value: "[REDACTED]"
+    - key: card_token
+        value: "[REDACTED]"
       
       
   output:
