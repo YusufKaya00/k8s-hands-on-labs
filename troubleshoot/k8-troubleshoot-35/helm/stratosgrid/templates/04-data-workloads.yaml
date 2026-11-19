@@ -188,7 +188,6 @@ spec:
               imagePullPolicy: {{ .Values.batch.heartbeatCron.image.pullPolicy }}
               command: ["sh", "-c", "echo heartbeat-ok"]
 ---
-# 4. node-metrics-agent DaemonSet (Ticket 9: Taint effect mismatch)
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
