@@ -1159,25 +1159,35 @@ curl -i -X POST http://<SABIT_IP>.nip.io/api/v1/ping
 
 ---
 
-### Bilet 26: GitHub Actions CI Pipeline (Build -> ACR -> GitOps Tag)
+### Bilet 26: GitHub Actions İzole AKS CI Pipeline (Build -> ACR -> GitOps Tag)
 
 **a) Görev Tanımı:**
-- [ci/build-push-update-tag.yml](./ci/build-push-update-tag.yml) şablonunu her uygulama reposuna (`frontend`, `backend`, `admin`) `.github/workflows/` altına kopyala ve `env:` değerlerini [ci/README.md](./ci/README.md) tablosuna göre değiştir.
-- Her uygulama reposuna secret'ları ekle: `AZURE_CREDENTIALS` (`AcrPush` yetkili Service Principal), `ACR_NAME`, `GITOPS_TOKEN` (`contents: write` PAT), `FRONTEND_BUILD_ENV` (`.env.frontend-build` içeriği).
-- Frontend/admin build-arg URL'lerinin **sabit IP**'ye (`Bilet 24`) işaret ettiğinden emin ol.
+- Canlı uygulama reposunun (`YusufKaya00/Erasmus-Connect`) mevcut CI'ına hiç dokunmadan, doğrudan bu repoda tanımlanan [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml) workflow'unu incele ([ci/README.md](./ci/README.md)).
+- Bu reponun (`YusufKaya00/k8s-hands-on-labs`) GitHub Actions Secrets bölümüne şu 5 secret'ı ekle:
+  - `APP_REPO_TOKEN`: `YusufKaya00/Erasmus-Connect` için `Contents: Read-only` Fine-grained PAT (repo private olduğu için)
+  - `AZURE_CREDENTIALS`: ACR üzerinde `AcrPush` yetkili Service Principal JSON çıktısı
+  - `ACR_NAME`: `erasmusconnectv1`
+  - `FRONTEND_BUILD_ENV`: `.env.frontend-build` içeriği (`NEXT_PUBLIC_*` URL'leri Bilet 24'teki **sabit IP**'ye işaret etmeli)
+  - `ADMIN_BUILD_ENV`: `VITE_BACKEND_URL=http://<SABIT_IP>.nip.io` (ve varsa diğer `VITE_*` satırları)
+- GitHub'da **Actions → Erasmus Connect AKS CI → Run workflow** diyerek `service` (`backend` / `frontend` / `admin` / `all`) ve `app_ref` (`develop` = root context `.`, `main` = klasör context) seçip çalıştır.
 
 **b) İpucu ve Referans:**
-- `az ad sp create-for-rbac --role AcrPush --scopes <ACR_ID> --sdk-auth`
-- Pipeline imajı `ACR:<kısa-sha>` olarak pushlar ve `values-aks.yaml` tag'ini commit'ler; ArgoCD `automated` sync ile deploy eder.
+- Service Principal oluşturma:
+  ```bash
+  ACR_ID=$(az acr show --name erasmusconnectv1 --query id -o tsv)
+  az ad sp create-for-rbac --name "sp-erasmus-acr-push" --role AcrPush --scopes "$ACR_ID" --sdk-auth
+  ```
+- Workflow aynı repoda çalıştığı için `values-aks.yaml` commit'inde yerleşik `GITHUB_TOKEN` (`contents: write`) kullanır; ekstra `GITOPS_TOKEN` gerekmez.
+- Pipeline imajı `ACR:<app-kısa-sha>` olarak pushlar, `values-aks.yaml` tag'ini günceller ve ArgoCD `automated` sync ile AKS'e deploy eder.
 
 **c) Çözüm Kanıtı:**
 ```bash
-# Uygulama reposunda küçük bir değişiklik pushla, sonra:
-az acr repository show-tags --name <ACR_ADIN> --repository erasmus-connect-backend -o table
-git pull   # GitOps reposunda "ci: ... -> <sha>" commit'i gelmeli
-kubectl get pods -n default -o jsonpath='{range .items[*]}{.spec.containers[*].image}{"\n"}{end}'
+# Actions'tan workflow başarıyla bittikten sonra:
+az acr repository show-tags --name erasmusconnectv1 --repository erasmus-connect-backend -o table
+git pull   # Bu repoda "ci(erasmus): ... -> <sha> (develop)" commit'i gelmeli
+kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[*].image}{"\n"}{end}'
 ```
-- Yeni `<kısa-sha>` tag'li imajın podlarda çalıştığını gör.
+- Yeni `<app-kısa-sha>` tag'li imajın podlarda `Running` çalıştığını gör.
 
 ---
 
