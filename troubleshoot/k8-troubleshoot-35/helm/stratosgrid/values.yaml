@@ -99,7 +99,7 @@ pricingApi:
     pullPolicy: IfNotPresent
   port: 8084
   actualConfigKey: "DEFAULT_CURRENCY"
-  configMapKeyRef: "CURRENCY_MODE"
+  configMapKeyRef: "DEFAULT_CURRENCY"
   resources:
     requests:
       cpu: 30m
