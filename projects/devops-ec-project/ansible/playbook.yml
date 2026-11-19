@@ -74,20 +74,6 @@
     # --------------------------------------------------------------------------
     # ADIM 4 - Secret ve ConfigMap Yukleme (Idempotent)
     # --------------------------------------------------------------------------
-    - name: Docker Hub private imaj cekme Secret'ini olustur
-      ansible.builtin.shell: >
-        set -a && . ../.env.dockerhub && set +a &&
-        kubectl create secret docker-registry dockerhub-secret
-        --docker-server=https://index.docker.io/v1/
-        --docker-username=yusufk00
-        --docker-password="$DOCKERHUB_TOKEN"
-        -n {{ app_namespace }}
-        --dry-run=client -o yaml | kubectl apply -f -
-      args:
-        executable: /bin/bash
-      no_log: true
-      tags: [deploy]
-
     - name: Backend Secrets olustur (.env.backend-secrets)
       ansible.builtin.shell: >
         kubectl create secret generic erasmus-backend-secrets
@@ -106,16 +92,16 @@
       tags: [deploy]
 
     # --------------------------------------------------------------------------
-    # ADIM 5 - Erasmus Connect Helm Chart'ini AKS'e Deploy Et
+    # ADIM 5 - ArgoCD Kurulumu (uygulamayi artik ArgoCD deploy eder; helm install YOK)
+    # NOT: Ingress cakismasi olmamasi icin `helm upgrade --install erasmus` calistirma!
     # --------------------------------------------------------------------------
-    - name: Erasmus Connect Helm Chart'ini AKS'e deploy et
-      ansible.builtin.command:
-        cmd: >
-          helm upgrade --install {{ release_name }} {{ chart_path }}
-          --namespace {{ app_namespace }}
-          --wait
-          --set nextjs.image.tag={{ aks_frontend_tag }}
-          --set admin.image.tag={{ aks_admin_tag }}
-          --set ingress.host={{ aks_ingress_host if (aks_ingress_host | length > 0) else (nginx_ingress_ip.stdout + '.nip.io') }}
-          --set ingress.adminHost={{ aks_admin_host if (aks_admin_host | length > 0) else ('admin.' + nginx_ingress_ip.stdout + '.nip.io') }}
-      tags: [deploy]
+    # TODO: [Ingress sabit IP] ingress-nginx values'una Terraform'dan gelen sabit IP'yi ekle:
+    #       controller.service.loadBalancerIP ve
+    #       annotation service.beta.kubernetes.io/azure-load-balancer-resource-group
+    # TODO: argo Helm repo ekle (https://argoproj.github.io/argo-helm)
+    # TODO: argo/argo-cd chart'ini `argocd` namespace'ine kur (create_namespace, wait,
+    #       configs.params."server.insecure" = true)
+    # TODO: argocd/erasmus-app.yaml dosyasini kubectl apply ile uygula
+    #       (kubernetes.core.k8s modulu: src veya definition)
+    # TODO: (Opsiyonel) Chaos Mesh Helm kurulumu (chaos-mesh namespace)
+    # TODO: ArgoCD initial admin sifresini debug ile yazdir (no_log kullanma kararini sen ver)
