@@ -42,8 +42,8 @@ fluentbit:
     
       
   parser:
-    mergeLog: "Off"
-    keepLog: "Off"
+    mergeLog: "on"
+    keepLog: "on"
   filters:
     modifyRules: 
       
