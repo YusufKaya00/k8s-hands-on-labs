@@ -1191,30 +1191,121 @@ kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}
 
 ---
 
+## Faz 10: Observability — Prometheus, Grafana, NGINX Metrikleri ve SRE Alarmları
+
+Bu fazda 2x `Standard_B2s` kümenin RAM ve 60 pod sınırına sığacak şekilde hafif bir **kube-prometheus-stack** kuracak, **NGINX Ingress**'ten uygulama kodu değiştirmeden HTTP RED metriklerini (Rate, Errors, Duration) toplayacak ve **PrometheusRule** ile gerçek SRE alarmları yazıp canlı test edeceksin.
+
+---
+
+### Bilet 27: Hafif `kube-prometheus-stack` Kurulumu ([monitoring/values-prometheus.yaml](./monitoring/values-prometheus.yaml))
+
+**a) Görev Tanımı:**
+- [monitoring/values-prometheus.yaml](./monitoring/values-prometheus.yaml) dosyasındaki `[Bilet 27]` `# TODO` kısımlarını doldur:
+  1. `prometheus.prometheusSpec`: `retention: "2d"`, `scrapeInterval: "30s"`, `serviceMonitorSelectorNilUsesHelmValues: false`, `ruleSelectorNilUsesHelmValues: false` ve kaynak sınırları (`requests: 100m / 256Mi`, `limits: 500m / 600Mi`).
+  2. `grafana`: `adminPassword` ve hafif `resources` (`50m / 128Mi` → `250m / 256Mi`).
+  3. `alertmanager.alertmanagerSpec`: hafif `resources` (`25m / 64Mi` → `100m / 128Mi`).
+- `monitoring` namespace'ine Helm ile kur (istersen sonra [ansible/playbook.yml](./ansible/playbook.yml) içine `tags: [monitoring]` olarak da ekle!).
+
+> [!IMPORTANT]
+> **Neden `serviceMonitorSelectorNilUsesHelmValues: false`?**
+> Varsayılan olarak `true` gelir ve Prometheus Operator **yalnızca kendi Helm release etiketini taşıyan** `ServiceMonitor`/`PrometheusRule` nesnelerini görür. `false` yapmazsan `ingress-nginx` namespace'indeki ServiceMonitor'ü veya kendi yazdığın alarmları sessizce yok sayar!
+
+**b) İpucu ve Referans:**
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+  --namespace monitoring --create-namespace \
+  -f ./monitoring/values-prometheus.yaml
+```
+- **Arayüzlere erişim (internete açmadan):**
+  - Grafana: `kubectl port-forward svc/monitoring-grafana -n monitoring 3001:80` → `http://localhost:3001` (kullanıcı: `admin`, şifre: `values-prometheus.yaml`'da belirlediğin).
+  - Prometheus: `kubectl port-forward svc/monitoring-kube-prometheus-prometheus -n monitoring 9090:9090` → `http://localhost:9090`.
+  - Alertmanager: `kubectl port-forward svc/monitoring-kube-prometheus-alertmanager -n monitoring 9093:9093` → `http://localhost:9093`.
+
+**c) Çözüm Kanıtı:**
+```bash
+kubectl get pods -n monitoring
+kubectl top nodes   # RAM %85'in altında ve tüm podlar Running olmalı
+```
+
+---
+
+### Bilet 28: NGINX Ingress RED Metrikleri (`ServiceMonitor`) ve Grafana Dashboard
+
+**a) Görev Tanımı:**
+- [ansible/playbook.yml](./ansible/playbook.yml) içindeki `NGINX Ingress Controller to AKS` görevinin `values.controller:` altına `metrics` bloğunu ekle ve `ansible-playbook playbook.yml --tags ingress` ile uygula:
+  - `metrics.enabled: true`
+  - `metrics.serviceMonitor.enabled: true`
+- Prometheus arayüzünde (**Status → Targets**) `ingress-nginx` hedefinin **`UP`** olduğunu doğrula.
+- Grafana'da hazır **NGINX Ingress Controller** panosunu (**Dashboards → Import → ID: `9614`** veya **`14314`**) içeri aktar.
+
+**b) İpucu ve Referans:**
+- Prometheus Graph (`http://localhost:9090/graph`) ekranında şu 3 PromQL sorgusunu çalıştırıp anla:
+  - **Saniyelik İstek (RPS):** `sum(rate(nginx_ingress_controller_requests[5m])) by (host, status)`
+  - **p95 Yanıt Süresi:** `histogram_quantile(0.95, sum(rate(nginx_ingress_controller_request_duration_seconds_bucket[5m])) by (le, ingress))`
+  - **Default Namespace Pod RAM Kullanımı:** `sum(container_memory_working_set_bytes{namespace="default", container!=""}) by (pod)`
+
+**c) Çözüm Kanıtı:**
+```bash
+kubectl get servicemonitor -n ingress-nginx
+# Trafik üret ve Grafana + Prometheus'ta grafiğin yükseldiğini gör:
+for i in $(seq 1 30); do curl -s -o /dev/null -X POST http://9.205.93.250.nip.io/api/v1/ping; done
+```
+
+---
+
+### Bilet 29: Özel SRE Alarmları (`PrometheusRule`) ve Canlı Alarm Testi
+
+**a) Görev Tanımı:**
+- [monitoring/prometheus-rules.yaml](./monitoring/prometheus-rules.yaml) dosyasındaki 3 `[Bilet 29]` `# TODO` alarm kuralını (`ErasmusExpressDown`, `ErasmusPodCrashLooping`, `ErasmusHigh5xxRate`) `kubectl explain prometheusrule.spec.groups.rules` çıktısına göre doldur ve kümeye uygula.
+- **Canlı Alarm Testi (Game Day):** Express'i geçici olarak boz veya ölçeğini `0` yap (ya da Chaos Mesh `01-pod-kill-express.yaml` çalıştır), Prometheus **Alerts** ekranında (`http://localhost:9090/alerts`) alarmın `INACTIVE → PENDING → FIRING` geçişini ve **Alertmanager** (`http://localhost:9093`) ekranına düştüğünü canlı gözlemle!
+
+> [!WARNING]
+> **ArgoCD `selfHeal` Notu:** Express Deployment'ını elle `kubectl scale ... --replicas=0` yapsan da ArgoCD `ignoreDifferences: /spec/replicas` sayesinde dokunmaz — ancak **HPA** (`minReplicas: 2`) ~15 saniye içinde replikayı tekrar 2'ye çıkarır! `ErasmusExpressDown` alarmını canlı test etmek istersen geçici olarak HPA'yı durdurabilir (`kubectl patch hpa ...`) veya yanlış bir endpoint/port üzerinden 5xx/restart tetikleyebilirsin; test bitince geri almayı unutma!
+
+**b) İpucu ve Referans:**
+- `kubectl explain prometheusrule.spec.groups.rules`
+- `kubectl apply -f ./monitoring/prometheus-rules.yaml`
+- `kubectl get prometheusrule -n monitoring`
+
+**c) Çözüm Kanıtı:**
+```bash
+kubectl get prometheusrule erasmus-connect-alerts -n monitoring
+# Prometheus UI -> Alerts sayfasında 3 kuralın (ErasmusExpressDown, ErasmusPodCrashLooping, ErasmusHigh5xxRate) yüklendiğini ve en az 1 tanesinin test sırasında FIRING olduğunu doğrula!
+```
+
+---
+
 ## Kontrol Listesi (Kendini Değerlendir)
 
 - [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
 - [ ] `express-deployment.yaml` ve `nextjs-deployment.yaml` podları `0.0.0.0` dinliyor ve `containerPort` ile Service `targetPort` eşleşiyor.
 - [ ] Redis `StatefulSet` ve `Headless Service` (`clusterIP: None`) kararlı DNS ile çalışıyor.
-- [ ] Tüm podların `requests` ve `limits` değerleri tek `Standard_B2s` node kapasitesine sığıyor.
+- [ ] Tüm podların `requests` ve `limits` değerleri `Standard_B2s` node kapasitesine sığıyor.
 - [ ] Next.js podu Redis `6379` portuna ulaşamıyor (Calico engelliyor), sadece Express podu ulaşabiliyor.
 - [ ] Express `NetworkPolicy` kuralı **Post-DNAT** gerçekliğini (pod `containerPort` + Ingress `namespaceSelector`) doğru yansıtıyor.
+- [ ] Ortam silinip tek `terraform apply` + `ansible-playbook` ile sıfırdan kuruluyor; Ingress IP'si sabit kalıyor.
+- [ ] GitHub Actions CI imajı ACR'ye pushluyor -> `values-aks.yaml` tag'i güncelleniyor -> ArgoCD otomatik deploy ediyor.
+- [ ] Prometheus + Grafana çalışıyor, NGINX Ingress `ServiceMonitor` `UP`, özel `PrometheusRule` alarmları doğrulandı.
 - [ ] `terraform destroy` veya `az aks stop` ile gereksiz bulut maliyeti önlendi.
 
 ---
 
 <a id="-english-section"></a>
-## 🇬🇧 English Section — Step-by-Step Setup & 8-Phase DevOps Lab Roadmap
+## 🇬🇧 English Section — Step-by-Step Setup & 10-Phase DevOps Lab Roadmap
 
-This guide walks through building **Erasmus Connect** (**Next.js** frontend, **Vite/Nginx** admin SPA, **Express** backend, **Redis** cache, external **MongoDB Atlas** & **Supabase**) from local **Minikube + Calico** all the way to **Azure AKS + Terraform + Ansible + ArgoCD GitOps + ACR** across **8 Phases (23 Tickets)**:
+This guide walks through building **Erasmus Connect** (**Next.js** frontend, **Vite/Nginx** admin SPA, **Express** backend, **Redis** cache, external **MongoDB Atlas** & **Supabase**) from local **Minikube + Calico** all the way to **Azure AKS + Terraform + Ansible + ArgoCD GitOps + ACR + GitHub Actions CI + Prometheus/Grafana Observability** across **10 Phases (29 Tickets)**:
 
 ### Phases Overview
 1. **Phases 1–2 — Containerization & Helm Chart Packaging:** Package Express (`:4000`), Next.js (`:3000`, `HOSTNAME=0.0.0.0`), Admin SPA (`:80`), and Redis (`StatefulSet` + Headless `Service`, `clusterIP: None`) under [`helm/erasmus-connect/`](./helm/erasmus-connect/). Keep secrets out of Git using `.env.*` -> Kubernetes `Secret` & `ConfigMap` (`envFrom`), add resource requests/limits and `readinessProbe`/`livenessProbe`.
 2. **Phase 3 — NGINX Ingress & Zero-Trust Post-DNAT Calico Policies:** Configure host/path routing (`/`, `/api`, `admin.*`) via `ingress-nginx`. Enforce **Post-DNAT Calico `NetworkPolicy`** rules targeting Pod `containerPort` (`4000` / `6379`) and `ingress-nginx` `namespaceSelector` so Redis accepts only Express and Express accepts only Ingress + Next.js.
-3. **Phases 4–5 — Azure AKS Provisioning (Terraform) & Automated Bootstrap (Ansible):** Provision AKS (`Standard_B2s`, `Azure CNI` + `Calico`) in `DenmarkEast` via [`terraform/`](./terraform/main.tf). Run [`ansible/playbook.yml`](./ansible/playbook.yml) to fetch `kubeconfig`, deploy `ingress-nginx` with `service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"`, create ConfigMaps/Secrets from `.env.*`, and install the Helm release.
+3. **Phases 4–5 — Azure AKS Provisioning (Terraform) & Automated Bootstrap (Ansible):** Provision AKS (`Standard_B2s`, `Azure CNI` + `Calico`) in `DenmarkEast` via [`terraform/`](./terraform/main.tf). Run [`ansible/playbook.yml`](./ansible/playbook.yml) to fetch `kubeconfig`, deploy `ingress-nginx` with `service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"`, and create ConfigMaps/Secrets from `.env.*`.
 4. **Phase 6 — High Availability & Chaos Engineering:** Enforce CPU **HPA** (`2–4` replicas @ `60%` CPU), **PodDisruptionBudget (`minAvailable: 1`)**, and run **Chaos Mesh** experiments under [`chaos/`](./chaos/01-pod-kill-express.yaml) (pod kill, Redis network delay, Express CPU stress).
-5. **Phase 7 — Node Scaling & ArgoCD GitOps Migration:** Scale AKS `node_count` from `1 -> 2` in Terraform (overcoming the 30-pods-per-node Azure CNI cap), uninstall the manual `helm release` to avoid NGINX ingress admission ownership conflicts, and onboard [`argocd/erasmus-app.yaml`](./argocd/erasmus-app.yaml) with `prune: true`, `selfHeal: true`, and `ignoreDifferences` on `/spec/replicas`.
-6. **Phase 8 — Passwordless Azure Container Registry (`ACR`) + Managed Identity:** Provision ACR (`Basic`, `admin_enabled = false`) via [`terraform/acr.tf`](./terraform/acr.tf), assign the **`AcrPull`** RBAC role to the AKS `kubelet_identity`, push `:v1` images (`values-aks.yaml`), and remove `imagePullSecrets` (`dockerhub-secret`).
+5. **Phase 7 — Node Scaling & ArgoCD GitOps Migration:** Scale AKS `node_count` from `1 -> 2` in Terraform (overcoming the 30-pods-per-node Azure CNI cap), remove manual Helm releases to avoid NGINX ingress admission ownership conflicts, and onboard [`argocd/erasmus-app.yaml`](./argocd/erasmus-app.yaml) with `prune: true`, `selfHeal: true`, and `ignoreDifferences` on `/spec/replicas`.
+6. **Phase 8 — Passwordless Azure Container Registry (`ACR`) + Managed Identity:** Provision ACR (`Basic`, `admin_enabled = false`) via [`terraform/acr.tf`](./terraform/acr.tf), assign the **`AcrPull`** RBAC role to the AKS `kubelet_identity`, push images (`values-aks.yaml`), and remove `imagePullSecrets` (`dockerhub-secret`).
+7. **Phase 9 — One-Command Environment Rebuild & Isolated GitHub Actions CI:** Reserve a static Standard Public IP in [`terraform/network.tf`](./terraform/network.tf), bootstrap Ingress + Secrets + ArgoCD in [`ansible/playbook.yml`](./ansible/playbook.yml), and trigger [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml) to build from `YusufKaya00/Erasmus-Connect`, push to ACR, and commit image tag bumps for ArgoCD.
+8. **Phase 10 — Observability (Prometheus, Grafana, NGINX Metrics & SRE Alerts):** Deploy a tuned `kube-prometheus-stack` ([`monitoring/values-prometheus.yaml`](./monitoring/values-prometheus.yaml)), scrape NGINX Ingress RED metrics via `ServiceMonitor`, visualize traffic in Grafana, and verify custom alerts in [`monitoring/prometheus-rules.yaml`](./monitoring/prometheus-rules.yaml).
 
 ### Verification Checklist
 - [ ] Zero secrets/connection strings committed to Git (`.env.*` and `terraform.tfvars` gitignored).
@@ -1222,6 +1313,7 @@ This guide walks through building **Erasmus Connect** (**Next.js** frontend, **V
 - [ ] Redis `StatefulSet` + Headless Service resolves cleanly via DNS.
 - [ ] `NetworkPolicy` isolates Redis (`:6379`) exclusively to Express and enforces Post-DNAT rules on `:4000`.
 - [ ] ArgoCD syncs from ACR without `imagePullSecrets` and preserves HPA replica counts.
+- [ ] Full cluster rebuild via `terraform apply` + `ansible-playbook` preserves the static Ingress IP.
+- [ ] GitHub Actions CI builds & pushes to ACR and updates `values-aks.yaml` for ArgoCD auto-sync.
+- [ ] Prometheus/Grafana running within node capacity, NGINX `ServiceMonitor` `UP`, and custom `PrometheusRule` alerts verified.
 - [ ] Cluster stopped (`az aks stop`) or destroyed (`terraform destroy`) after verification to prevent idle cloud spend.
-- [ ] Ortam silinip tek `terraform apply` + `ansible-playbook` ile sıfırdan kuruluyor; Ingress IP'si sabit kalıyor.
-- [ ] Uygulama reposuna push -> CI imajı ACR'ye pushluyor -> `values-aks.yaml` tag'i güncelleniyor -> ArgoCD otomatik deploy ediyor.
