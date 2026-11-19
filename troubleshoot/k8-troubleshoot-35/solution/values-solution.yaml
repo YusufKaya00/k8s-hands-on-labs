@@ -1,0 +1,47 @@
+ingress:
+  proxyBodySize: "10m"
+
+catalogIngress:
+  path: "/v2/catalog(/|$)(.*)"
+  pathType: ImplementationSpecific
+  useRegex: "true"
+  rewriteTarget: "/$2"
+
+vaultBridge:
+  externalName: "vault-core.stratos-data.svc.cluster.local"
+
+tokenIssuer:
+  networkPolicy:
+    allowedNamespace: stratos-edge
+    allowedPodApp: edge-proxy
+
+pricingApi:
+  configMapKeyRef: "DEFAULT_CURRENCY"
+
+checkoutApi:
+  replicaCount: 2
+  antiAffinityMode: "soft"
+
+reportApi:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+
+batch:
+  bootstrapJob:
+    targetPort: 8085
+  heartbeatCron:
+    suspend: false
+
+nodeAgent:
+  tolerationEffect: "NoSchedule"
+
+billingApi:
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
