@@ -198,7 +198,7 @@ batch:
       tag: "3.11-alpine"
       pullPolicy: IfNotPresent
     targetPort: 8085
-    backoffLimit: 2
+    backoffLimit: 5
   heartbeatCron:
     image:
       repository: busybox
