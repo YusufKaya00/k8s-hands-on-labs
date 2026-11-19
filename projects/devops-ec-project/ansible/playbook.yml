@@ -10,14 +10,7 @@
   vars:
     resource_group: "rg-erasmus-connect-dev"
     cluster_name: "aks-erasmus-connect-dev"
-    chart_path: "../helm/erasmus-connect"
-    release_name: "erasmus"
     app_namespace: "default"
-    # External IP ciktiktan sonra guncellenecek (Adim 5)
-    aks_frontend_tag: "aks"
-    aks_admin_tag: "aks"
-    aks_ingress_host: ""
-    aks_admin_host: ""
 
   tasks:
     - name: Baslangic kontrolu - degiskenlerin bos olmadigini dogrula
@@ -26,13 +19,13 @@
           - resource_group | length > 0
           - cluster_name | length > 0
         fail_msg: "resource_group ve cluster_name bos olamaz!"
-      tags: [ingress, deploy]
+      tags: [ingress, deploy, argocd]
 
     - name: AKS Kubeconfig pull etme
       ansible.builtin.command:
         cmd: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing
       changed_when: false
-      tags: [ingress, deploy]
+      tags: [ingress, deploy, argocd]
 
     - name: NGINX Ingress Helm repo add
       kubernetes.core.helm_repository:
@@ -74,12 +67,12 @@
       retries: 15
       delay: 10
       changed_when: false
-      tags: [ingress, deploy]
+      tags: [ingress, deploy, argocd]
 
     - name: NGINX Ingress External IP ciktisi
       ansible.builtin.debug:
         msg: "AKS Ingress External IP: {{ nginx_ingress_ip.stdout }} (Test adresi: http://{{ nginx_ingress_ip.stdout }}.nip.io)"
-      tags: [ingress, deploy]
+      tags: [ingress, deploy, argocd]
 
     # --------------------------------------------------------------------------
     # ADIM 4 - Secret ve ConfigMap Yukleme (Idempotent)
@@ -126,12 +119,27 @@
           configs:
             params:
               "server.insecure": "true"
+      tags: [argocd]
 
-      
     - name: erasmus connect argocd application olustur
       kubernetes.core.k8s:
         state: present
-        src: ../argocd/erasmus-app.yaml
+        resource_definition: >-
+          {{
+            lookup('file', '../argocd/erasmus-app.yaml') | from_yaml
+            | combine({
+                'spec': {
+                  'source': {
+                    'helm': {
+                      'parameters': [
+                        {'name': 'ingress.host', 'value': nginx_ingress_ip.stdout ~ '.nip.io'},
+                        {'name': 'ingress.adminHost', 'value': 'admin.' ~ nginx_ingress_ip.stdout ~ '.nip.io'}
+                      ]
+                    }
+                  }
+                }
+              }, recursive=True)
+          }}
       tags: [argocd]
        
 
