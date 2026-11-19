@@ -133,8 +133,8 @@ reportApi:
   port: 8088
   securityContext:
     runAsNonRoot: false
-    runAsUser: null
-    runAsGroup: null
+    runAsUser: true
+    runAsGroup: true
   resources:
     requests:
       cpu: 30m
