@@ -4,30 +4,30 @@
 
 
 variable "resource_group_name" {
-  type = string
+  type    = string
   default = "rg-erasmus-connect-dev"
 }
 variable "resource_group_location" {
-  type = string
+  type    = string
   default = "DenmarkEast"
 }
 
 variable "cluster_name" {
-  type = string
+  type    = string
   default = "aks-erasmus-connect-dev"
 }
 
 variable "dns_prefix" {
-  type = string
+  type    = string
   default = "aks-erasmus-connect-dev"
 }
 
 variable "node_count" {
-  type = number
+  type    = number
   default = 2
 }
 
 variable "vm_size" {
-  type = string
+  type    = string
   default = "Standard_B2s"
 }

@@ -17,9 +17,9 @@ resource "azurerm_kubernetes_cluster" "erasmus" {
   dns_prefix          = var.dns_prefix
 
   default_node_pool {
-    name           = "default"
-    node_count     = var.node_count
-    vm_size        = var.vm_size
+    name            = "default"
+    node_count      = var.node_count
+    vm_size         = var.vm_size
     os_disk_size_gb = 30
   }
 
@@ -32,7 +32,7 @@ resource "azurerm_kubernetes_cluster" "erasmus" {
     network_policy = "calico"
   }
 
-tags = {
+  tags = {
     Environment = "Development"
     project     = "Erasmus Connect"
   }
