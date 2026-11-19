@@ -26,7 +26,10 @@ grafana:
 fluentbit:
   image: fluent/fluent-bit:3.1.8
   httpPort: 2020
-  tolerations: []
+  tolerations: 
+    - key: dedicated
+      value: logging-lab
+      effect: NoSchedule
   rbac:
     resources:
       - configmaps
