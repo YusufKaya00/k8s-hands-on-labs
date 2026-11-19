@@ -16,6 +16,9 @@ output "kube_config_raw" {
 
 output "acr_login_server" {
   value = azurerm_container_registry.erasmus.login_server
-
+  
 }
-# TODO: [Bilet 22] ACR kurulduktan sonra `acr_login_server` çıktısını ekle (azurerm_container_registry.erasmus.login_server)
+output "ingress_public_ip" {
+value = azurerm_public_ip.ingress.ip_address
+  
+}
