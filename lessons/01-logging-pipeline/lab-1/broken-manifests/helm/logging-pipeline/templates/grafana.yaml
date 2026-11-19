@@ -1,0 +1,177 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: {{ .Values.namespaces.logging }}
+data:
+  loki.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        url: http://loki.{{ .Values.namespaces.logging }}.svc.cluster.local:{{ .Values.loki.port }}
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provider
+  namespace: {{ .Values.namespaces.logging }}
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: logging-lab
+        folder: Logging Lab
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-logging
+  namespace: {{ .Values.namespaces.logging }}
+data:
+  logging-lab.json: |
+    {
+      "uid": "logging-lab-01",
+      "title": "Lesson 01 — Centralized Logging & Request-ID Correlation",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "5s",
+      "time": { "from": "now-15m", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Log Volume by Service (logs / min)",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 7 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (app) (count_over_time({namespace=\"shop-app\"}[1m]))"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "logs",
+          "title": "ERROR Logs (checkout-api / payment-worker)",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 7 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{namespace=\"shop-app\"} | json | level=\"ERROR\""
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "logs",
+          "title": "All Correlated Shop-App Logs (Parsed JSON + Redacted PII)",
+          "gridPos": { "x": 0, "y": 7, "w": 24, "h": 11 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "showLabels": true,
+            "showTime": true,
+            "prettifyLogMessage": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{namespace=\"shop-app\"}"
+            }
+          ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ .Values.namespaces.logging }}
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      tolerations:
+        - key: {{ .Values.nodeTaint.key | quote }}
+          operator: Equal
+          value: {{ .Values.nodeTaint.value | quote }}
+          effect: {{ .Values.nodeTaint.effect | quote }}
+      containers:
+        - name: grafana
+          image: {{ .Values.grafana.image }}
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: {{ .Values.grafana.adminUser | quote }}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: {{ .Values.grafana.adminPassword | quote }}
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          ports:
+            - name: http
+              containerPort: {{ .Values.grafana.port }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: {{ .Values.grafana.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: dashboards-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            - name: dashboard-json
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboards-provider
+          configMap:
+            name: grafana-dashboards-provider
+        - name: dashboard-json
+          configMap:
+            name: grafana-dashboard-logging
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: {{ .Values.namespaces.logging }}
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: {{ .Values.grafana.port }}
+      targetPort: {{ .Values.grafana.port }}

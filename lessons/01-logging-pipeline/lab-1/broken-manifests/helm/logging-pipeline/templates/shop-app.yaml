@@ -1,0 +1,327 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-app-scripts
+  namespace: {{ .Values.namespaces.app }}
+data:
+  checkout.py: |
+    import json
+    import os
+    import random
+    import time
+    import urllib.request
+    import uuid
+    from datetime import datetime, timezone
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    PAYMENT_URL = os.environ["PAYMENT_URL"]
+
+    def log_json(level, request_id, latency_ms, msg, status=200):
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "service": "checkout-api",
+            "level": level,
+            "request_id": request_id,
+            "http_status": status,
+            "latency_ms": latency_ms,
+            "auth_token": f"Bearer secret-jwt-checkout-{request_id[-6:]}",
+            "msg": msg,
+        }
+        print(json.dumps(record), flush=True)
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+
+            req_id = self.headers.get("X-Request-ID") or f"req-{uuid.uuid4().hex[:10]}"
+            start = time.monotonic()
+
+            if self.path.startswith("/fail"):
+                latency = int((time.monotonic() - start) * 1000) + random.randint(120, 350)
+                log_json("ERROR", req_id, latency, "checkout gateway timeout", status=502)
+                self.send_response(502)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("X-Request-ID", req_id)
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "request_id": req_id}).encode())
+                return
+
+            try:
+                req = urllib.request.Request(
+                    f"{PAYMENT_URL}/charge",
+                    headers={"X-Request-ID": req_id},
+                )
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    body = json.loads(resp.read().decode())
+                latency = int((time.monotonic() - start) * 1000)
+                log_json("INFO", req_id, latency, "checkout completed", status=200)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("X-Request-ID", req_id)
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "request_id": req_id, "payment": body}).encode())
+            except Exception as exc:
+                latency = int((time.monotonic() - start) * 1000)
+                log_json("ERROR", req_id, latency, f"payment call failed: {exc}", status=500)
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": False, "request_id": req_id}).encode())
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
+
+  payment.py: |
+    import json
+    import os
+    import random
+    import time
+    import uuid
+    from datetime import datetime, timezone
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    def log_json(level, request_id, latency_ms, msg):
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "service": "payment-worker",
+            "level": level,
+            "request_id": request_id,
+            "latency_ms": latency_ms,
+            "auth_token": f"Bearer secret-jwt-payment-{request_id[-6:]}",
+            "card_token": f"tok-secret-card-{request_id[-6:]}",
+            "msg": msg,
+        }
+        print(json.dumps(record), flush=True)
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+
+            req_id = self.headers.get("X-Request-ID") or f"req-{uuid.uuid4().hex[:10]}"
+            delay = random.uniform(0.015, 0.045)
+            time.sleep(delay)
+            latency = int(delay * 1000)
+            log_json("INFO", req_id, latency, "payment authorized")
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("X-Request-ID", req_id)
+            self.end_headers()
+            self.wfile.write(json.dumps({"charged": True, "request_id": req_id}).encode())
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8081"))), Handler).serve_forever()
+
+  traffic.py: |
+    import os
+    import random
+    import time
+    import urllib.request
+    import uuid
+
+    TARGET = os.environ["CHECKOUT_URL"]
+    INTERVAL = int(os.environ.get("INTERVAL", "5"))
+
+    time.sleep(5)
+    while True:
+        req_id = f"req-{uuid.uuid4().hex[:10]}"
+        path = "/fail" if random.random() < 0.15 else "/checkout"
+        try:
+            req = urllib.request.Request(f"{TARGET}{path}", headers={"X-Request-ID": req_id})
+            with urllib.request.urlopen(req, timeout=3):
+                pass
+        except Exception:
+            pass
+        time.sleep(INTERVAL)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-worker
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: payment-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-worker
+  template:
+    metadata:
+      labels:
+        app: payment-worker
+    spec:
+      tolerations:
+        - key: {{ .Values.nodeTaint.key | quote }}
+          operator: Equal
+          value: {{ .Values.nodeTaint.value | quote }}
+          effect: {{ .Values.nodeTaint.effect | quote }}
+      containers:
+        - name: payment-worker
+          image: {{ .Values.shopApp.image }}
+          command: ["python3", "/scripts/payment.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.shopApp.paymentPort | quote }}
+          ports:
+            - containerPort: {{ .Values.shopApp.paymentPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.shopApp.paymentPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: shop-app-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-worker
+  namespace: {{ .Values.namespaces.app }}
+spec:
+  selector:
+    app: payment-worker
+  ports:
+    - name: http
+      port: {{ .Values.shopApp.paymentPort }}
+      targetPort: {{ .Values.shopApp.paymentPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: checkout-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkout-api
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+    spec:
+      tolerations:
+        - key: {{ .Values.nodeTaint.key | quote }}
+          operator: Equal
+          value: {{ .Values.nodeTaint.value | quote }}
+          effect: {{ .Values.nodeTaint.effect | quote }}
+      containers:
+        - name: checkout-api
+          image: {{ .Values.shopApp.image }}
+          command: ["python3", "/scripts/checkout.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.shopApp.checkoutPort | quote }}
+            - name: PAYMENT_URL
+              value: "http://payment-worker.{{ .Values.namespaces.app }}.svc.cluster.local:{{ .Values.shopApp.paymentPort }}"
+          ports:
+            - containerPort: {{ .Values.shopApp.checkoutPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.shopApp.checkoutPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: shop-app-scripts
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.app }}
+spec:
+  selector:
+    app: checkout-api
+  ports:
+    - name: http
+      port: {{ .Values.shopApp.checkoutPort }}
+      targetPort: {{ .Values.shopApp.checkoutPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-gen
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: traffic-gen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-gen
+  template:
+    metadata:
+      labels:
+        app: traffic-gen
+    spec:
+      tolerations:
+        - key: {{ .Values.nodeTaint.key | quote }}
+          operator: Equal
+          value: {{ .Values.nodeTaint.value | quote }}
+          effect: {{ .Values.nodeTaint.effect | quote }}
+      containers:
+        - name: traffic-gen
+          image: {{ .Values.shopApp.image }}
+          command: ["python3", "/scripts/traffic.py"]
+          env:
+            - name: CHECKOUT_URL
+              value: "http://checkout-api.{{ .Values.namespaces.app }}.svc.cluster.local:{{ .Values.shopApp.checkoutPort }}"
+            - name: INTERVAL
+              value: {{ .Values.shopApp.trafficIntervalSeconds | quote }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 50m
+              memory: 48Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: shop-app-scripts
