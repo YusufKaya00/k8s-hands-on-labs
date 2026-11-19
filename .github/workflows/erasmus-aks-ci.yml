@@ -1,0 +1,217 @@
+# ==============================================================================
+# Erasmus Connect — İzole AKS CI Pipeline (Build -> ACR Push -> GitOps Tag)
+# ==============================================================================
+# Canlı uygulama reposuna (YusufKaya00/Erasmus-Connect) hiç dokunmadan,
+# bu repodan manuel (workflow_dispatch) tetiklenir:
+#   1. Uygulama reposunu read-only PAT (APP_REPO_TOKEN) ile çeker
+#   2. Seçilen servis(ler)i branch'e uygun Docker context ile build edip ACR'ye pushlar
+#   3. projects/devops-ec-project/helm/erasmus-connect/values-aks.yaml tag'ini günceller
+#   4. ArgoCD değişikliği görüp AKS'e otomatik deploy eder
+#
+# Gerekli GitHub Secrets (bu repo: YusufKaya00/k8s-hands-on-labs):
+#   - APP_REPO_TOKEN     : YusufKaya00/Erasmus-Connect için Contents: Read PAT
+#   - AZURE_CREDENTIALS  : ACR üzerinde AcrPush yetkili Service Principal JSON
+#   - ACR_NAME           : Örn. erasmusconnectv1
+#   - FRONTEND_BUILD_ENV : .env.frontend-build içeriği (NEXT_PUBLIC_* satırları)
+#   - ADMIN_BUILD_ENV    : Admin Vite build-arg satırları (VITE_BACKEND_URL=...)
+# ==============================================================================
+name: Erasmus Connect AKS CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Build edilecek servis"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
+          - admin
+      app_ref:
+        description: "Uygulama repo branch'i (develop = root context, main = klasor context)"
+        required: true
+        default: "develop"
+        type: choice
+        options:
+          - develop
+          - main
+
+concurrency:
+  group: erasmus-aks-ci
+  cancel-in-progress: false
+
+env:
+  APP_REPO: YusufKaya00/Erasmus-Connect
+  GITOPS_VALUES: projects/devops-ec-project/helm/erasmus-connect/values-aks.yaml
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      app_sha: ${{ steps.sha.outputs.short }}
+      app_full_sha: ${{ steps.sha.outputs.full }}
+      matrix: ${{ steps.matrix.outputs.json }}
+    steps:
+      - name: Uygulama reposundan son commit SHA'sini al
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.APP_REPO }}
+          ref: ${{ inputs.app_ref }}
+          token: ${{ secrets.APP_REPO_TOKEN }}
+          fetch-depth: 1
+
+      - name: Commit SHA kaydet
+        id: sha
+        run: |
+          FULL_SHA=$(git rev-parse HEAD)
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
+          echo "full=${FULL_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "App repo: ${{ env.APP_REPO }}@${{ inputs.app_ref }} (${SHORT_SHA})"
+
+      - name: Build matrisini ve Docker context'i hazirla
+        id: matrix
+        run: |
+          APP_REF="${{ inputs.app_ref }}"
+          SERVICE="${{ inputs.service }}"
+
+          if [ "$APP_REF" = "develop" ]; then
+            CTX_BACKEND="."
+            CTX_FRONTEND="."
+            CTX_ADMIN="."
+          else
+            CTX_BACKEND="./backend"
+            CTX_FRONTEND="./frontend"
+            CTX_ADMIN="./admin-frontend"
+          fi
+
+          ALL_JSON=$(jq -nc \
+            --arg cb "$CTX_BACKEND" \
+            --arg cf "$CTX_FRONTEND" \
+            --arg ca "$CTX_ADMIN" \
+            '[
+              {
+                name: "backend",
+                image_name: "erasmus-connect-backend",
+                values_key: "express",
+                context: $cb,
+                dockerfile: "./backend/Dockerfile",
+                build_arg_secret: ""
+              },
+              {
+                name: "frontend",
+                image_name: "erasmus-connect-frontend",
+                values_key: "nextjs",
+                context: $cf,
+                dockerfile: "./frontend/Dockerfile",
+                build_arg_secret: "FRONTEND_BUILD_ENV"
+              },
+              {
+                name: "admin",
+                image_name: "erasmus-connect-admin",
+                values_key: "admin",
+                context: $ca,
+                dockerfile: "./admin-frontend/Dockerfile",
+                build_arg_secret: "ADMIN_BUILD_ENV"
+              }
+            ]')
+
+          if [ "$SERVICE" = "all" ]; then
+            SELECTED="$ALL_JSON"
+          else
+            SELECTED=$(echo "$ALL_JSON" | jq -c --arg s "$SERVICE" '[.[] | select(.name == $s)]')
+          fi
+
+          echo "json={\"include\":${SELECTED}}" >> "$GITHUB_OUTPUT"
+
+  build-push:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Uygulama kodunu cek (${{ matrix.name }})
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.APP_REPO }}
+          ref: ${{ needs.prepare.outputs.app_full_sha }}
+          token: ${{ secrets.APP_REPO_TOKEN }}
+
+      - name: Azure login (Service Principal)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ACR login
+        run: az acr login --name "${{ secrets.ACR_NAME }}"
+
+      - name: Build-arg listesini hazirla
+        id: args
+        if: matrix.build_arg_secret != ''
+        env:
+          BUILD_ENV: ${{ secrets[matrix.build_arg_secret] }}
+        run: |
+          {
+            echo "list<<EOF"
+            printf '%s\n' "$BUILD_ENV" | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' || true
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Docker Buildx kur
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & ACR Push (${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }})
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          build-args: ${{ steps.args.outputs.list }}
+          tags: ${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }}
+          cache-from: type=gha,scope=${{ matrix.values_key }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.values_key }}
+
+  update-gitops:
+    needs: [prepare, build-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: GitOps reposunu cek
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: values-aks.yaml tag'lerini guncelle
+        env:
+          MATRIX_JSON: ${{ needs.prepare.outputs.matrix }}
+          NEW_TAG: ${{ needs.prepare.outputs.app_sha }}
+        run: |
+          if ! command -v yq >/dev/null 2>&1; then
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+
+          for key in $(echo "$MATRIX_JSON" | jq -r '.include[].values_key'); do
+            yq -i ".${key}.image.tag = \"${NEW_TAG}\"" "${GITOPS_VALUES}"
+          done
+
+          git diff "${GITOPS_VALUES}"
+
+      - name: Commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "${GITOPS_VALUES}"
+          git diff --cached --quiet && echo "Degisiklik yok, commit atlandi." && exit 0
+          git commit -m "ci(erasmus): ${{ inputs.service }} -> ${{ needs.prepare.outputs.app_sha }} (${{ inputs.app_ref }})"
+          git pull --rebase origin main
+          git push origin main
