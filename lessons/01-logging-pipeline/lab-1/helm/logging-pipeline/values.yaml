@@ -43,9 +43,8 @@ fluentbit:
     mergeLog: "Off"
     keepLog: "Off"
   filters:
-    modifyRules: 
-      - rule: "Set log to ${log} | truncate 1000"
-        match: "
+    modifyRules: ""
+      
   output:
     lokiHost: "loki.kube-logging.svc.cluster.local"
     lokiPort: 3101
