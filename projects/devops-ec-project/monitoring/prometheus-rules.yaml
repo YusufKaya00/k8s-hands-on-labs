@@ -1,0 +1,44 @@
+# ==============================================================================
+# Erasmus Connect — Özel SRE Alarmları (PrometheusRule CRD)
+# Referans: kubectl explain prometheusrule.spec.groups.rules
+# Uygulama (Bilet 29):
+#   kubectl apply -f ./monitoring/prometheus-rules.yaml
+# ==============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: erasmus-connect-alerts
+  namespace: monitoring
+  labels:
+    # Prometheus Operator release etiketi (selector false olsa bile temiz pratik)
+    release: monitoring
+spec:
+  groups:
+    - name: erasmus-connect.rules
+      rules:
+        # ----------------------------------------------------------------------
+        # TODO: [Bilet 29] Alarm 1 — Express Backend Tamamen Çöktü (Severity: critical)
+        #   alert: ErasmusExpressDown
+        #   expr:  kube_deployment_status_replicas_available{namespace="default", deployment=~".*express.*"} == 0
+        #   for:   30s
+        #   labels: { severity: critical }
+        #   annotations: { summary: ..., description: ... }
+        # ----------------------------------------------------------------------
+
+        # ----------------------------------------------------------------------
+        # TODO: [Bilet 29] Alarm 2 — Default Namespace'te Pod CrashLoop / Sık Restart (Severity: warning)
+        #   alert: ErasmusPodCrashLooping
+        #   expr:  increase(kube_pod_container_status_restarts_total{namespace="default"}[5m]) > 2
+        #   for:   1m
+        #   labels: { severity: warning }
+        #   annotations: { summary: ..., description: ... }
+        # ----------------------------------------------------------------------
+
+        # ----------------------------------------------------------------------
+        # TODO: [Bilet 29] Alarm 3 — NGINX Ingress Yüksek HTTP 5xx Hata Oranı (Severity: critical)
+        #   alert: ErasmusHigh5xxRate
+        #   expr:  sum(rate(nginx_ingress_controller_requests{status=~"5.."}[5m])) / clamp_min(sum(rate(nginx_ingress_controller_requests[5m])), 1) > 0.05
+        #   for:   1m
+        #   labels: { severity: critical }
+        #   annotations: { summary: ..., description: ... }
+        # ----------------------------------------------------------------------
