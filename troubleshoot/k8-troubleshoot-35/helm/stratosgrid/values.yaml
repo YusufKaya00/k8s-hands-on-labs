@@ -205,7 +205,7 @@ batch:
       tag: "1.36"
       pullPolicy: IfNotPresent
     schedule: "*/5 * * * *"
-    suspend: true
+    suspend: false
 
 nodeAgent:
   image:
