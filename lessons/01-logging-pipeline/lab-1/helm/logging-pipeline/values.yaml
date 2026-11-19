@@ -42,7 +42,7 @@ fluentbit:
 
   parser:
     mergeLog: "on"
-    keepLog: "on"
+    keepLog: "off"
   filters:
     modifyRules: 
      - key: auth_token
@@ -50,7 +50,7 @@ fluentbit:
      - key: card_token
        value: "[REDACTED]"
       
-      
+
   output:
     lokiHost: "loki.kube-logging.svc.cluster.local"
     lokiPort: 3100
