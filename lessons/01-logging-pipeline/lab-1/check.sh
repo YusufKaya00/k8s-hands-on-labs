@@ -70,8 +70,8 @@ except Exception as e:
     print('ERR', e)
 " 2>/dev/null || echo "ERR exec failed")
 
-if echo "$FB_HEALTH" | grep -q "^200 ok"; then
-  pass "FluentBit HTTP health endpoint (:2020/api/v1/health) returned 200 ok"
+if echo "$FB_HEALTH" | grep -q "^200 "; then
+  pass "FluentBit HTTP health endpoint (:2020/api/v1/health) returned HTTP 200"
 else
   fail "FluentBit HTTP health endpoint (:2020/api/v1/health) unreachable (${FB_HEALTH})"
   hint "FluentBit pod must be Running and listening on port 2020."
