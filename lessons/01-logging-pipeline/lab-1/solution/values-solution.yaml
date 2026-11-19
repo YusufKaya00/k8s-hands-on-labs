@@ -1,0 +1,26 @@
+fluentbit:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: logging-lab
+      effect: NoSchedule
+  rbac:
+    resources:
+      - pods
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+  parser:
+    mergeLog: "On"
+    keepLog: "Off"
+  filters:
+    modifyRules:
+      - key: auth_token
+        value: "[REDACTED]"
+      - key: card_token
+        value: "[REDACTED]"
+  output:
+    lokiHost: "loki.kube-logging.svc.cluster.local"
+    lokiPort: 3100
