@@ -89,7 +89,7 @@ authApi:
 
 vaultBridge:
   name: vault-bridge
-  externalName: "vault-core.stratos-vault.svc.cluster.local"
+  externalName: "vault-core.stratos-data.svc.cluster.local"
 
 pricingApi:
   replicaCount: 1
