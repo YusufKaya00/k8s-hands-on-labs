@@ -112,37 +112,23 @@
         name: argo
         repo_url: https://argoproj.github.io/argo-helm
         state: present
-        create_namespace: true
-        namespace: argocd
-        configs.params:
-          "server.insecure": true
-        wait: true
       tags: [argocd]
-    # TODO: argocd/erasmus-app.yaml dosyasini kubectl apply ile uygula
-    #       (kubernetes.core.k8s modulu: src veya definition)
-    - name: ArgoCD - Erasmus Connect App deploy et
-      command: >
-        kubectl apply -f ../helm/erasmus-connect/argocd/erasmus-app.yaml
-      kubernetes.core.k8s:
-        state: present
-        definition: "{{ lookup('file', '../helm/erasmus-connect/argocd/erasmus-app.yaml') | from_yaml }}"
-      tags: [argocd]
-    # TODO: (Opsiyonel) Chaos Mesh Helm kurulumu (chaos-mesh namespace)
-    - name: Chaos Mesh Helm kurulumu
+
+
+    - name: argocd kur
       kubernetes.core.helm:
-        name: chaos-mesh
-        chart_ref: chaos-mesh/chaos-mesh
-        release_namespace: chaos-mesh
+        name: argocd
+        chart_ref: argo/argo-cd
+        release_namespace: argocd
         create_namespace: true
         wait: true
-      tags: [chaos]
+        values:
+          configs:
+            params:
+              "server.insecure": "true"
+            
+              
+      tags: [argocd]
     # TODO: ArgoCD initial admin sifresini debug ile yazdir (no_log kullanma kararini sen ver)
 
-    - name: ArgoCD initial admin password
-      ansible.builtin.shell: >
-        kubectl -n argocd get secret argocd-initial-admin-secret
-        -o jsonpath="{.data.password}" | base64 -d
-      register: argocd_initial_admin_password
-      no_log: true
-      changed_when: false
-      tags: [argocd]
+    - name
