@@ -79,7 +79,7 @@ authApi:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8083
-  resources:
+  resources:s
     requests:
       cpu: 30m
       memory: 48Mi
@@ -182,7 +182,7 @@ tokenIssuer:
   port: 8086
   networkPolicy:
     allowedNamespace: stratos-edge
-    allowedPodApp: api-gateway
+    allowedPodApp: edge-proxy
   resources:
     requests:
       cpu: 30m
