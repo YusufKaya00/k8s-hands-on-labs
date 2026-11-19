@@ -1,0 +1,224 @@
+global:
+  ingressHost: ""
+  domain: stratosgrid.local
+  environment: production
+
+namespaces:
+  edge: stratos-edge
+  core: stratos-core
+  data: stratos-data
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  proxyBodySize: "512k"
+
+catalogIngress:
+  enabled: true
+  ingressClassName: nginx
+  path: "/v2/catalog"
+  pathType: Prefix
+  useRegex: "false"
+  rewriteTarget: ""
+
+coreLimitRange:
+  maxMemory: "256Mi"
+  maxCpu: "500m"
+  defaultMemory: "128Mi"
+  defaultRequestMemory: "48Mi"
+
+edgeProxy:
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+  port: 80
+  resources:
+    requests:
+      cpu: 40m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 192Mi
+
+catalogApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8081
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+uploadApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8082
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+authApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8083
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+vaultBridge:
+  name: vault-bridge
+  externalName: "vault-core.stratos-vault.svc.cluster.local"
+
+pricingApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8084
+  actualConfigKey: "DEFAULT_CURRENCY"
+  configMapKeyRef: "CURRENCY_MODE"
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+checkoutApi:
+  replicaCount: 3
+  antiAffinityMode: "hard"
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8087
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+reportApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8088
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: null
+    runAsGroup: null
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+billingApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8089
+  resources:
+    requests:
+      cpu: 30m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 512Mi
+
+vaultCore:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8085
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+tokenIssuer:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8086
+  networkPolicy:
+    allowedNamespace: stratos-edge
+    allowedPodApp: api-gateway
+  resources:
+    requests:
+      cpu: 30m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+batch:
+  bootstrapJob:
+    image:
+      repository: python
+      tag: "3.11-alpine"
+      pullPolicy: IfNotPresent
+    targetPort: 9999
+    backoffLimit: 2
+  heartbeatCron:
+    image:
+      repository: busybox
+      tag: "1.36"
+      pullPolicy: IfNotPresent
+    schedule: "*/5 * * * *"
+    suspend: true
+
+nodeAgent:
+  image:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  tolerationKey: "stratos-role"
+  tolerationValue: "dedicated"
+  tolerationEffect: "NoExecute"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi
