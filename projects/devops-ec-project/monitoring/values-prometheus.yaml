@@ -1,0 +1,52 @@
+# ==============================================================================
+# kube-prometheus-stack — Öğrenci / 2x Standard_B2s Kümesi İçin Hafif Ayarlar
+# Referans: helm show values prometheus-community/kube-prometheus-stack | less
+# Kurulum komutu (Bilet 27):
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo update
+#   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace -f ./monitoring/values-prometheus.yaml
+# ==============================================================================
+
+# 1) AKS control-plane bileşenleri Microsoft tarafından yönetilir, scrape edilemez.
+#    Bunları kapatmazsan sürekli sahte "TargetDown" alarmı üretir!
+kubeControllerManager:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# 2) Prometheus Sunucusu (2x Standard_B2s'te ~8 GB toplam RAM için hafif sınırlar)
+prometheus:
+  prometheusSpec:
+    # TODO: [Bilet 27] Metrik saklama süresini ("2d") ve toplama aralığını ("30s") yaz:
+    # retention: ...
+    # scrapeInterval: ...
+
+    # TODO: [Bilet 27] KRİTİK — Tüm namespace'lerdeki ServiceMonitor ve PrometheusRule'ları
+    #       (ingress-nginx ve kendi alarmlarımız dahil) görebilmesi için bu ikisini false yap:
+    # serviceMonitorSelectorNilUsesHelmValues: ...
+    # ruleSelectorNilUsesHelmValues: ...
+
+    # TODO: [Bilet 27] Prometheus podu için kaynak sınırlarını yaz
+    #       (öneri: requests cpu 100m / memory 256Mi, limits cpu 500m / memory 600Mi)
+    # resources:
+    #   ...
+
+# 3) Grafana Arayüzü
+grafana:
+  # TODO: [Bilet 27] adminPassword belirle (ör. "erasmus-grafana-123" veya kendi şifren)
+  #       ve hafif resources bloğu ekle (requests: 50m / 128Mi, limits: 250m / 256Mi)
+  # adminPassword: ...
+  # resources:
+  #   ...
+
+# 4) Alertmanager
+alertmanager:
+  alertmanagerSpec:
+    # TODO: [Bilet 27] Hafif resources bloğu ekle (requests: 25m / 64Mi, limits: 100m / 128Mi)
+    # resources:
+    #   ...
