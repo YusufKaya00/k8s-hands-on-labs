@@ -1101,6 +1101,86 @@ kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}
 
 ---
 
+## Faz 9: Tek Komutla Ortam Kurulumu (Sabit IP + Ansible Bootstrap) ve CI Pipeline
+
+Bu fazda kümeyi silip sıfırdan kurduğunda ortamın (ingress, ArgoCD, uygulama) **elle müdahale olmadan** ayağa kalkmasını ve imajların **CI ile otomatik** build edilip deploy edilmesini sağlayacaksın.
+
+---
+
+### Bilet 24: Terraform ile Sabit Public IP ([terraform/network.tf](./terraform/network.tf))
+
+**a) Görev Tanımı:**
+- `network.tf` içindeki `# TODO` satırlarını doldur: Standard SKU + Static `azurerm_public_ip` ve AKS cluster identity'sine bu resource group üzerinde `Network Contributor` rol ataması.
+- [outputs.tf](./terraform/outputs.tf) içine `ingress_public_ip` çıktısını ekle.
+- **Neden?** Her yeniden kurulumda LoadBalancer yeni IP alır; `NEXT_PUBLIC_API_URL` / `VITE_BACKEND_URL` build-time gömülü olduğu için IP değişince imajları yeniden build etmen gerekir. Sabit IP bunu önler.
+
+**b) İpucu ve Referans:**
+- `registry.terraform.io` -> `azurerm_public_ip`, `azurerm_role_assignment`
+- `Standard` SKU LB, `Standard` SKU public IP ister.
+- AKS identity'si (`identity[0].principal_id`) başka bir resource group'taki IP'yi ancak rol alırsa kullanabilir.
+
+**c) Çözüm Kanıtı:**
+```bash
+cd terraform
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
+terraform output ingress_public_ip
+```
+- [values-aks.yaml](./helm/erasmus-connect/values-aks.yaml) içindeki `ingress.host` ve `ingress.adminHost` değerlerini bu IP'ye (`<IP>.nip.io`, `admin.<IP>.nip.io`) çevir.
+
+---
+
+### Bilet 25: Ansible ile Komple Ortam Kurulumu (Ingress + Secret + ArgoCD + Chaos Mesh)
+
+**a) Görev Tanımı:**
+- [playbook.yml](./ansible/playbook.yml) içindeki **ADIM 5** `# TODO` görevlerini yaz:
+  1. `ingress-nginx` values'una sabit IP (`controller.service.loadBalancerIP`) ve `azure-load-balancer-resource-group` annotation'ını ekle.
+  2. `argo` Helm repo + `argo/argo-cd` chart'ını `argocd` namespace'ine kur (`server.insecure=true`).
+  3. [argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml) dosyasını uygula (`kubernetes.core.k8s`).
+  4. (Opsiyonel) Chaos Mesh Helm kurulumu.
+  5. ArgoCD ilk `admin` şifresini ekrana yazdır.
+- **Önemli:** Playbook artık `helm upgrade --install erasmus` yapmaz; uygulamayı **yalnızca ArgoCD** yönetir (aksi halde Ingress çakışması: `validate.nginx.ingress.kubernetes.io ... already defined`).
+- **Sıra:** Secret/ConfigMap, ArgoCD'den **önce** kümeye girmeli ki podlar ayağa kalkarken `envFrom` bulabilsin.
+
+**b) İpucu ve Referans:**
+- `ansible-doc kubernetes.core.k8s`, `ansible-doc kubernetes.core.helm`
+- Mevcut ADIM 1-4 görevleri örnek kalıp olarak kullanılabilir.
+
+**c) Çözüm Kanıtı (Sıfırdan Kurulum Testi):**
+```bash
+cd terraform && terraform destroy && terraform apply   # kümeyi sıfırla
+cd ../ansible && ansible-playbook playbook.yml
+kubectl get pods -A
+kubectl get applications -n argocd
+curl -i -X POST http://<SABIT_IP>.nip.io/api/v1/ping
+```
+- Playbook tek komutla hatasız bitmeli, ArgoCD `Synced/Healthy` olmalı ve `ping` `200` dönmelidir.
+
+---
+
+### Bilet 26: GitHub Actions CI Pipeline (Build -> ACR -> GitOps Tag)
+
+**a) Görev Tanımı:**
+- [ci/build-push-update-tag.yml](./ci/build-push-update-tag.yml) şablonunu her uygulama reposuna (`frontend`, `backend`, `admin`) `.github/workflows/` altına kopyala ve `env:` değerlerini [ci/README.md](./ci/README.md) tablosuna göre değiştir.
+- Her uygulama reposuna secret'ları ekle: `AZURE_CREDENTIALS` (`AcrPush` yetkili Service Principal), `ACR_NAME`, `GITOPS_TOKEN` (`contents: write` PAT), `FRONTEND_BUILD_ENV` (`.env.frontend-build` içeriği).
+- Frontend/admin build-arg URL'lerinin **sabit IP**'ye (`Bilet 24`) işaret ettiğinden emin ol.
+
+**b) İpucu ve Referans:**
+- `az ad sp create-for-rbac --role AcrPush --scopes <ACR_ID> --sdk-auth`
+- Pipeline imajı `ACR:<kısa-sha>` olarak pushlar ve `values-aks.yaml` tag'ini commit'ler; ArgoCD `automated` sync ile deploy eder.
+
+**c) Çözüm Kanıtı:**
+```bash
+# Uygulama reposunda küçük bir değişiklik pushla, sonra:
+az acr repository show-tags --name <ACR_ADIN> --repository erasmus-connect-backend -o table
+git pull   # GitOps reposunda "ci: ... -> <sha>" commit'i gelmeli
+kubectl get pods -n default -o jsonpath='{range .items[*]}{.spec.containers[*].image}{"\n"}{end}'
+```
+- Yeni `<kısa-sha>` tag'li imajın podlarda çalıştığını gör.
+
+---
+
 ## Kontrol Listesi (Kendini Değerlendir)
 
 - [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
@@ -1133,3 +1213,5 @@ This guide walks through building **Erasmus Connect** (**Next.js** frontend, **V
 - [ ] `NetworkPolicy` isolates Redis (`:6379`) exclusively to Express and enforces Post-DNAT rules on `:4000`.
 - [ ] ArgoCD syncs from ACR without `imagePullSecrets` and preserves HPA replica counts.
 - [ ] Cluster stopped (`az aks stop`) or destroyed (`terraform destroy`) after verification to prevent idle cloud spend.
+- [ ] Ortam silinip tek `terraform apply` + `ansible-playbook` ile sıfırdan kuruluyor; Ingress IP'si sabit kalıyor.
+- [ ] Uygulama reposuna push -> CI imajı ACR'ye pushluyor -> `values-aks.yaml` tag'i güncelleniyor -> ArgoCD otomatik deploy ediyor.
