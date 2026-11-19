@@ -39,17 +39,16 @@ fluentbit:
       - get
       - list
       - watch
-    
-      
+
   parser:
     mergeLog: "on"
     keepLog: "on"
   filters:
     modifyRules: 
      - key: auth_token
-        value: "[REDACTED]""
+       value: "[REDACTED]""
      - key: card_token
-        value: "[REDACTED]"
+       value: "[REDACTED]"
       
       
   output:
