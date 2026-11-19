@@ -1,0 +1,219 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-core
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: vault-core
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: vault-core
+  ports:
+    - name: http
+      port: {{ .Values.vaultCore.port }}
+      targetPort: {{ .Values.vaultCore.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-core
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: vault-core
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.vaultCore.replicaCount }}
+  selector:
+    matchLabels:
+      app: vault-core
+  template:
+    metadata:
+      labels:
+        app: vault-core
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.vaultCore.image.repository }}:{{ .Values.vaultCore.image.tag }}"
+          imagePullPolicy: {{ .Values.vaultCore.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.vaultCore.port | quote }}
+            - name: SERVICE_NAME
+              value: "vault-core"
+          ports:
+            - name: http
+              containerPort: {{ .Values.vaultCore.port }}
+          readinessProbe:
+            httpGet:
+              path: /verify
+              port: {{ .Values.vaultCore.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.vaultCore.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: data-apps-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: token-issuer
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: token-issuer
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: token-issuer
+  ports:
+    - name: http
+      port: {{ .Values.tokenIssuer.port }}
+      targetPort: {{ .Values.tokenIssuer.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: token-issuer
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: token-issuer
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.tokenIssuer.replicaCount }}
+  selector:
+    matchLabels:
+      app: token-issuer
+  template:
+    metadata:
+      labels:
+        app: token-issuer
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.tokenIssuer.image.repository }}:{{ .Values.tokenIssuer.image.tag }}"
+          imagePullPolicy: {{ .Values.tokenIssuer.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.tokenIssuer.port | quote }}
+            - name: SERVICE_NAME
+              value: "token-issuer"
+          ports:
+            - name: http
+              containerPort: {{ .Values.tokenIssuer.port }}
+          readinessProbe:
+            httpGet:
+              path: /api/tokens/issue
+              port: {{ .Values.tokenIssuer.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.tokenIssuer.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: data-apps-code
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: schema-bootstrap
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: schema-bootstrap
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  backoffLimit: {{ .Values.batch.bootstrapJob.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        app: schema-bootstrap
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.batch.bootstrapJob.image.repository }}:{{ .Values.batch.bootstrapJob.image.tag }}"
+          imagePullPolicy: {{ .Values.batch.bootstrapJob.image.pullPolicy }}
+          command:
+            - python3
+            - -c
+            - |
+              import urllib.request, sys
+              url = "http://vault-core.{{ .Values.namespaces.data }}.svc.cluster.local:{{ .Values.batch.bootstrapJob.targetPort }}/verify"
+              print("Connecting to", url, flush=True)
+              try:
+                  with urllib.request.urlopen(url, timeout=3) as r:
+                      print("Bootstrap OK:", r.status, r.read().decode(), flush=True)
+                      sys.exit(0)
+              except Exception as e:
+                  print("Bootstrap FAILED:", e, flush=True)
+                  sys.exit(1)
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-heartbeat
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: audit-heartbeat
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  schedule: {{ .Values.batch.heartbeatCron.schedule | quote }}
+  suspend: {{ .Values.batch.heartbeatCron.suspend }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ping
+              image: "{{ .Values.batch.heartbeatCron.image.repository }}:{{ .Values.batch.heartbeatCron.image.tag }}"
+              imagePullPolicy: {{ .Values.batch.heartbeatCron.image.pullPolicy }}
+              command: ["sh", "-c", "echo heartbeat-ok"]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-metrics-agent
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: node-metrics-agent
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    matchLabels:
+      app: node-metrics-agent
+  template:
+    metadata:
+      labels:
+        app: node-metrics-agent
+    spec:
+      tolerations:
+        - key: {{ .Values.nodeAgent.tolerationKey | quote }}
+          operator: Equal
+          value: {{ .Values.nodeAgent.tolerationValue | quote }}
+          effect: {{ .Values.nodeAgent.tolerationEffect | quote }}
+      containers:
+        - name: agent
+          image: "{{ .Values.nodeAgent.image.repository }}:{{ .Values.nodeAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.nodeAgent.image.pullPolicy }}
+          command: ["sh", "-c", "while true; do echo node-metrics-ok; sleep 30; done"]
+          resources:
+            {{- toYaml .Values.nodeAgent.resources | nindent 12 }}

@@ -1,0 +1,513 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: catalog-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: catalog-api
+  ports:
+    - name: http
+      port: {{ .Values.catalogApi.port }}
+      targetPort: {{ .Values.catalogApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: catalog-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.catalogApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: catalog-api
+  template:
+    metadata:
+      labels:
+        app: catalog-api
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.catalogApi.image.repository }}:{{ .Values.catalogApi.image.tag }}"
+          imagePullPolicy: {{ .Values.catalogApi.image.pullPolicy }}
+          command: ["python3", "/app/catalog.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.catalogApi.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.catalogApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.catalogApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.catalogApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: core-apps-code
+{{- if .Values.catalogIngress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stratos-catalog-ingress
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/part-of: stratosgrid
+  annotations:
+    {{- if eq (toString .Values.catalogIngress.useRegex) "true" }}
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    {{- end }}
+    {{- if .Values.catalogIngress.rewriteTarget }}
+    nginx.ingress.kubernetes.io/rewrite-target: {{ .Values.catalogIngress.rewriteTarget | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.catalogIngress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: {{ .Values.catalogIngress.path }}
+            pathType: {{ .Values.catalogIngress.pathType }}
+            backend:
+              service:
+                name: catalog-api
+                port:
+                  number: {{ .Values.catalogApi.port }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upload-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: upload-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: upload-api
+  ports:
+    - name: http
+      port: {{ .Values.uploadApi.port }}
+      targetPort: {{ .Values.uploadApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upload-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: upload-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.uploadApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: upload-api
+  template:
+    metadata:
+      labels:
+        app: upload-api
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.uploadApi.image.repository }}:{{ .Values.uploadApi.image.tag }}"
+          imagePullPolicy: {{ .Values.uploadApi.image.pullPolicy }}
+          command: ["python3", "/app/upload.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.uploadApi.port | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.uploadApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.uploadApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.uploadApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: core-apps-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.vaultBridge.name }}
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  type: ExternalName
+  externalName: {{ .Values.vaultBridge.externalName }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: auth-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: auth-api
+  ports:
+    - name: http
+      port: {{ .Values.authApi.port }}
+      targetPort: {{ .Values.authApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: auth-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.authApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: auth-api
+  template:
+    metadata:
+      labels:
+        app: auth-api
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.authApi.image.repository }}:{{ .Values.authApi.image.tag }}"
+          imagePullPolicy: {{ .Values.authApi.image.pullPolicy }}
+          command: ["python3", "/app/auth.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.authApi.port | quote }}
+            - name: VAULT_URL
+              value: "http://{{ .Values.vaultBridge.name }}:{{ .Values.vaultCore.port }}/verify"
+          ports:
+            - name: http
+              containerPort: {{ .Values.authApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.authApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.authApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: core-apps-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pricing-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: pricing-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: pricing-api
+  ports:
+    - name: http
+      port: {{ .Values.pricingApi.port }}
+      targetPort: {{ .Values.pricingApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pricing-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: pricing-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.pricingApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: pricing-api
+  template:
+    metadata:
+      labels:
+        app: pricing-api
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.pricingApi.image.repository }}:{{ .Values.pricingApi.image.tag }}"
+          imagePullPolicy: {{ .Values.pricingApi.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.pricingApi.port | quote }}
+            - name: SERVICE_NAME
+              value: "pricing-api"
+            - name: EXTRA_VAL
+              valueFrom:
+                configMapKeyRef:
+                  name: pricing-config
+                  key: {{ .Values.pricingApi.configMapKeyRef }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.pricingApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /api/pricing/calc
+              port: {{ .Values.pricingApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.pricingApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: core-apps-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: checkout-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: checkout-api
+  ports:
+    - name: http
+      port: {{ .Values.checkoutApi.port }}
+      targetPort: {{ .Values.checkoutApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: checkout-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.checkoutApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: checkout-api
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+    spec:
+      tolerations:
+        - key: {{ .Values.nodeAgent.tolerationKey | quote }}
+          operator: Equal
+          value: {{ .Values.nodeAgent.tolerationValue | quote }}
+          effect: NoSchedule
+      affinity:
+        podAntiAffinity:
+          {{- if eq .Values.checkoutApi.antiAffinityMode "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: checkout-api
+              topologyKey: kubernetes.io/hostname
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: checkout-api
+                topologyKey: kubernetes.io/hostname
+          {{- end }}
+      containers:
+        - name: app
+          image: "{{ .Values.checkoutApi.image.repository }}:{{ .Values.checkoutApi.image.tag }}"
+          imagePullPolicy: {{ .Values.checkoutApi.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.checkoutApi.port | quote }}
+            - name: SERVICE_NAME
+              value: "checkout-api"
+          ports:
+            - name: http
+              containerPort: {{ .Values.checkoutApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /api/checkout/status
+              port: {{ .Values.checkoutApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.checkoutApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: core-apps-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: report-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: report-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: report-api
+  ports:
+    - name: http
+      port: {{ .Values.reportApi.port }}
+      targetPort: {{ .Values.reportApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: report-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.reportApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: report-api
+  template:
+    metadata:
+      labels:
+        app: report-api
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.reportApi.image.repository }}:{{ .Values.reportApi.image.tag }}"
+          imagePullPolicy: {{ .Values.reportApi.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.reportApi.port | quote }}
+            - name: SERVICE_NAME
+              value: "report-api"
+          ports:
+            - name: http
+              containerPort: {{ .Values.reportApi.port }}
+          securityContext:
+            runAsNonRoot: {{ .Values.reportApi.securityContext.runAsNonRoot }}
+            {{- if .Values.reportApi.securityContext.runAsUser }}
+            runAsUser: {{ .Values.reportApi.securityContext.runAsUser }}
+            {{- end }}
+            {{- if .Values.reportApi.securityContext.runAsGroup }}
+            runAsGroup: {{ .Values.reportApi.securityContext.runAsGroup }}
+            {{- end }}
+            allowPrivilegeEscalation: false
+          readinessProbe:
+            httpGet:
+              path: /api/reports/health
+              port: {{ .Values.reportApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.reportApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: core-apps-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: billing-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  selector:
+    app: billing-api
+  ports:
+    - name: http
+      port: {{ .Values.billingApi.port }}
+      targetPort: {{ .Values.billingApi.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-api
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: billing-api
+    app.kubernetes.io/part-of: stratosgrid
+spec:
+  replicas: {{ .Values.billingApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: billing-api
+  template:
+    metadata:
+      labels:
+        app: billing-api
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.billingApi.image.repository }}:{{ .Values.billingApi.image.tag }}"
+          imagePullPolicy: {{ .Values.billingApi.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.billingApi.port | quote }}
+            - name: SERVICE_NAME
+              value: "billing-api"
+          ports:
+            - name: http
+              containerPort: {{ .Values.billingApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /api/billing/info
+              port: {{ .Values.billingApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: code
+              mountPath: /app
+          resources:
+            {{- toYaml .Values.billingApi.resources | nindent 12 }}
+      volumes:
+        - name: code
+          configMap:
+            name: core-apps-code
