@@ -126,6 +126,15 @@
           configs:
             params:
               "server.insecure": "true"
+
+      
+    - name: erasmus connect argocd application olustur
+      kubernetes.core.k8s:
+        state: present
+        src: ../argocd/erasmus-app.yaml
+      tags: [argocd]
+       
+
             
               
       tags: [argocd]
