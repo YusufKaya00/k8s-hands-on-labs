@@ -197,7 +197,7 @@ batch:
       repository: python
       tag: "3.11-alpine"
       pullPolicy: IfNotPresent
-    targetPort: 9999
+    targetPort: 8085
     backoffLimit: 2
   heartbeatCron:
     image:
