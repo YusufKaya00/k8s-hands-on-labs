@@ -11,7 +11,7 @@ shopApp:
   image: python:3.11-alpine
   checkoutPort: 8080
   paymentPort: 8081
-  trafficIntervalSeconds: 5
+  trafficIntervalSeconds: 10
 
 loki:
   image: grafana/loki:3.1.1
