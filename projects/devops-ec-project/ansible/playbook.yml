@@ -10,6 +10,8 @@
   vars:
     resource_group: "rg-erasmus-connect-dev"
     cluster_name: "aks-erasmus-connect-dev"
+    acr_name: "erasmusconnectv1"
+    ci_sp_name: "sp-erasmus-acr-push"
     chart_path: "../helm/erasmus-connect"
     release_name: "erasmus"
     app_namespace: "default"
@@ -29,6 +31,18 @@
         cmd: az aks get-credentials --resource-group {{ resource_group }} --name {{ cluster_name }} --overwrite-existing
       changed_when: false
       tags: [ingress, deploy]
+
+    - name: CI Service Principal'a yeni ACR uzerinde AcrPush rolu ver (idempotent)
+      ansible.builtin.shell: |
+        set -euo pipefail
+        ACR_ID=$(az acr show --name "{{ acr_name }}" --query id -o tsv)
+        SP_APP_ID=$(az ad sp list --display-name "{{ ci_sp_name }}" --query "[0].appId" -o tsv)
+        test -n "$SP_APP_ID"
+        az role assignment create --assignee "$SP_APP_ID" --role AcrPush --scope "$ACR_ID"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      tags: [acr, deploy]
 
     - name: NGINX Ingress Helm repo add
       kubernetes.core.helm_repository:
