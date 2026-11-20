@@ -108,6 +108,10 @@ spec:
   type: ClusterIP
 selector:
     app: loki
+ports:
+    - name: http
+      port: 3100
+      targetPort: 3100
   # TODO: [Bilet 30 - 1] Loki Service için `selector:` (app: loki)
   #       ve `ports:` (port: 3100, targetPort: 3100) bloklarını yaz.
 
