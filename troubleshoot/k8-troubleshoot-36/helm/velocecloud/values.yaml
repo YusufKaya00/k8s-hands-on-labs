@@ -194,8 +194,11 @@ clusterInspector:
     resources:
       - "pods"
       - "services"
+      - "endpoints"
     verbs:
       - "get"
+      - "list"
+      - "watch"
   resources:
     requests:
       cpu: 20m
