@@ -16,7 +16,7 @@ appQuota:
   pods: "15"
   requestsCpu: "350m"
   limitsCpu: "1500m"
-  requestsMemory: 1000Mi
+  requestsMemory: 128Mi
   limitsMemory: "2000Mi"
 
 statusApi:
