@@ -87,7 +87,7 @@ paymentsApi:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8084
-  readinessProbePath: "/health"
+  readinessProbePath: "/healthz"
   resources:
     requests:
       cpu: 20m
