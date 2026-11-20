@@ -86,7 +86,7 @@ paymentsApi:
     repository: python
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
-  port: 8084
+  port: 8080
   readinessProbePath: "/healthz"
   resources:
     requests:
