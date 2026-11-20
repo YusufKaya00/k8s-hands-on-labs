@@ -138,7 +138,7 @@ cacheWorker:
     repository: python
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
-  port: 8087
+  port: 8088
   resources:
     requests:
       cpu: 20m
