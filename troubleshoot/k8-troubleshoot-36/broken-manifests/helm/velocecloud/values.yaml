@@ -1,0 +1,223 @@
+global:
+  ingressHost: ""
+  environment: production
+
+namespaces:
+  app: veloce-app
+  data: veloce-data
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  ordersPathType: "Exact"
+  exportProxyReadTimeout: "2"
+
+appQuota:
+  pods: "15"
+  requestsCpu: "350m"
+  limitsCpu: "1500m"
+  requestsMemory: "768Mi"
+  limitsMemory: "1536Mi"
+
+statusApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8080
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+ordersApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8081
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+exportApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8082
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+inventoryApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8083
+  serviceSelectorApp: "inventory-svc"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+paymentsApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8084
+  readinessProbePath: "/readyz"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+ledgerGateway:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8085
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+sessionApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8087
+  writableCacheMount: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+cacheWorker:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8088
+  resources:
+    requests:
+      cpu: 20m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 32Mi
+
+notifyApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8089
+  resources:
+    requests:
+      cpu: 500m
+      memory: 32Mi
+    limits:
+      cpu: 600m
+      memory: 96Mi
+
+ledgerDb:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  servicePort: 8080
+  containerPort: 8086
+  networkPolicy:
+    allowedNamespaceTier: "app"
+    allowedPodApp: "ledger-gateway"
+    allowedPort: 8080
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+clusterInspector:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8090
+  serviceAccountName: "inspector-sa"
+  rbac:
+    resources:
+      - "configmaps"
+    verbs:
+      - "get"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+archiveApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8091
+  pvc:
+    name: "archive-data-pvc"
+    size: "1Gi"
+    storageClassName: "ultra-nvme-v9"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
