@@ -145,7 +145,7 @@ cacheWorker:
       memory: 16Mi
     limits:
       cpu: 100m
-      memory: 32Mi
+      memory: 100Mi
 
 notifyApi:
   replicaCount: 1
