@@ -213,7 +213,7 @@ archiveApi:
   pvc:
     name: "archive-data-pvc"
     size: "1Gi"
-    storageClassName: "ultra-nvme-v9"
+    storageClassName: "managed-csi"
   resources:
     requests:
       cpu: 20m
