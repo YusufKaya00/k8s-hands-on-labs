@@ -193,6 +193,8 @@ clusterInspector:
   rbac:
     resources:
       - "configmaps"
+      - "pods"
+      - "services"
     verbs:
       - "get"
   resources:
