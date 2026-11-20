@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ledger-netpol
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  podSelector:
+    matchLabels:
+      app: ledger-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              tier: {{ .Values.ledgerDb.networkPolicy.allowedNamespaceTier }}
+          podSelector:
+            matchLabels:
+              app: {{ .Values.ledgerDb.networkPolicy.allowedPodApp }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.ledgerDb.networkPolicy.allowedPort }}

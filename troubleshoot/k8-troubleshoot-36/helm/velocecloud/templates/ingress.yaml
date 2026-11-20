@@ -1,0 +1,122 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: veloce-app-ingress
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service:
+                name: status-api
+                port:
+                  number: {{ .Values.statusApi.port }}
+          - path: /api/orders
+            pathType: {{ .Values.ingress.ordersPathType }}
+            backend:
+              service:
+                name: orders-api
+                port:
+                  number: {{ .Values.ordersApi.port }}
+          - path: /api/inventory
+            pathType: Prefix
+            backend:
+              service:
+                name: inventory-api
+                port:
+                  number: {{ .Values.inventoryApi.port }}
+          - path: /api/payments
+            pathType: Prefix
+            backend:
+              service:
+                name: payments-api
+                port:
+                  number: {{ .Values.paymentsApi.port }}
+          - path: /api/ledger
+            pathType: Prefix
+            backend:
+              service:
+                name: ledger-gateway
+                port:
+                  number: {{ .Values.ledgerGateway.port }}
+          - path: /api/sessions
+            pathType: Prefix
+            backend:
+              service:
+                name: session-api
+                port:
+                  number: {{ .Values.sessionApi.port }}
+          - path: /api/cache
+            pathType: Prefix
+            backend:
+              service:
+                name: cache-worker
+                port:
+                  number: {{ .Values.cacheWorker.port }}
+          - path: /api/notify
+            pathType: Prefix
+            backend:
+              service:
+                name: notify-api
+                port:
+                  number: {{ .Values.notifyApi.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: veloce-export-ingress
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ .Values.ingress.exportProxyReadTimeout | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /api/export
+            pathType: Prefix
+            backend:
+              service:
+                name: export-api
+                port:
+                  number: {{ .Values.exportApi.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: veloce-data-ingress
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /api/inspector
+            pathType: Prefix
+            backend:
+              service:
+                name: cluster-inspector
+                port:
+                  number: {{ .Values.clusterInspector.port }}
+          - path: /api/archive
+            pathType: Prefix
+            backend:
+              service:
+                name: archive-api
+                port:
+                  number: {{ .Values.archiveApi.port }}
+{{- end }}
