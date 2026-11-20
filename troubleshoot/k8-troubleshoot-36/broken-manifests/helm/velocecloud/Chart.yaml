@@ -1,0 +1,6 @@
+apiVersion: v2
+name: velocecloud
+description: VeloceCloud v19.0 Direct-Ingress Multi-Namespace Platform
+type: application
+version: 19.0.0
+appVersion: "19.0"

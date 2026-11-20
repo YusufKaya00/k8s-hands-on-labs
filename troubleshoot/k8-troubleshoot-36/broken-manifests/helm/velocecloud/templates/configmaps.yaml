@@ -1,0 +1,184 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: veloce-app-code
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+data:
+  status.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"service": "status-api", "status": "healthy", "version": "19.0"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), H).serve_forever()
+
+  orders.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            if self.path == "/api/orders":
+                body = json.dumps({"service": "orders-api", "endpoint": "root", "status": "ok"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body); return
+            if self.path == "/api/orders/list":
+                body = json.dumps({"service": "orders-api", "orders": ["ord-101", "ord-102", "ord-103"], "status": "ok"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body); return
+            body = json.dumps({"error": "not_found", "path": self.path}).encode()
+            self.send_response(404); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8081"))), H).serve_forever()
+
+  export.py: |
+    import json, os, time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            if self.path.startswith("/api/export"):
+                time.sleep(3.5)
+                body = json.dumps({"service": "export-api", "rows": 1250, "status": "exported"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body); return
+            self.send_response(404); self.end_headers(); self.wfile.write(b"not found")
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8082"))), H).serve_forever()
+
+  simple.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    SVC = os.environ.get("SERVICE_NAME", "app")
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            if self.path.startswith("/api/"):
+                body = json.dumps({"service": SVC, "status": "ok"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body); return
+            self.send_response(404); self.end_headers(); self.wfile.write(b"not found")
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), H).serve_forever()
+
+  ledger_gateway.py: |
+    import json, os, urllib.request
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    LEDGER_URL = os.environ.get("LEDGER_URL", "http://ledger-db.veloce-data.svc.cluster.local:8080/balance")
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            try:
+                with urllib.request.urlopen(LEDGER_URL, timeout=3) as r:
+                    upstream = json.loads(r.read().decode())
+                body = json.dumps({"service": "ledger-gateway", "upstream": upstream, "status": "ok"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+            except Exception as e:
+                body = json.dumps({"service": "ledger-gateway", "error": str(e), "target": LEDGER_URL}).encode()
+                self.send_response(502); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8085"))), H).serve_forever()
+
+  session.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    CACHE_DIR = "/var/cache/session"
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    with open(os.path.join(CACHE_DIR, "state.json"), "w") as f:
+        json.dump({"initialized": True}, f)
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            body = json.dumps({"service": "session-api", "cache": "writable", "status": "ok"}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8087"))), H).serve_forever()
+
+  cache_worker.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    BUFFER_MB = 42
+    CACHE_BLOB = bytearray(BUFFER_MB * 1024 * 1024)
+    for i in range(0, len(CACHE_BLOB), 4096):
+        CACHE_BLOB[i] = 1
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            body = json.dumps({"service": "cache-worker", "buffer_mb": BUFFER_MB, "status": "ok"}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8088"))), H).serve_forever()
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: veloce-data-code
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+data:
+  ledger_db.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            body = json.dumps({"service": "ledger-db", "ledger": "ok", "balance": 42000}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8086"))), H).serve_forever()
+
+  inspector.py: |
+    import json, os, ssl, urllib.request, urllib.error
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+    CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    NS = os.environ.get("TARGET_NAMESPACE", "veloce-data")
+    API_URL = f"https://kubernetes.default.svc/api/v1/namespaces/{NS}/pods"
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            try:
+                with open(TOKEN_PATH) as f:
+                    token = f.read().strip()
+                ctx = ssl.create_default_context(cafile=CA_PATH)
+                req = urllib.request.Request(API_URL, headers={"Authorization": f"Bearer {token}"})
+                with urllib.request.urlopen(req, context=ctx, timeout=4) as r:
+                    data = json.loads(r.read().decode())
+                pod_count = len(data.get("items", []))
+                body = json.dumps({"service": "cluster-inspector", "namespace": NS, "pod_count": pod_count, "status": "ok"}).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+            except urllib.error.HTTPError as e:
+                body = json.dumps({"service": "cluster-inspector", "error": f"HTTP {e.code}: {e.reason}", "status": "denied"}).encode()
+                self.send_response(e.code); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+            except Exception as e:
+                body = json.dumps({"service": "cluster-inspector", "error": str(e)}).encode()
+                self.send_response(500); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8090"))), H).serve_forever()
+
+  archive.py: |
+    import json, os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    DATA_DIR = "/data"
+    with open(os.path.join(DATA_DIR, "probe.txt"), "w") as f:
+        f.write("mounted-ok\n")
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200); self.end_headers(); self.wfile.write(b"ok"); return
+            body = json.dumps({"service": "archive-api", "storage": "mounted", "status": "ok"}).encode()
+            self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+        def log_message(self, *args): pass
+    ThreadingHTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8091"))), H).serve_forever()
