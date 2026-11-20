@@ -9,8 +9,8 @@ namespaces:
 ingress:
   enabled: true
   ingressClassName: nginx
-  ordersPathType: "Exact"
-  exportProxyReadTimeout: "2"
+  ordersPathType: "Prefix"
+  exportProxyReadTimeout: "5"
 
 appQuota:
   pods: "15"
