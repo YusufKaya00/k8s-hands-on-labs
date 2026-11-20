@@ -240,5 +240,14 @@
         src: ../monitoring/prometheus-rules.yaml
       tags: [monitoring]
 
+
+   
+
     # TODO: [Bilet 30] FluentBit + Loki + Grafana Log Dashboard manifestosunu uygula
     #       (kubernetes.core.k8s -> src: ../monitoring/logging-loki-fluentbit.yaml, tags: [monitoring, logging])
+
+    - name: FluentBit + Loki + Grafana Log Dashboard manifestosunu uygula
+      kubernetes.core.k8s:
+        state: present
+        src: ../monitoring/logging-loki-fluentbit.yaml
+      tags: [monitoring, logging]
