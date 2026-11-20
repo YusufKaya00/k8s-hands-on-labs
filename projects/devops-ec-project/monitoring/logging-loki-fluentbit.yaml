@@ -233,8 +233,7 @@ spec:
       labels:
         app: fluent-bit
     spec:
-      # TODO: [Bilet 30 - 4] Yukarıda oluşturduğumuz ServiceAccount'u (`fluent-bit`)
-      #       `serviceAccountName:` ile pod şablonuna bağla.
+      serviceAccountName: fluent-bit
       tolerations:
         - operator: Exists
       containers:
