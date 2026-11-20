@@ -175,9 +175,8 @@ data:
     [INPUT]
         Name              tail
         Tag               kube.*
-        access: proxty
-        url: http://loki.monitoring.svc.cluster.local:3100
-        isDefault: false
+        Path              /var/log/containers/*_default_*.log,/var/log/containers/*_ingress-nginx_*.log
+        Parser            cri
         DB                /var/fluent-bit/state/flb_kube.db
         Mem_Buf_Limit     10MB
         Skip_Long_Lines   On
@@ -191,19 +190,16 @@ data:
         Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
         Kube_Tag_Prefix     kube.var.log.containers.
         Merge_Log           On
-        keep_Log            Off
+        Keep_Log            Off
         K8S-Logging.Parser  On
         K8S-Logging.Exclude On
 
     [OUTPUT]
         Name              loki
         Match             kube.*
-        Url               http://loki.monitoring.svc.cluster.local:3100
-        # TODO: [Bilet 30 - 3] Loki çıktı hedefini (`Host`, `Port`) ve etiketleri
-        #       (`Labels`) yaz:
-        #       Host              loki.monitoring.svc.cluster.local
-        #       Port              3100
-        #       Labels            job=fluentbit, namespace=$kubernetes['namespace_name'], pod=$kubernetes['pod_name'], app=$kubernetes['labels']['app']
+        Host              loki.monitoring.svc.cluster.local
+        Port              3100
+        Labels            job=fluentbit, namespace=$kubernetes['namespace_name'], pod=$kubernetes['pod_name'], app=$kubernetes['labels']['app']
         Line_Format       json
         Auto_Kubernetes_Labels off
 
@@ -270,14 +266,15 @@ spec:
               cpu: 150m
               memory: 96Mi
        
-            volumeMounts:
-              - name: varlog
-                mountPath: /var/log
-              - name: state
-                mountPath: /var/fluent-bit/state
-              - name: config
-                mountPath: /fluent-bit/etc/
-                readOnly: true
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: state
+              mountPath: /var/fluent-bit/state
+            - name: config
+              mountPath: /fluent-bit/etc/
+              readOnly: true
         
       volumes:
         - name: varlog
@@ -311,7 +308,7 @@ data:
         type: loki
         uid: loki
         access: proxy
-      url: http://loki.monitoring.svc.cluster.local:3100
+        url: http://loki.monitoring.svc.cluster.local:3100
         isDefault: false
         editable: true
 
