@@ -200,6 +200,8 @@
         wait: true  
         update_repo_cache: true
         values:
+          controllerManager:
+            replicaCount: 1
           chaosDaemon:
            runtime: "containerd"
            socketPath: "/run/containerd/containerd.sock"
@@ -237,3 +239,6 @@
         state: present
         src: ../monitoring/prometheus-rules.yaml
       tags: [monitoring]
+
+    # TODO: [Bilet 30] FluentBit + Loki + Grafana Log Dashboard manifestosunu uygula
+    #       (kubernetes.core.k8s -> src: ../monitoring/logging-loki-fluentbit.yaml, tags: [monitoring, logging])

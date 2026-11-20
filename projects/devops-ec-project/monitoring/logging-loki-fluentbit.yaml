@@ -1,0 +1,404 @@
+# ==============================================================================
+# Erasmus Connect — Centralized Logging Stack (Loki + FluentBit + Grafana)
+# Bilet 30: EKSİK ALANLARI (# TODO) KENDİN DOLDUR VE KÜMEYE UYGULA
+# Referanslar:
+#   - kubectl explain deployment.spec.template.spec.containers
+#   - kubectl explain service.spec
+#   - kubectl explain clusterrole.rules
+#   - kubectl explain daemonset.spec.template.spec
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# BÖLÜM 1: Loki Log Deposu (monitoring namespace)
+# ------------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: monitoring
+data:
+  loki.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      instance_addr: 127.0.0.1
+      path_prefix: /tmp/loki
+      storage:
+        filesystem:
+          chunks_directory: /tmp/loki/chunks
+          rules_directory: /tmp/loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      allow_structured_metadata: true
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: monitoring
+  labels:
+    app: loki
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loki
+  template:
+    metadata:
+      labels:
+        app: loki
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: prometheus
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: loki
+          image: grafana/loki:3.1.1
+          args:
+            - "-config.file=/etc/loki/loki.yaml"
+          # TODO: [Bilet 30 - 1] Loki container için `ports:` (containerPort: 3100)
+          #       ve `readinessProbe:` (httpGet path: /ready, port: 3100) bloklarını yaz.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/loki
+              readOnly: true
+            - name: storage
+              mountPath: /tmp/loki
+      volumes:
+        - name: config
+          configMap:
+            name: loki-config
+        - name: storage
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: monitoring
+spec:
+  type: ClusterIP
+  # TODO: [Bilet 30 - 1] Loki Service için `selector:` (app: loki)
+  #       ve `ports:` (port: 3100, targetPort: 3100) bloklarını yaz.
+
+# ------------------------------------------------------------------------------
+# BÖLÜM 2: FluentBit RBAC (En Az Yetki / Least-Privilege)
+# ------------------------------------------------------------------------------
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fluent-bit
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: erasmus-fluent-bit-read
+rules:
+  # TODO: [Bilet 30 - 2] FluentBit [FILTER] kubernetes eklentisinin pod/namespace
+  #       metadata'sını çekebilmesi için core API grubunda (`apiGroups: [""]`)
+  #       YALNIZCA `pods` ve `namespaces` üzerinde `get`, `list`, `watch` izinlerini yaz.
+  #       (`*` wildcard KULLANMA!)
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: erasmus-fluent-bit-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: erasmus-fluent-bit-read
+subjects:
+  - kind: ServiceAccount
+    name: fluent-bit
+    namespace: monitoring
+
+# ------------------------------------------------------------------------------
+# BÖLÜM 3: FluentBit Pipeline Konfigürasyonu ([INPUT] -> [FILTER] -> [OUTPUT])
+# ------------------------------------------------------------------------------
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: monitoring
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush             1
+        Daemon            Off
+        Log_Level         info
+        Parsers_File      parsers.conf
+        HTTP_Server       On
+        HTTP_Listen       0.0.0.0
+        HTTP_Port         2020
+
+    [INPUT]
+        Name              tail
+        Tag               kube.*
+        # TODO: [Bilet 30 - 3] `default` ve `ingress-nginx` namespace'lerindeki container
+        #       loglarını okumak için `Path` ve `Parser` (cri) satırlarını yaz:
+        #       Path              /var/log/containers/*_default_*.log,/var/log/containers/*_ingress-nginx_*.log
+        #       Parser            cri
+        DB                /var/fluent-bit/state/flb_kube.db
+        Mem_Buf_Limit     10MB
+        Skip_Long_Lines   On
+        Refresh_Interval  5
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_CA_File        /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        Kube_Token_File     /var/run/secrets/kubernetes.io/serviceaccount/token
+        Kube_Tag_Prefix     kube.var.log.containers.
+        # TODO: [Bilet 30 - 3] Uygulama JSON loglarını üst seviyeye açmak ve ham
+        #       kopyayı silmek için `Merge_Log` ve `Keep_Log` ayarlarını ekle:
+        #       Merge_Log           On
+        #       Keep_Log            Off
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude On
+
+    [OUTPUT]
+        Name              loki
+        Match             kube.*
+        # TODO: [Bilet 30 - 3] Loki çıktı hedefini (`Host`, `Port`) ve etiketleri
+        #       (`Labels`) yaz:
+        #       Host              loki.monitoring.svc.cluster.local
+        #       Port              3100
+        #       Labels            job=fluentbit, namespace=$kubernetes['namespace_name'], pod=$kubernetes['pod_name'], app=$kubernetes['labels']['app']
+        Line_Format       json
+        Auto_Kubernetes_Labels off
+
+  parsers.conf: |
+    [PARSER]
+        Name        cri
+        Format      regex
+        Regex       ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+    [PARSER]
+        Name        json
+        Format      json
+        Time_Key    ts
+        Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
+# ------------------------------------------------------------------------------
+# BÖLÜM 4: FluentBit DaemonSet (Her Node'dan Log Toplama)
+# ------------------------------------------------------------------------------
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluent-bit
+  namespace: monitoring
+  labels:
+    app: fluent-bit
+spec:
+  selector:
+    matchLabels:
+      app: fluent-bit
+  template:
+    metadata:
+      labels:
+        app: fluent-bit
+    spec:
+      # TODO: [Bilet 30 - 4] Yukarıda oluşturduğumuz ServiceAccount'u (`fluent-bit`)
+      #       `serviceAccountName:` ile pod şablonuna bağla.
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: fluent-bit
+          image: fluent/fluent-bit:3.1.8
+          ports:
+            - name: metrics
+              containerPort: 2020
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2020
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2020
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 150m
+              memory: 96Mi
+          # TODO: [Bilet 30 - 4] Aşağıdaki 3 mount'u `volumeMounts:` içine ekle:
+          #   1. `varlog` -> `/var/log` (`readOnly: true`)
+          #   2. `state`  -> `/var/fluent-bit/state`
+          #   3. `config` -> `/fluent-bit/etc/` (`readOnly: true`)
+      # TODO: [Bilet 30 - 4] `volumes:` bloğunu yaz:
+      #   - `varlog`: `hostPath: { path: /var/log }`
+      #   - `state`:  `emptyDir: {}`
+      #   - `config`: `configMap: { name: fluent-bit-config }`
+
+# ------------------------------------------------------------------------------
+# BÖLÜM 5: Grafana Sidecar Loki Veri Kaynağı (Auto-Provisioned DataSource)
+# ------------------------------------------------------------------------------
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-grafana-datasource
+  namespace: monitoring
+  labels:
+    part-of: monitoring
+    # TODO: [Bilet 30 - 5] Grafana'daki `grafana-sc-datasources` sidecar'ının bu
+    #       ConfigMap'i otomatik okuyabilmesi için gereken label'ı ekle:
+    #       grafana_datasource: "1"
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        uid: loki
+        access: proxy
+        # TODO: [Bilet 30 - 5] `url:` alanını yaz (Loki Servis FQDN + 3100 portu)
+        isDefault: false
+        editable: true
+
+# ------------------------------------------------------------------------------
+# BÖLÜM 6: Hazır Grafana Sidecar Panosu (Prometheus RED + Loki Canlı Loglar)
+# Not: Bu bölüm eksiksizdir; Bölüm 1-5'i tamamladığında Grafana otomatik yükler!
+# ------------------------------------------------------------------------------
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erasmus-logs-metrics-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  erasmus-connect-observability.json: |
+    {
+      "uid": "erasmus-connect-obs",
+      "title": "Erasmus Connect — Live Logs & RED Metrics (Loki + Prometheus)",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "time": { "from": "now-15m", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "HTTP RPS by Service & Status (Prometheus / NGINX)",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 7 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (exported_service, status) (rate(nginx_ingress_controller_requests[5m]))",
+              "legendFormat": "{{exported_service}} ({{status}})"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Log Volume by App & Namespace (Loki / FluentBit)",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 7 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (app, namespace) (count_over_time({namespace=~\"default|ingress-nginx\"}[1m]))"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "logs",
+          "title": "Erasmus Connect Application Logs (namespace=default)",
+          "gridPos": { "x": 0, "y": 7, "w": 12, "h": 10 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "showLabels": true,
+            "showTime": true,
+            "prettifyLogMessage": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{namespace=\"default\"}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "logs",
+          "title": "Express Backend Logs (app=erasmus-express)",
+          "gridPos": { "x": 12, "y": 7, "w": 12, "h": 10 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "showLabels": true,
+            "showTime": true,
+            "prettifyLogMessage": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{namespace=\"default\", app=\"erasmus-express\"}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "logs",
+          "title": "NGINX Ingress Access & Error Logs (namespace=ingress-nginx)",
+          "gridPos": { "x": 0, "y": 17, "w": 24, "h": 9 },
+          "datasource": { "type": "loki", "uid": "loki" },
+          "options": {
+            "showLabels": true,
+            "showTime": true,
+            "prettifyLogMessage": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{namespace=\"ingress-nginx\"}"
+            }
+          ]
+        }
+      ]
+    }
