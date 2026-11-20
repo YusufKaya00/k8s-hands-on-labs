@@ -112,9 +112,9 @@ metadata:
   namespace: monitoring
 spec:
   type: ClusterIP
-selector:
+  selector:
     app: loki
-ports:
+  ports:
     - name: http
       port: 3100
       targetPort: 3100
@@ -201,6 +201,7 @@ data:
     [OUTPUT]
         Name              loki
         Match             kube.*
+        Url               http://loki.monitoring.svc.cluster.local:3100
         # TODO: [Bilet 30 - 3] Loki çıktı hedefini (`Host`, `Port`) ve etiketleri
         #       (`Labels`) yaz:
         #       Host              loki.monitoring.svc.cluster.local
