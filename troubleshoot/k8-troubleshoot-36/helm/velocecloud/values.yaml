@@ -189,7 +189,7 @@ clusterInspector:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8090
-  serviceAccountName: "inspector-sa"
+  serviceAccountName: "inspector-rb"
   rbac:
     resources:
       - "configmaps"
