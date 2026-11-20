@@ -16,8 +16,8 @@ appQuota:
   pods: "15"
   requestsCpu: "350m"
   limitsCpu: "1500m"
-  requestsMemory: "768Mi"
-  limitsMemory: "1536Mi"
+  requestsMemory: 1000Mi
+  limitsMemory: "2000Mi"
 
 statusApi:
   replicaCount: 1
