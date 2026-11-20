@@ -40,7 +40,7 @@
         test -n "$SP_APP_ID"
         az role assignment create --assignee "$SP_APP_ID" --role AcrPush --scope "$ACR_ID"
       args:
-        executable: /bin/bash
+        executable: /bin/bashg
       changed_when: false
       tags: [acr, deploy]
 
@@ -92,6 +92,10 @@
         wait: true
         values:
           controller:
+            metrics:
+              enabled: true
+              service.monitor:
+                enabled: true
             service:
               loadBalancerIP: "{{ tf_ingress_ip.stdout }}"
               annotations:
