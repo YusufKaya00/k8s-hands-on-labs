@@ -71,7 +71,7 @@ inventoryApi:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8083
-  serviceSelectorApp: "inventory-svc"
+  serviceSelectorApp: "inventory-api"
   resources:
     requests:
       cpu: 20m
