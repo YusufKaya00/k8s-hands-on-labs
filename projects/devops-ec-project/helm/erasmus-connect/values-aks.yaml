@@ -17,5 +17,5 @@ express:
     repository: "erasmusconnectv1.azurecr.io/erasmus-connect-backend"
     tag: "2e37bda"
 ingress:
-  host: "<IP>.nip.io"
-  adminHost: "admin.<IP>.nip.io"
+  host: "9.205.92.223.nip.io"
+  adminHost: "admin.9.205.92.223.nip.io"
