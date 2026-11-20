@@ -1327,6 +1327,56 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80
 
 ---
 
+## Faz 11: DevSecOps — CI Hattında Trivy İmaj Güvenlik Kapısı (Vulnerability Gate)
+
+Kümedeki mevcut ~55 pod kapasitesini hiç tüketmeden (**kümede `0` RAM / `0` pod maliyeti**) konteyner güvenliğini doğrudan GitHub Actions CI hattına ekliyorsun (**Shift-Left Security**).
+
+---
+
+### Bilet 31: GitHub Actions İçinde Trivy CVE Taraması ([erasmus-aks-ci.yml](../../.github/workflows/erasmus-aks-ci.yml))
+
+**a) Görev Tanımı:**
+- [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml) dosyasında `build-push-action` artık imajı önce lokale (`load: true`, `push: false`) alıyor; taramadan geçtikten sonra `docker push` yapıyor.
+- Dosyadaki **2 `# TODO` görevini (`[Bilet 31 - 1]` ve `[Bilet 31 - 2]`)** doldur:
+  1. **`[Bilet 31 - 1]` (`workflow_dispatch.inputs`):** `app_ref` altına `trivy_enforce` (`type: choice`, `default: "false"`, `options: ["false", "true"]`) girdisini ekle.
+  2. **`[Bilet 31 - 2]` (`build-push` job'ı):** `Build local image` adımının hemen arkasına (ve `ACR Push`'tan **önce**) `aquasecurity/trivy-action@0.28.0` adımını ekle (`format: "table"`, `severity: "CRITICAL,HIGH"`, `ignore-unfixed: true`, `exit-code: ${{ inputs.trivy_enforce == 'true' && '1' || '0' }}`).
+
+> [!IMPORTANT]
+> **Neden `docker push`'tan ÖNCE tarıyoruz (`load: true` → Trivy → `docker push`)?**
+> İmajı doğrudan ACR'ye pushlayıp sonra tararsan zafiyetli imaj registry'ye çoktan girmiş (hatta ArgoCD yakalayıp dağıtmış) olur! Önce lokal Docker daemon'a yükleyip Trivy'den geçirerek **zafiyetli imajın registry'ye bile dokunmasını engelleyebilirsin**.
+
+**b) İpucu ve Referans:**
+- **`ignore-unfixed: true`:** Henüz üretici yaması çıkmamış CVE'ler yüzünden tüm deploy hattının gereksiz kilitlenmesini önler; sadece düzeltilebilir (`Fixed Version` mevcut) `CRITICAL`/`HIGH` zafiyetlere odaklanır.
+- **`exit-code`:** `'0'` iken zafiyet tablosunu Actions loguna basıp ACR push'a izin verir (*audit modu*); `trivy_enforce: true` seçildiğinde `'1'` döner ve hem `docker push` hem de `update-gitops` adımını otomatik durdurur (*hard gate*).
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): Trivy Adımı YAML Şeması</summary>
+
+`Build local image` adımının hemen altına:
+```yaml
+      - name: Trivy CVE Tarama (${{ matrix.image_name }})
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }}"
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: ${{ inputs.trivy_enforce == 'true' && '1' || '0' }}
+```
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+# 1. Değişikliği GitHub'a pushladıktan sonra Actions -> Erasmus Connect AKS CI -> Run workflow:
+#    - service: backend, app_ref: develop, trivy_enforce: false -> Loglarda Trivy CVE tablosunun
+#      "ACR Push" adımından önce basıldığını gör.
+# 2. (Opsiyonel Test) trivy_enforce: true ile çalıştır; eğer düzeltilebilir CRITICAL/HIGH CVE varsa
+#    job'ın kırmızı yanıp ACR'ye pushlamadığını doğrula!
+```
+
+---
+
 ## Kontrol Listesi (Kendini Değerlendir)
 
 - [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
@@ -1336,7 +1386,7 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80
 - [ ] Next.js podu Redis `6379` portuna ulaşamıyor (Calico engelliyor), sadece Express podu ulaşabiliyor.
 - [ ] Express `NetworkPolicy` kuralı **Post-DNAT** gerçekliğini (pod `containerPort` + Ingress `namespaceSelector`) doğru yansıtıyor.
 - [ ] Ortam silinip tek `terraform apply` + `ansible-playbook` ile sıfırdan kuruluyor; Ingress IP'si sabit kalıyor.
-- [ ] GitHub Actions CI imajı ACR'ye pushluyor -> `values-aks.yaml` tag'i güncelleniyor -> ArgoCD otomatik deploy ediyor.
+- [ ] GitHub Actions CI imajı Trivy taramasından geçirip ACR'ye pushluyor -> `values-aks.yaml` tag'i güncelleniyor -> ArgoCD otomatik deploy ediyor.
 - [ ] Prometheus + Grafana çalışıyor, NGINX Ingress `ServiceMonitor` `UP`, özel `PrometheusRule` alarmları doğrulandı.
 - [ ] FluentBit DaemonSet + Loki `monitoring` namespace'inde çalışıyor ve Grafana **Erasmus Connect — Live Logs & RED Metrics** panosu canlı logları gösteriyor.
 - [ ] `terraform destroy` veya `az aks stop` ile gereksiz bulut maliyeti önlendi.
@@ -1344,9 +1394,9 @@ kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80
 ---
 
 <a id="-english-section"></a>
-## 🇬🇧 English Section — Step-by-Step Setup & 10-Phase DevOps Lab Roadmap
+## 🇬🇧 English Section — Step-by-Step Setup & 11-Phase DevOps Lab Roadmap
 
-This guide walks through building **Erasmus Connect** (**Next.js** frontend, **Vite/Nginx** admin SPA, **Express** backend, **Redis** cache, external **MongoDB Atlas** & **Supabase**) from local **Minikube + Calico** all the way to **Azure AKS + Terraform + Ansible + ArgoCD GitOps + ACR + GitHub Actions CI + Full PLG/Prometheus Observability** across **10 Phases (30 Tickets)**:
+This guide walks through building **Erasmus Connect** (**Next.js** frontend, **Vite/Nginx** admin SPA, **Express** backend, **Redis** cache, external **MongoDB Atlas** & **Supabase**) from local **Minikube + Calico** all the way to **Azure AKS + Terraform + Ansible + ArgoCD GitOps + ACR + GitHub Actions CI (Trivy CVE Gate) + Full PLG/Prometheus Observability** across **11 Phases (31 Tickets)**:
 
 ### Phases Overview
 1. **Phases 1–2 — Containerization & Helm Chart Packaging:** Package Express (`:4000`), Next.js (`:3000`, `HOSTNAME=0.0.0.0`), Admin SPA (`:80`), and Redis (`StatefulSet` + Headless `Service`, `clusterIP: None`) under [`helm/erasmus-connect/`](./helm/erasmus-connect/). Keep secrets out of Git using `.env.*` -> Kubernetes `Secret` & `ConfigMap` (`envFrom`), add resource requests/limits and `readinessProbe`/`livenessProbe`.
@@ -1357,6 +1407,7 @@ This guide walks through building **Erasmus Connect** (**Next.js** frontend, **V
 6. **Phase 8 — Passwordless Azure Container Registry (`ACR`) + Managed Identity:** Provision ACR (`Basic`, `admin_enabled = false`) via [`terraform/acr.tf`](./terraform/acr.tf), assign the **`AcrPull`** RBAC role to the AKS `kubelet_identity`, push images (`values-aks.yaml`), and remove `imagePullSecrets` (`dockerhub-secret`).
 7. **Phase 9 — One-Command Environment Rebuild & Isolated GitHub Actions CI:** Reserve a static Standard Public IP in [`terraform/network.tf`](./terraform/network.tf), bootstrap Ingress + Secrets + ArgoCD in [`ansible/playbook.yml`](./ansible/playbook.yml), and trigger [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml) to build from `YusufKaya00/Erasmus-Connect`, push to ACR, and commit image tag bumps for ArgoCD.
 8. **Phase 10 — Full Observability (Prometheus, Grafana, NGINX Metrics, SRE Alerts & FluentBit + Loki Logging):** Deploy a tuned `kube-prometheus-stack` ([`monitoring/values-prometheus.yaml`](./monitoring/values-prometheus.yaml)), scrape NGINX Ingress RED metrics via `ServiceMonitor`, verify custom alerts in [`monitoring/prometheus-rules.yaml`](./monitoring/prometheus-rules.yaml), and deploy FluentBit DaemonSet + Loki + Grafana sidecar DataSource/Dashboard in [`monitoring/logging-loki-fluentbit.yaml`](./monitoring/logging-loki-fluentbit.yaml).
+9. **Phase 11 — DevSecOps Shift-Left Gate (Trivy CVE Scan in CI):** Build images locally first (`load: true`) in [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml), run **`aquasecurity/trivy-action`** (`CRITICAL,HIGH`, `ignore-unfixed: true`) with a toggleable `trivy_enforce` gate before `docker push`, adding zero pod/RAM overhead to AKS.
 
 ### Verification Checklist
 - [ ] Zero secrets/connection strings committed to Git (`.env.*` and `terraform.tfvars` gitignored).
@@ -1365,7 +1416,7 @@ This guide walks through building **Erasmus Connect** (**Next.js** frontend, **V
 - [ ] `NetworkPolicy` isolates Redis (`:6379`) exclusively to Express and enforces Post-DNAT rules on `:4000`.
 - [ ] ArgoCD syncs from ACR without `imagePullSecrets` and preserves HPA replica counts.
 - [ ] Full cluster rebuild via `terraform apply` + `ansible-playbook` preserves the static Ingress IP.
-- [ ] GitHub Actions CI builds & pushes to ACR and updates `values-aks.yaml` for ArgoCD auto-sync.
+- [ ] GitHub Actions CI scans images with Trivy before ACR push and updates `values-aks.yaml` for ArgoCD auto-sync.
 - [ ] Prometheus/Grafana running within node capacity, NGINX `ServiceMonitor` `UP`, and custom `PrometheusRule` alerts verified.
 - [ ] FluentBit DaemonSet + Loki running in `monitoring` and Grafana displays live `default` + `ingress-nginx` logs alongside Prometheus RPS.
 - [ ] Cluster stopped (`az aks stop`) or destroyed (`terraform destroy`) after verification to prevent idle cloud spend.

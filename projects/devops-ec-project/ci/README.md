@@ -6,14 +6,15 @@ Canlı uygulama reposunun (`YusufKaya00/Erasmus-Connect`) mevcut CI akışına h
 ## Nasıl Çalışır?
 
 1. GitHub'da **`k8s-hands-on-labs` → Actions → Erasmus Connect AKS CI → Run workflow** butonuna tıkla.
-2. Açılan menüden iki seçim yap:
+2. Açılan menüden seçim yap:
    - **`service`:** `all`, `backend`, `frontend` veya `admin`
    - **`app_ref`:**
      - `develop` *(varsayılan)* → monorepo ortak paketi (`packages/types`) sebebiyle 3 servis de **repo kökü (`.`)** context'i ile build edilir.
      - `main` → her servis kendi klasör context'i (`./backend`, `./frontend`, `./admin-frontend`) ile build edilir.
+   - **`trivy_enforce` *(Bilet 31)*:** `false` (CVE tablosunu basar ve push'a devam eder) veya `true` (`CRITICAL`/`HIGH` zafiyet varsa ACR push'u durdurur).
 3. Workflow şunları sırayla yapar:
    - `YusufKaya00/Erasmus-Connect` reposunu `APP_REPO_TOKEN` ile read-only çeker ve 7 karakterlik commit SHA'sını alır.
-   - Seçilen servisleri paralel build edip `erasmusconnectv1.azurecr.io/<imaj>:<app_sha>` olarak ACR'ye pushlar.
+   - Seçilen servisleri paralel olarak lokale build eder (`load: true`), **Trivy CVE taramasından (Bilet 31)** geçirir ve ardından `erasmusconnectv1.azurecr.io/<imaj>:<app_sha>` olarak ACR'ye pushlar.
    - `projects/devops-ec-project/helm/erasmus-connect/values-aks.yaml` içindeki ilgili `image.tag` alanlarını yerleşik `GITHUB_TOKEN` ile günceller ve `main` branch'ine commit'ler.
    - ArgoCD değişikliği algılayıp AKS kümesine otomatik deploy eder.
 

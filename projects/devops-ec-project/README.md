@@ -1,58 +1,60 @@
-# Erasmus Connect — Cloud-Native Kubernetes, IaC & GitOps Mimarisi
+# Erasmus Connect — Cloud-Native Kubernetes, IaC, GitOps & Observability Mimarisi
 
 🇹🇷 Türkçe (aşağıda) · 🇬🇧 [English version](#english-version)
 
-> **Adım Adım Kurulum & Lab Rehberi:** Projeyi sıfırdan Minikube üzerinde kurmak, Azure AKS + ACR + ArgoCD + Chaos Mesh adımlarını tek tek uygulamak ve gerçek ortamda karşılaşılan hata çözümlerini görmek için **[SETUP-README.md](./SETUP-README.md)** dosyasını takip et.
+> **Adım Adım Kurulum & Lab Rehberi:** Projeyi sıfırdan Minikube üzerinde kurmak, Azure AKS + ACR + ArgoCD + Chaos Mesh + PLG/Prometheus Gözlemlenebilirlik ve Trivy CI kapısı adımlarını tek tek uygulamak için **[SETUP-README.md](./SETUP-README.md)** dosyasını takip et.
 
-**Erasmus Connect**, tam yığın bir web platformunun (**Next.js** kullanıcı arayüzü, **Vite/Nginx** yönetim paneli, **Express** backend API ve **Redis** oturum/önbellek katmanı) yerel Kubernetes (Minikube + Calico) ortamından **Azure AKS** üzerine üretime hazır (production-grade) taşınmasını, **Terraform** ile altyapı kodlamasını, **Ansible** ile bootstrap edilmesini, **Chaos Mesh / HPA / PDB** ile dayanıklılık doğrulamasını ve **ArgoCD + Azure Container Registry (`AcrPull`)** ile şifresiz GitOps dağıtımını kapsayan uçtan uca bir DevOps / SRE projesidir.
-
----
-
-## 1. Uçtan Uca Proje Akışı (Neler Yaptık?)
-
-Proje 8 faz boyunca kademeli olarak inşa edildi:
-
-1. **Konteyner & Helm Orkestrasyonu (Faz 1–2):** Express backend, Next.js frontend, Admin paneli (`nginx:alpine`) ve kalıcı veri gerektiren Redis (`StatefulSet` + `Headless Service`) tek bir [Helm chart](./helm/erasmus-connect/Chart.yaml) altında toplandı. Hassas bilgiler Git dışı `.env` dosyalarından `envFrom` (`Secret` + `ConfigMap`) ile podlara aktarıldı; kaynak sınırları (`requests`/`limits`) ve `readinessProbe`/`livenessProbe` sağlık kontrolleri eklendi.
-2. **Ingress Yönlendirme & Zero-Trust Ağ (Faz 3):** `ingress-nginx` üzerinden host/path bazlı yönlendirme (`/`, `/api`, `admin.*`) kuruldu. Calico CNI altında **Post-DNAT NetworkPolicy** kuralları yazılarak Redis'e Next.js dahil yetkisiz erişimler kapatıldı ve Express poduna yalnızca Ingress ile Next.js'in (`4000` portundan) erişmesine izin verildi.
-3. **Altyapı Kodlama & Otomasyon (Faz 4–5):** **Terraform** ([terraform/](./terraform/main.tf)) ile `DenmarkEast` bölgesinde Calico destekli AKS kümesi (`aks-erasmus-connect-dev`, `Standard_B2s`), **Ansible** ([ansible/playbook.yml](./ansible/playbook.yml)) ile de kubeconfig alma, Azure LB `/healthz` annotation'lı NGINX Ingress kurulumu, Secret/ConfigMap yükleme ve Helm dağıtımı otomatikleştirildi.
-4. **Yüksek Erişilebilirlik & Kaos Mühendisliği (Faz 6):** Express ve Next.js için CPU tabanlı **HPA** (`min: 2`, `max: 4` @ `%60`), bakım kesintilerine karşı **PodDisruptionBudget (`minAvailable: 1`)** tanımlandı ve **Chaos Mesh** ([chaos/](./chaos/01-pod-kill-express.yaml)) ile pod silme, Redis ağ gecikmesi ve CPU stres deneyleri doğrulandı.
-5. **Ölçekleme & ArgoCD GitOps (Faz 7):** Azure CNI'ın node başına `30 pod` sınırını aşmak için Terraform ile node sayısı `1 -> 2` olarak yerinde artırıldı. **ArgoCD** ([argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml)) `prune: true` ve `selfHeal: true` ile devreye alındı; HPA'nın artırdığı replikaların geri düşmemesi için `ignoreDifferences` (`/spec/replicas`) eklendi.
-6. **Şifresiz ACR & Managed Identity (Faz 8):** Docker Hub PAT (`dockerhub-secret`) bağımlılığı kaldırıldı. Terraform ([terraform/acr.tf](./terraform/acr.tf)) ile Azure Container Registry (`erasmusconnectv1.azurecr.io`, `Basic`, `admin_enabled = false`) kuruldu ve AKS `kubelet_identity` hesabına **`AcrPull`** rolü atanarak ArgoCD üzerinden `:v1` imajlarının şifresiz çekilmesi sağlandı.
+**Erasmus Connect**, tam yığın bir web platformunun (**Next.js** kullanıcı arayüzü, **Vite/Nginx** yönetim paneli, **Express** backend API ve **Redis** oturum/önbellek katmanı) yerel Kubernetes (Minikube + Calico) ortamından **Azure AKS** üzerine üretime hazır taşınmasını; **Terraform** (AKS + Sabit IP + ACR `AcrPull`), **Ansible** (tek komutla bootstrap), **Chaos Mesh / HPA / PDB** (dayanıklılık), **ArgoCD** (GitOps), **GitHub Actions + Trivy** (DevSecOps CI) ve **Prometheus + Alertmanager + Loki + FluentBit + Grafana** (tam gözlemlenebilirlik) katmanlarıyla uçtan uca birleştiren bir DevOps / SRE projesidir.
 
 ---
 
-## 2. Sistem ve Trafik Akışı (Runtime Architecture)
+## 1. Uçtan Uca Proje Akışı (11 Faz / 31 Bilet)
+
+1. **Konteyner & Helm Orkestrasyonu (Faz 1–2):** Express, Next.js, Admin paneli (`nginx:alpine`) ve Redis (`StatefulSet` + `Headless Service`) tek bir [Helm chart](./helm/erasmus-connect/Chart.yaml) altında paketlendi. Hassas bilgiler Git dışı `.env` dosyalarından `envFrom` (`Secret` + `ConfigMap`) ile verildi; `requests`/`limits` ve `readinessProbe`/`livenessProbe` eklendi.
+2. **Ingress & Zero-Trust Ağ (Faz 3):** `ingress-nginx` üzerinden host/path yönlendirmesi (`/`, `/api`, `admin.*`) kuruldu. Calico CNI altında **Post-DNAT NetworkPolicy** kurallarıyla Redis'e yetkisiz erişimler kapatıldı ve Express yalnızca Ingress ile Next.js'in (`4000`) erişimine açıldı.
+3. **Altyapı Kodlama & Otomasyon (Faz 4–5):** **Terraform** ([terraform/](./terraform/main.tf)) ile `DenmarkEast` bölgesinde Calico destekli AKS kümesi (`aks-erasmus-connect-dev`, `Standard_B2s`), **Ansible** ([ansible/playbook.yml](./ansible/playbook.yml)) ile kubeconfig, Azure LB `/healthz` probe annotation'lı NGINX Ingress ve Secret/ConfigMap yüklemesi otomatikleştirildi.
+4. **Yüksek Erişilebilirlik & Kaos Mühendisliği (Faz 6):** CPU tabanlı **HPA** (`min: 2`, `max: 4` @ `%60`), **PodDisruptionBudget (`minAvailable: 1`)** eklendi; **Chaos Mesh** ([chaos/](./chaos/01-pod-kill-express.yaml)) ile pod kill, Redis ağ gecikmesi ve CPU stres deneyleri kuruldu.
+5. **Ölçekleme & ArgoCD GitOps (Faz 7):** Azure CNI'ın node başına `30 pod` sınırını aşmak için Terraform ile node sayısı `1 -> 2` artırıldı. **ArgoCD** ([argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml)) `prune: true`, `selfHeal: true` ve HPA replika çakışmasını önleyen `ignoreDifferences` (`/spec/replicas`) ile devreye alındı.
+6. **Şifresiz ACR & Managed Identity (Faz 8):** Docker Hub PAT (`dockerhub-secret`) kaldırıldı; Terraform ([terraform/acr.tf](./terraform/acr.tf)) ile ACR (`erasmusconnectv1.azurecr.io`, `admin_enabled = false`) ve AKS `kubelet_identity` için **`AcrPull`** rolü tanımlandı.
+7. **Sabit IP, Tek Komutla Ortam Kurulumu & İzole CI (Faz 9):** Terraform ([terraform/network.tf](./terraform/network.tf)) ile `Standard / Static` Public IP ve AKS `Network Contributor` rolü eklendi. Ansible yeni IP'yi otomatik olarak `values-aks.yaml`/`.env.*` içine işleyip Ingress, ArgoCD, Chaos Mesh ve `sp-erasmus-acr-push` `AcrPush` yetkisini tek komutla kurar. Canlı uygulama reposuna dokunmadan [erasmus-aks-ci.yml](../../.github/workflows/erasmus-aks-ci.yml) (`workflow_dispatch`) imajları build edip ACR'ye atar ve GitOps tag'ini günceller.
+8. **Tam Gözlemlenebilirlik — Metrikler, Alarmlar & Merkezi Loglama (Faz 10):** `2x Standard_B2s` kapasitesine uyarlanmış `kube-prometheus-stack` ([monitoring/values-prometheus.yaml](./monitoring/values-prometheus.yaml)), NGINX Ingress `ServiceMonitor` RED metrikleri, Chaos Mesh Game Day ile canlı `FIRING` doğrulaması yapılan SRE alarmları ([monitoring/prometheus-rules.yaml](./monitoring/prometheus-rules.yaml)) ve **FluentBit DaemonSet + Loki + Grafana Sidecar DataSource & Panosu** ([monitoring/logging-loki-fluentbit.yaml](./monitoring/logging-loki-fluentbit.yaml)) `monitoring` namespace'ine kuruldu.
+9. **DevSecOps Shift-Left Güvenlik Kapısı (Faz 11):** GitHub Actions CI ([erasmus-aks-ci.yml](../../.github/workflows/erasmus-aks-ci.yml)) içine imaj ACR'ye pushlanmadan **önce** (`load: true` → Trivy → `docker push`) çalışan **Trivy CVE (`CRITICAL,HIGH`)** taraması ve `trivy_enforce` kapısı eklendi (kümede `0` ek pod/RAM tüketir).
+
+---
+
+## 2. Sistem, Gözlemlenebilirlik ve GitOps Akışı
 
 ```mermaid
 flowchart LR
-    User["Kullanıcı / Tarayıcı"] -->|"HTTP :80"| LB["Azure LoadBalancer<br/>(/healthz probe)"]
-    LB --> Ingress["NGINX Ingress Controller<br/>(ingress-nginx ns)"]
+    User["Kullanıcı / Tarayıcı"] -->|"HTTP :80"| LB["Azure LoadBalancer<br/>(Sabit Public IP, /healthz)"]
+    LB --> Ingress["NGINX Ingress Controller<br/>(ingress-nginx ns | metrics :10254)"]
 
-    Ingress -->|"Host: &lt;IP&gt;.nip.io<br/>Path: /"| NextSvc["Next.js Service (:8090)"]
-    Ingress -->|"Host: &lt;IP&gt;.nip.io<br/>Path: /api"| ExpSvc["Express Service (:8080)"]
-    Ingress -->|"Host: admin.&lt;IP&gt;.nip.io<br/>Path: /"| AdmSvc["Admin Service (:80)"]
+    Ingress -->|"Host: &lt;IP&gt;.nip.io /"| NextSvc["Next.js Svc (:8090)"]
+    Ingress -->|"Host: &lt;IP&gt;.nip.io /api"| ExpSvc["Express Svc (:8080)"]
+    Ingress -->|"Host: admin.&lt;IP&gt;.nip.io /"| AdmSvc["Admin Svc (:80)"]
 
     NextSvc --> NextPod["Next.js Pod (:3000)<br/>HPA 2-4 | PDB min 1"]
     ExpSvc --> ExpPod["Express Pod (:4000)<br/>HPA 2-4 | PDB min 1"]
     AdmSvc --> AdmPod["Admin Nginx Pod (:80)"]
 
-    NextPod -.->|"SSR /api çağrısı"| ExpSvc
-    ExpPod -->|"Calico NetPol: TCP 6379<br/>(Sadece Express izinli)"| RedisSvc["Redis Headless Service<br/>(clusterIP: None)"]
-    RedisSvc --> RedisPod["Redis StatefulSet (:6379)<br/>PVC 1Gi"]
-
+    NextPod -.->|"SSR /api"| ExpSvc
+    ExpPod -->|"Calico NetPol :6379"| RedisSvc["Redis Headless Svc"] --> RedisPod["Redis StatefulSet"]
     ExpPod -->|"Egress"| Atlas["Harici: MongoDB Atlas &amp; Supabase"]
+
+    Ingress -.->|"ServiceMonitor"| Prom["Prometheus &amp; Alertmanager<br/>(monitoring ns)"]
+    ExpPod & AdmPod & Ingress -.->|"/var/log/containers"| FB["FluentBit DaemonSet (:2020)"] --> Loki["Loki (:3100)"]
+    Prom & Loki --> Grafana["Grafana Sidecar Panosu (:3000)"]
 ```
 
-### Yaşam Döngüsü ve GitOps Dağıtım Akışı (Build → IaC → GitOps)
+### Build → Trivy → IaC → GitOps Yaşam Döngüsü
 
 ```mermaid
 flowchart TD
-    TF["Terraform (versions, main, acr.tf)<br/>AKS (2x Standard_B2s, Azure CNI + Calico)<br/>+ ACR (erasmusconnectv1) + AcrPull IAM"] --> ANS["Ansible Playbook<br/>get-credentials, ingress-nginx (/healthz)<br/>Secret &amp; ConfigMap (.env.*)"]
-    Docker["Docker Build (:v1)<br/>NEXT_PUBLIC_* &amp; VITE_* build-arg"] -->|"az acr login + docker push"| ACR["Azure Container Registry<br/>erasmusconnectv1.azurecr.io"]
-    Git["Git Push (main)<br/>values.yaml + values-aks.yaml"] --> Argo["ArgoCD (argocd ns)<br/>prune: true | selfHeal: true<br/>ignoreDifferences: /spec/replicas"]
-    ANS --> Cluster["Azure AKS (default ns)"]
-    Argo -->|"Helm Sync"| Cluster
-    ACR -->|"Kubelet Managed Identity (AcrPull)<br/>Secret olmadan pull"| Cluster
+    TF["Terraform (main, acr, network.tf)<br/>AKS (2x Standard_B2s, Calico)<br/>+ ACR (AcrPull) + Sabit IP (Network Contributor)"] --> ANS["Ansible Playbook<br/>AcrPush SP, IP Sync, NGINX Ingress<br/>Secrets, ArgoCD, Chaos Mesh, PLG/Prometheus"]
+    AppRepo["YusufKaya00/Erasmus-Connect<br/>(Private Monorepo)"] -->|"workflow_dispatch (APP_REPO_TOKEN)"| CI["GitHub Actions CI (erasmus-aks-ci.yml)<br/>Docker Build (load: true) → Trivy CVE Gate"]
+    CI -->|"docker push :sha"| ACR["Azure Container Registry<br/>erasmusconnectv1.azurecr.io"]
+    CI -->|"GITHUB_TOKEN tag commit"| GitOps["values-aks.yaml (main)"] --> Argo["ArgoCD (prune, selfHeal)<br/>ignoreDifferences: /spec/replicas"]
+    ANS & Argo & ACR -->|"Kubelet AcrPull"| Cluster["Azure AKS (default &amp; monitoring)"]
 ```
 
 ---
@@ -60,54 +62,51 @@ flowchart TD
 ## 3. Dizin ve Dosya Yapısı
 
 ```text
-devops-ec-project/
-├── README.md                              # Proje özeti, mimari ve uçtan uca akış (bu dosya)
-├── SETUP-README.md                        # 8 Faz / 23 Biletlik adım adım kurulum ve hata çözüm rehberi
-├── .env.example                           # Yerel/AKS Secret & build-arg ortam değişkeni şablonu
-├── .gitignore                             # .env.* (şifreler), terraform.tfvars ve state dosyalarını Git dışı tutar
+k8s-hands-on-labs/
+├── .github/workflows/
+│   └── erasmus-aks-ci.yml                 # İzole AKS CI: Checkout -> Build -> Trivy Scan -> ACR Push -> GitOps Tag
 │
-├── helm/erasmus-connect/                  # Uygulama Helm Chart'ı
-│   ├── Chart.yaml                         # Chart metadata (erasmus-connect)
-│   ├── .helmignore                        # Paketleme dışı bırakılacak dosyalar
-│   ├── values.yaml                        # Varsayılan değerler (portlar, HPA, resource request/limit, envFrom adları)
-│   ├── values-aks.yaml                    # AKS & ACR override'ları (*.azurecr.io/...:v1 imajları ve nip.io hostları)
-│   └── templates/
-│       ├── _helpers.tpl                   # Ortak isimlendirme ve label helper şablonları
-│       ├── express-deployment.yaml        # Express API pod şablonu (/health probe, envFrom, resources)
-│       ├── express-service.yaml           # ClusterIP Service (8080 -> 4000)
-│       ├── nextjs-deployment.yaml         # Next.js SSR pod şablonu (HOSTNAME=0.0.0.0, :3000)
-│       ├── nextjs-service.yaml            # ClusterIP Service (8090 -> 3000)
-│       ├── admin-deployment.yaml          # Vite Admin SPA (nginx:alpine, :80)
-│       ├── admin-service.yaml             # ClusterIP Service (80 -> 80)
-│       ├── redis-statefulset.yaml         # Kalıcı diskli (1Gi PVC) Redis (:6379)
-│       ├── redis-service.yaml             # Headless Service (clusterIP: None)
-│       ├── ingress.yaml                   # NGINX Ingress kuralları (<host>/, <host>/api, admin.<host>/)
-│       ├── networkpolicy-express.yaml     # Post-DNAT Calico kuralı (Ingress + Next.js -> Express :4000)
-│       ├── networkpolicy-redis.yaml       # Zero-Trust Calico kuralı (Sadece Express -> Redis :6379)
-│       ├── hpa-express.yaml               # Express HorizontalPodAutoscaler (2-4 replica @ %60 CPU)
-│       ├── hpa-nextjs.yaml                # Next.js HorizontalPodAutoscaler (2-4 replica @ %60 CPU)
-│       └── pdb.yaml                       # PodDisruptionBudget (minAvailable: 1)
-│
-├── terraform/                             # Azure AKS & ACR Infrastructure-as-Code
-│   ├── versions.tf                        # azurerm ~> 4.0 provider sabitlemesi ve features{}
-│   ├── variables.tf                       # Bölge, küme adı, node_count, vm_size (Standard_B2s)
-│   ├── main.tf                            # Resource Group + AKS (SystemAssigned, Azure CNI + Calico)
-│   ├── acr.tf                             # Azure Container Registry (Basic) + kubelet AcrPull rol ataması
-│   ├── outputs.tf                         # Resource group, cluster adı, kube_config_raw, acr_login_server
-│   └── terraform.tfvars.example           # Değişken override şablonu (gerçek terraform.tfvars Git dışıdır)
-│
-├── ansible/                               # Küme Bootstrap Otomasyonu
-│   ├── ansible.cfg                        # Yerel çalışma ve çıktı formatı ayarları
-│   ├── inventory.ini                      # localhost ansible_connection=local tanımı
-│   └── playbook.yml                       # get-credentials, ingress-nginx (/healthz), Secret/ConfigMap, Helm deploy
-│
-├── argocd/                                # GitOps Tanımı
-│   └── erasmus-app.yaml                   # ArgoCD Application (values.yaml + values-aks.yaml, selfHeal, HPA uyumu)
-│
-└── chaos/                                 # Chaos Mesh Dayanıklılık Deneyleri
-    ├── 01-pod-kill-express.yaml           # Express pod öldürme deneyi (replica & PDB kurtarma testi)
-    ├── 02-network-delay-redis.yaml        # Redis ağına gecikme enjeksiyonu (timeout/resilience testi)
-    └── 03-stress-cpu-express.yaml         # Express podlarına yapay CPU yükü (HPA tetikleme testi)
+└── projects/devops-ec-project/
+    ├── README.md                          # Proje özeti, mimari ve uçtan uca akış (bu dosya)
+    ├── SETUP-README.md                    # 11 Faz / 31 Biletlik adım adım kurulum ve hata çözüm rehberi
+    ├── .env.example                       # Yerel/AKS Secret & build-arg ortam değişkeni şablonu
+    ├── .gitignore                         # .env.* (şifreler), terraform.tfvars ve state dosyalarını Git dışı tutar
+    │
+    ├── ci/
+    │   └── README.md                      # İzole CI kurulumu ve gereken 5 GitHub Secret kılavuzu
+    │
+    ├── helm/erasmus-connect/              # Uygulama Helm Chart'ı
+    │   ├── Chart.yaml                     # Chart metadata (erasmus-connect)
+    │   ├── .helmignore                    # Paketleme dışı bırakılacak dosyalar
+    │   ├── values.yaml                    # Varsayılan değerler (portlar, HPA, resources, envFrom adları)
+    │   ├── values-aks.yaml                # AKS & ACR override'ları (*.azurecr.io/...:<sha> ve <IP>.nip.io)
+    │   └── templates/                     # Deployments, Services, Redis StatefulSet, Ingress, NetPols, HPAs, PDB
+    │
+    ├── terraform/                         # Azure AKS, ACR & Sabit IP Infrastructure-as-Code
+    │   ├── versions.tf                    # azurerm ~> 4.0 provider sabitlemesi ve features{}
+    │   ├── variables.tf                   # Bölge, küme adı, node_count, vm_size (Standard_B2s)
+    │   ├── main.tf                        # Resource Group + AKS (SystemAssigned, Azure CNI + Calico)
+    │   ├── acr.tf                         # Azure Container Registry (Basic) + kubelet AcrPull rol ataması
+    │   ├── network.tf                     # Sabit Standard Public IP + AKS Network Contributor rolü
+    │   ├── outputs.tf                     # cluster/RG adları, kube_config_raw, acr_login_server, ingress_public_ip
+    │   └── terraform.tfvars.example       # Değişken override şablonu (gerçek terraform.tfvars Git dışıdır)
+    │
+    ├── ansible/                           # Tek Komutla Küme Bootstrap Otomasyonu
+    │   ├── ansible.cfg & inventory.ini    # localhost ansible_connection=local
+    │   └── playbook.yml                   # AcrPush SP, IP Sync, Ingress (ServiceMonitor), Secrets, ArgoCD, Chaos, Monitoring
+    │
+    ├── argocd/
+    │   └── erasmus-app.yaml               # ArgoCD Application (values.yaml + values-aks.yaml, selfHeal, HPA uyumu)
+    │
+    ├── monitoring/                        # Observability Yığını (PLG + Prometheus + SRE Alerts)
+    │   ├── values-prometheus.yaml         # Hafif kube-prometheus-stack ayarları (AKS control-plane scraper kapalı)
+    │   ├── prometheus-rules.yaml          # Özel PrometheusRule SRE alarmları (ExpressDown, CrashLoop, High5xx)
+    │   └── logging-loki-fluentbit.yaml    # Loki + FluentBit DaemonSet (RBAC/CRI) + Grafana Sidecar DataSource & Panosu
+    │
+    └── chaos/                             # Chaos Mesh Dayanıklılık Deneyleri
+        ├── 01-pod-kill-express.yaml       # Express pod öldürme deneyi (PDB & self-healing testi)
+        ├── 02-network-delay-redis.yaml    # Redis ağına gecikme enjeksiyonu
+        └── 03-stress-cpu-express.yaml     # Express podlarına CPU stresi (HPA tetikleme testi)
 ```
 
 ---
@@ -116,45 +115,47 @@ devops-ec-project/
 
 | Konu | Uygulanan Çözüm | Mühendislik Gerekçesi |
 | :--- | :--- | :--- |
-| **Post-DNAT NetworkPolicy** | Kural hedeflerinde Service portu (`8080`) değil Pod `containerPort` (`4000`) ve Ingress için `namespaceSelector` kullanıldı. | Calico kuralları Kubernetes `kube-proxy` DNAT dönüşümünden **sonra** değerlendirir; Ingress trafiği `default` dışındaki `ingress-nginx` namespace'inden gelir. |
-| **Build-Time vs Run-Time Env** | `NEXT_PUBLIC_*` ve `VITE_BACKEND_URL` imaj build aşamasında (`--build-arg`) gömülürken; DB/JWT sırları K8s `Secret` (`envFrom`) üzerinden runtime'da verildi. | İstemci tarafı JS paketleri `next/vite build` anında derlenir; pod ortam değişkeni değişse bile mevcut JS bundle'ı değişmez. |
-| **Azure LB Health Probe** | `ingress-nginx` Service üzerine `service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"` eklendi. | Azure LoadBalancer varsayılan olarak `/` yoluna `Host` header'ı olmadan istek atar; NGINX `404` döndüğü için dış trafik zaman aşımına düşer. |
-| **GitOps & HPA Çakışması** | ArgoCD `Application` manifestosuna `ignoreDifferences` (`/spec/replicas` for `apps/Deployment`) eklendi. | Aksi halde `selfHeal: true` açıkken ArgoCD, HPA'nın trafik altında artırdığı pod sayısını Git'teki değere geri düşürür. |
-| **Node Kapasite Planı** | Terraform ile `node_count` `1 -> 2` (`Standard_B2s`) ölçeklendi. | Azure CNI varsayılan olarak node başına en fazla **30 pod** destekler; ArgoCD + Chaos Mesh + uygulama HPA replikaları tek node sınırını aşar. |
-| **Şifresiz ACR (`AcrPull`)** | `azurerm_role_assignment` ile AKS `kubelet_identity` nesnesine ACR üzerinde `AcrPull` verildi; `dockerhub-secret` kaldırıldı. | Docker Hub PAT ve cluster içinde imaj çekme secret'ı yönetme ihtiyacını ortadan kaldırır (`admin_enabled = false`). |
-| **Release Sahipliği** | ArgoCD'ye geçerken eski manuel `helm uninstall erasmus` temizliği yapıldı. | İki farklı release aynı Ingress host/path'i sahiplenmeye çalıştığında `validate.nginx.ingress.kubernetes.io` webhook'u senkronizasyonu engeller. |
+| **Post-DNAT NetworkPolicy** | Kural hedeflerinde Service portu (`8080`) değil Pod `containerPort` (`4000`) ve Ingress için `namespaceSelector` kullanıldı. | Calico kuralları `kube-proxy` DNAT dönüşümünden **sonra** değerlendirir; Ingress trafiği `ingress-nginx` namespace'inden gelir. |
+| **Build-Time vs Run-Time Env** | `NEXT_PUBLIC_*` ve `VITE_BACKEND_URL` build aşamasında (`--build-arg`), DB/JWT sırları K8s `Secret` ile runtime'da verildi. | İstemci JS paketleri derlenirken sabitlenir; pod env değişse de mevcut JS bundle değişmez. |
+| **Sabit IP & Otomatik Sync** | [network.tf](./terraform/network.tf) ile Standard Static IP ayrıldı; Ansible yeni IP'yi `values-aks.yaml` ve `.env.*`'a yazar. | Pod/Ingress yeniden kurulumunda IP sabit kalır; `destroy -> apply` sonrası da tek komutla senkronlanır. |
+| **Azure LB Health Probe** | `ingress-nginx` Service üzerine `azure-load-balancer-health-probe-request-path: "/healthz"` eklendi. | Azure LB varsayılan `/` yoluna `Host` olmadan vurur; NGINX `404` dönüp trafiği keser. |
+| **GitOps & HPA Çakışması** | ArgoCD manifestosuna `ignoreDifferences` (`/spec/replicas` for `apps/Deployment`) kondu. | `selfHeal: true` açıkken ArgoCD'nin HPA replikalarını geri düşürmesini engeller. |
+| **30-Pod Sınırı & Hafif İzleme** | Node sayısı `2`, Chaos controller `1`, `GF_PLUGINS_PREINSTALL_DISABLED: "true"`, `serviceMonitorSelectorNilUsesHelmValues: false`. | Azure CNI'ın 30-pod/node sınırına takılmadan Prometheus, Grafana, Alertmanager, Loki ve FluentBit aynı kümede rahat çalışır. |
+| **Grafana Sidecar Otomasyonu** | DataSource ve 5 panelli dashboard `grafana_datasource: "1"` / `grafana_dashboard: "1"` etiketli ConfigMap olarak verildi. | Sidecar konteynerlar Grafana'yı restart etmeden Loki kaynağını ve canlı log panosunu yükler. |
+| **Shift-Left Trivy Kapısı** | CI'da `load: true` → Trivy `CRITICAL,HIGH` → `docker push` sırası kuruldu. | Kümede 0 pod harcayarak zafiyetli imajların daha ACR'ye girmeden engellenmesini sağlar. |
 
 ---
 
 ## 5. Hızlı İşletim ve Doğrulama Komutları
 
-### Küme Maliyet Kontrolü (Öğrenci Bütçesi)
+### Küme Maliyet Kontrolü
 
 ```bash
-# Çalışma bitince VM maliyetini durdur (diskler ve IP korunur):
+# Çalışma bitince VM maliyetini durdur (IP ve ACR imajları korunur):
 az aks stop --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
 
 # Ertesi gün kümeyi tekrar uyandır:
 az aks start --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
 ```
 
-### ArgoCD Arayüzü ve Helm Doğrulaması
+### Tüm Panellere Port-Forward Erişimi
 
 ```bash
-# ArgoCD UI erişimi (http://localhost:8085)
-kubectl port-forward svc/argocd-server -n argocd 8085:80
-
-# Helm şablonlarının AKS değerleriyle doğru render edildiğini kontrol et
-helm template erasmus ./helm/erasmus-connect \
-  -f ./helm/erasmus-connect/values.yaml \
-  -f ./helm/erasmus-connect/values-aks.yaml | grep "image:"
+kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80                       # Grafana (admin / erasmus-grafana-123)
+kubectl port-forward -n argocd svc/argocd-server 8085:80                                # ArgoCD
+kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090  # Prometheus
+kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-alertmanager 9093:9093 # Alertmanager
+kubectl port-forward -n chaos-mesh svc/chaos-dashboard 2333:2333                        # Chaos Mesh UI
 ```
 
-### Canlı Uç Nokta Kontrolleri (`nip.io`)
+### Canlı Uç Nokta & Helm Kontrolleri
 
 ```bash
-INGRESS_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+helm template erasmus ./helm/erasmus-connect \
+  -f ./helm/erasmus-connect/values.yaml \
+  -f ./helm/erasmus-connect/values-aks.yaml | grep -E "image:|host:"
 
+INGRESS_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
 curl -i "http://${INGRESS_IP}.nip.io/"
 curl -i "http://admin.${INGRESS_IP}.nip.io/"
 curl -i -X POST "http://${INGRESS_IP}.nip.io/api/v1/ping"
@@ -164,7 +165,7 @@ curl -i -X POST "http://${INGRESS_IP}.nip.io/api/v1/ping"
 
 ## 6. Sıfırdan Kurulum
 
-Kendi ortamında tüm fazları sıfırdan ayağa kaldırmak ve her adımın teknik açıklamasını görmek için **[SETUP-README.md](./SETUP-README.md)** rehberiyle devam et.
+Tüm fazları (1–11) bilet bilet kurmak, `# TODO` şablonlarını çözmek ve her katmanın teknik gerekçesini görmek için **[SETUP-README.md](./SETUP-README.md)** rehberiyle devam et.
 
 ---
 
@@ -172,73 +173,50 @@ Kendi ortamında tüm fazları sıfırdan ayağa kaldırmak ve her adımın tekn
 
 # 🇬🇧 English Version
 
-> **Step-by-step setup & lab guide:** to build the project from scratch on Minikube, then Azure AKS + ACR + ArgoCD + Chaos Mesh, and to see real-world troubleshooting notes, follow **[SETUP-README.md](./SETUP-README.md)** (written in Turkish).
+> **Step-by-step setup & lab guide:** to build all 11 phases (31 tickets) from scratch across Minikube and Azure AKS — including `# TODO` scaffolds and real-world troubleshooting notes — follow **[SETUP-README.md](./SETUP-README.md)**.
 
-**Erasmus Connect** is an end-to-end DevOps / SRE project that moves a full-stack web platform (**Next.js** frontend, **Vite/Nginx** admin panel, **Express** backend API, **Redis** session/cache layer) from a local Kubernetes (Minikube + Calico) environment to **Azure AKS**. It covers infrastructure as code with **Terraform**, bootstrap automation with **Ansible**, resilience validation with **Chaos Mesh / HPA / PDB**, and secret-less GitOps delivery with **ArgoCD + Azure Container Registry (`AcrPull`)**.
+**Erasmus Connect** is an end-to-end Cloud-Native DevOps & SRE platform project migrating a full-stack web application (**Next.js** storefront, **Vite/Nginx** admin SPA, **Express** API, **Redis** cache/session store, external **MongoDB Atlas** & **Supabase**) from local Kubernetes (Minikube + Calico) to **Azure AKS**. It integrates **Terraform** (AKS + Static IP + ACR `AcrPull`), **Ansible** (single-command bootstrap), **Chaos Mesh / HPA / PDB** (resilience), **ArgoCD** (GitOps), **GitHub Actions + Trivy** (shift-left DevSecOps CI), and **Prometheus + Alertmanager + Loki + FluentBit + Grafana** (full observability).
 
-## 1. End-to-End Flow (What We Did)
+## 1. End-to-End Flow (11 Phases / 31 Tickets)
 
-1. **Containers & Helm (Phases 1–2):** Express, Next.js, the Admin panel (`nginx:alpine`) and Redis (`StatefulSet` + headless Service) live in one [Helm chart](./helm/erasmus-connect/Chart.yaml). Sensitive values come from Git-ignored `.env` files via `envFrom` (`Secret` + `ConfigMap`); `requests`/`limits` and readiness/liveness probes were added.
-2. **Ingress & Zero-Trust Networking (Phase 3):** host/path routing through `ingress-nginx` (`/`, `/api`, `admin.*`). Under Calico, **Post-DNAT NetworkPolicies** block unauthorized access to Redis and restrict Express to Ingress and Next.js on port `4000`.
-3. **IaC & Automation (Phases 4–5):** **Terraform** ([terraform/](./terraform/main.tf)) provisions a Calico-enabled AKS cluster (`aks-erasmus-connect-dev`, `Standard_B2s`) in `DenmarkEast`; **Ansible** ([ansible/playbook.yml](./ansible/playbook.yml)) fetches kubeconfig, installs NGINX Ingress with the Azure LB `/healthz` probe annotation, loads Secrets/ConfigMaps and deploys via Helm.
-4. **High Availability & Chaos (Phase 6):** CPU-based **HPA** for Express and Next.js (`min: 2`, `max: 4` @ 60%), a **PodDisruptionBudget**, and **Chaos Mesh** experiments ([chaos/](./chaos/01-pod-kill-express.yaml)): pod kill, Redis network delay, CPU stress.
-5. **Scaling & ArgoCD GitOps (Phase 7):** `node_count` raised `1 -> 2` in place to get past Azure CNI's 30-pods-per-node limit. **ArgoCD** ([argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml)) runs with `prune: true` and `selfHeal: true`; `ignoreDifferences` on `/spec/replicas` keeps it from reverting HPA scaling.
-6. **Secret-less ACR (Phase 8):** the Docker Hub PAT (`dockerhub-secret`) dependency was removed. Terraform ([terraform/acr.tf](./terraform/acr.tf)) creates the registry (`erasmusconnectv1.azurecr.io`, `Basic`, `admin_enabled = false`) and grants the AKS `kubelet_identity` the **`AcrPull`** role, so `:v1` images are pulled without credentials.
+1. **Containers & Helm (Phases 1–2):** Express, Next.js, Admin SPA (`nginx:alpine`), and Redis (`StatefulSet` + Headless `Service`) packaged in [helm/erasmus-connect/](./helm/erasmus-connect/Chart.yaml) with `.env` `Secret`/`ConfigMap` `envFrom`, resource bounds, and health probes.
+2. **Ingress & Zero-Trust Calico (Phase 3):** Host/path routing (`/`, `/api`, `admin.*`) via `ingress-nginx` and **Post-DNAT Calico `NetworkPolicy`** isolating Redis (`:6379`) to Express and restricting Express (`:4000`) to Ingress + Next.js.
+3. **IaC & Bootstrap (Phases 4–5):** **Terraform** ([terraform/](./terraform/main.tf)) provisions Calico-enabled AKS (`Standard_B2s` in `DenmarkEast`); **Ansible** ([ansible/playbook.yml](./ansible/playbook.yml)) fetches kubeconfig, deploys `ingress-nginx` with `/healthz` Azure LB probe, and creates Secrets/ConfigMaps.
+4. **High Availability & Chaos (Phase 6):** CPU **HPA** (`2–4` replicas @ `60%`), **PodDisruptionBudget**, and **Chaos Mesh** experiments ([chaos/](./chaos/01-pod-kill-express.yaml)).
+5. **Scaling & ArgoCD GitOps (Phase 7):** In-place scaling `node_count: 1 -> 2` (Azure CNI 30-pods/node limit) and **ArgoCD** ([argocd/erasmus-app.yaml](./argocd/erasmus-app.yaml)) with `prune: true`, `selfHeal: true`, and `ignoreDifferences` on `/spec/replicas`.
+6. **Secret-less ACR (Phase 8):** Provisioned ACR (`erasmusconnectv1.azurecr.io`, `admin_enabled = false`) via [terraform/acr.tf](./terraform/acr.tf) and granted `kubelet_identity` **`AcrPull`**, eliminating `dockerhub-secret`.
+7. **Static IP, Full Rebuild & Isolated CI (Phase 9):** Reserved a static Standard Public IP + `Network Contributor` role ([terraform/network.tf](./terraform/network.tf)); Ansible syncs new IPs automatically and bootstraps the full stack. [erasmus-aks-ci.yml](../../.github/workflows/erasmus-aks-ci.yml) (`workflow_dispatch`) builds from the private monorepo without touching its live CI, pushes to ACR, and commits tag bumps.
+8. **Full Observability (Phase 10):** Deployed tuned `kube-prometheus-stack` ([monitoring/values-prometheus.yaml](./monitoring/values-prometheus.yaml)), NGINX Ingress `ServiceMonitor` metrics, custom SRE alerts ([monitoring/prometheus-rules.yaml](./monitoring/prometheus-rules.yaml)) verified via Chaos Mesh Game Day (`FIRING` in Prometheus & Alertmanager), plus **FluentBit DaemonSet + Loki + auto-provisioned Grafana Sidecar Dashboard** ([monitoring/logging-loki-fluentbit.yaml](./monitoring/logging-loki-fluentbit.yaml)).
+9. **DevSecOps Trivy Gate (Phase 11):** Added **Trivy** (`CRITICAL,HIGH`, `ignore-unfixed: true`) scanning locally (`load: true`) inside [erasmus-aks-ci.yml](../../.github/workflows/erasmus-aks-ci.yml) before `docker push`, adding zero pod/RAM footprint to AKS.
 
-## 2. Architecture
-
-The runtime traffic flow and the build → IaC → GitOps lifecycle diagrams are in the Turkish section above (section 2). In short:
-
-`User -> Azure LoadBalancer (/healthz probe) -> NGINX Ingress -> { Next.js (/), Express (/api), Admin (admin.*) } -> Redis (only Express allowed via Calico) / external MongoDB Atlas & Supabase`
-
-`Terraform (AKS + ACR + AcrPull) -> Ansible (bootstrap) · Docker build -> ACR · Git push -> ArgoCD -> AKS`
-
-## 3. Repository Layout
+## 2. Repository Layout
 
 | Path | Purpose |
 | :--- | :--- |
-| `README.md` / `SETUP-README.md` | Overview & flow / step-by-step setup guide (8 phases, 23 tickets) |
-| `.env.example`, `.gitignore` | Env template; `.env.*`, `terraform.tfvars` and state files stay out of Git |
-| `helm/erasmus-connect/` | App chart: `values.yaml`, `values-aks.yaml` (ACR images + nip.io hosts) and `templates/` (Deployments, Services, Redis StatefulSet, Ingress, NetworkPolicies, HPAs, PDB) |
-| `terraform/` | `versions.tf` (`azurerm ~> 4.0`), `variables.tf`, `main.tf` (AKS), `acr.tf` (ACR + `AcrPull`), `outputs.tf`, `terraform.tfvars.example` |
-| `ansible/` | `ansible.cfg`, `inventory.ini`, `playbook.yml` (cluster bootstrap) |
-| `argocd/` | `erasmus-app.yaml` (ArgoCD Application) |
-| `chaos/` | Three Chaos Mesh experiments (pod kill, network delay, CPU stress) |
+| [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml) & [`ci/README.md`](./ci/README.md) | Isolated `workflow_dispatch` CI: Checkout -> Build (`load: true`) -> Trivy Gate -> ACR Push -> GitOps tag commit |
+| [`README.md`](./README.md) / [`SETUP-README.md`](./SETUP-README.md) | Architecture overview / 11-phase, 31-ticket step-by-step setup & troubleshooting guide |
+| [`helm/erasmus-connect/`](./helm/erasmus-connect/Chart.yaml) | Helm chart (`values.yaml`, `values-aks.yaml` ACR/nip.io overrides, workloads, Ingress, NetPols, HPA, PDB) |
+| [`terraform/`](./terraform/main.tf) | `versions.tf` (`azurerm ~> 4.0`), `variables.tf`, `main.tf` (AKS), `acr.tf` (ACR + `AcrPull`), `network.tf` (Static IP), `outputs.tf` |
+| [`ansible/`](./ansible/playbook.yml) | Single-command bootstrap: SP `AcrPush`, IP sync, `ingress-nginx` (`ServiceMonitor`), Secrets, ArgoCD, Chaos Mesh, Monitoring |
+| [`argocd/erasmus-app.yaml`](./argocd/erasmus-app.yaml) | ArgoCD Application (`values.yaml` + `values-aks.yaml`, `selfHeal`, HPA `ignoreDifferences`) |
+| [`monitoring/`](./monitoring/values-prometheus.yaml) | `values-prometheus.yaml`, `prometheus-rules.yaml` (`PrometheusRule`), `logging-loki-fluentbit.yaml` (Loki + FluentBit + Grafana sidecar) |
+| [`chaos/`](./chaos/01-pod-kill-express.yaml) | Chaos Mesh experiments (pod kill, Redis network delay, Express CPU stress) |
 
-## 4. Key Engineering Decisions
-
-| Topic | Decision | Rationale |
-| :--- | :--- | :--- |
-| **Post-DNAT NetworkPolicy** | Rules target the pod `containerPort` (`4000`), not the Service port (`8080`), and use a `namespaceSelector` for Ingress. | Calico evaluates rules after kube-proxy DNAT; Ingress traffic originates in the `ingress-nginx` namespace. |
-| **Build-time vs run-time env** | `NEXT_PUBLIC_*` and `VITE_BACKEND_URL` are baked in via `--build-arg`; DB/JWT secrets are injected at runtime via `Secret`. | Client JS bundles are compiled at build time; changing pod env does not change them. |
-| **Azure LB health probe** | `azure-load-balancer-health-probe-request-path: "/healthz"` on the ingress-nginx Service. | Azure probes `/` without a `Host` header, NGINX returns `404`, and external traffic times out. |
-| **GitOps vs HPA** | `ignoreDifferences` on `/spec/replicas`. | With `selfHeal: true`, ArgoCD would otherwise reset HPA-scaled replicas. |
-| **Node capacity** | `node_count` `1 -> 2`. | Azure CNI defaults to 30 pods per node. |
-| **Secret-less ACR** | `AcrPull` for `kubelet_identity`; `dockerhub-secret` removed. | No registry credentials to manage (`admin_enabled = false`). |
-| **Release ownership** | `helm uninstall erasmus` before ArgoCD takes over. | Two releases owning the same Ingress host/path trip the NGINX admission webhook. |
-
-## 5. Quick Operations
+## 3. Quick Operations
 
 ```bash
-# Stop / start the cluster to save credits
+# Save cloud credits (preserves static IP & ACR images)
 az aks stop  --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
 az aks start --resource-group rg-erasmus-connect-dev --name aks-erasmus-connect-dev
 
-# ArgoCD UI at http://localhost:8085
-kubectl port-forward svc/argocd-server -n argocd 8085:80
-
-# Verify rendered images
-helm template erasmus ./helm/erasmus-connect \
-  -f ./helm/erasmus-connect/values.yaml \
-  -f ./helm/erasmus-connect/values-aks.yaml | grep "image:"
-
-# Live endpoint checks
-INGRESS_IP=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-curl -i "http://${INGRESS_IP}.nip.io/"
-curl -i "http://admin.${INGRESS_IP}.nip.io/"
-curl -i -X POST "http://${INGRESS_IP}.nip.io/api/v1/ping"
+# UI port-forwards
+kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80
+kubectl port-forward -n argocd svc/argocd-server 8085:80
+kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-prometheus 9090:9090
+kubectl port-forward -n monitoring svc/monitoring-kube-prometheus-alertmanager 9093:9093
+kubectl port-forward -n chaos-mesh svc/chaos-dashboard 2333:2333
 ```
 
-## 6. Setup From Scratch
+## 4. Setup From Scratch
 
-Continue with **[SETUP-README.md](./SETUP-README.md)** for the full step-by-step guide.
+Continue with **[SETUP-README.md](./SETUP-README.md)** for the full 11-phase walkthrough.
