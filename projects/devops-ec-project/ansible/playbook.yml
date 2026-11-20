@@ -181,22 +181,22 @@
       tags: [chaos]
 
 
-      - name: prometheus-community helm repo ekle
-        kubernetes.core.helm_repository:
-          name: prometheus-community
-          repo_url: https://prometheus-community.github.io/helm-charts
-          state: present
-        tags: [monitoring]
+    - name: prometheus-community helm repo ekle
+      kubernetes.core.helm_repository:
+        name: prometheus-community
+        repo_url: https://prometheus-community.github.io/helm-charts
+        state: present
+      tags: [monitoring]
 
 
-       - name: prometheus-community/kube-prometheus-stack kur
-        kubernetes.core.helm:
-          name: monitoring
-          chart_ref: prometheus-community/kube-prometheus-stack
-          release_namespace: monitoring
-          create_namespace: true
-          wait: true  
-          update_repo_cache: true
-          values_files:
-              - "{{ playbook_dir }}/../monitoring/values-prometheus.yaml"
-        tags: [monitoring]
+    - name: prometheus-community/kube-prometheus-stack kur
+      kubernetes.core.helm:
+        name: monitoring
+        chart_ref: prometheus-community/kube-prometheus-stack
+        release_namespace: monitoring
+        create_namespace: true
+        wait: true  
+        update_repo_cache: true
+        values_files:
+           - "{{ playbook_dir }}/../monitoring/values-prometheus.yaml"
+      tags: [monitoring]
