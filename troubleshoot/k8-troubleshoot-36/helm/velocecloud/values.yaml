@@ -14,7 +14,7 @@ ingress:
 
 appQuota:
   pods: "15"
-  requestsCpu: "350m"
+  requestsCpu: "1000m"
   limitsCpu: "1500m"
   requestsMemory: 1000Mi
   limitsMemory: "2000Mi"
