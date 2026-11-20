@@ -38,6 +38,15 @@ on:
         options:
           - develop
           - main
+      # TODO: [Bilet 31 - 1] Kritik/Yüksek CVE varsa push'u durduracak opsiyonel kapı ekle:
+      #       trivy_enforce:
+      #         description: "CRITICAL/HIGH CVE bulunursa ACR push durdurulsun mu?"
+      #         required: true
+      #         default: "false"
+      #         type: choice
+      #         options:
+      #           - "false"
+      #           - "true"
 
 concurrency:
   group: erasmus-aks-ci
@@ -168,16 +177,29 @@ jobs:
       - name: Docker Buildx kur
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & ACR Push (${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }})
+      - name: Build local image (${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }})
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          push: true
+          load: true
+          push: false
           build-args: ${{ steps.args.outputs.list }}
           tags: ${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }}
           cache-from: type=gha,scope=${{ matrix.values_key }}
           cache-to: type=gha,mode=max,scope=${{ matrix.values_key }}
+
+      # TODO: [Bilet 31 - 2] İmaj ACR'ye pushlanmadan ÖNCE Trivy CVE tarama adımı ekle:
+      #       uses: aquasecurity/trivy-action@0.28.0
+      #       with:
+      #         image-ref: "${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }}"
+      #         format: "table"
+      #         severity: "CRITICAL,HIGH"
+      #         ignore-unfixed: true
+      #         exit-code: ${{ inputs.trivy_enforce == 'true' && '1' || '0' }}
+
+      - name: ACR Push (${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }})
+        run: docker push "${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }}"
 
   update-gitops:
     needs: [prepare, build-push]
