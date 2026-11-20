@@ -57,7 +57,31 @@
         cmd: terraform output -raw ingress_public_ip
         chdir: ../terraform
       register: tf_ingress_ip
-      tags: [ingress]
+      changed_when: false
+      tags: [ingress, deploy]
+
+    - name: Yeni Ingress IP'sini values-aks.yaml ve .env dosyalarina yaz (idempotent)
+      ansible.builtin.shell: |
+        python3 - <<'PY'
+        import os, re
+        ip = "{{ tf_ingress_ip.stdout }}".strip()
+        pattern = re.compile(r'(<IP>|\d{1,3}(?:\.\d{1,3}){3})\.nip\.io')
+        for path in [
+            "../helm/erasmus-connect/values-aks.yaml",
+            "../.env.backend-config",
+            "../.env.frontend-build",
+        ]:
+            if not os.path.exists(path):
+                continue
+            with open(path, "r", encoding="utf-8") as f:
+                old = f.read()
+            new = pattern.sub(f"{ip}.nip.io", old)
+            if new != old:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new)
+        PY
+      changed_when: false
+      tags: [ingress, deploy]
 
     - name: NGINX Ingress Controller to AKS
       kubernetes.core.helm:
