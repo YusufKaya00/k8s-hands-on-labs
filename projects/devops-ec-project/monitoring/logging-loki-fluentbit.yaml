@@ -175,10 +175,9 @@ data:
     [INPUT]
         Name              tail
         Tag               kube.*
-        # TODO: [Bilet 30 - 3] `default` ve `ingress-nginx` namespace'lerindeki container
-        #       loglarını okumak için `Path` ve `Parser` (cri) satırlarını yaz:
-        #       Path              /var/log/containers/*_default_*.log,/var/log/containers/*_ingress-nginx_*.log
-        #       Parser            cri
+        access: proxty
+        url: http://loki.monitoring.svc.cluster.local:3100
+        isDefault: false
         DB                /var/fluent-bit/state/flb_kube.db
         Mem_Buf_Limit     10MB
         Skip_Long_Lines   On
@@ -195,6 +194,8 @@ data:
         #       kopyayı silmek için `Merge_Log` ve `Keep_Log` ayarlarını ekle:
         #       Merge_Log           On
         #       Keep_Log            Off
+        Merge_Log           On
+        keep_Log            Off
         K8S-Logging.Parser  On
         K8S-Logging.Exclude On
 
