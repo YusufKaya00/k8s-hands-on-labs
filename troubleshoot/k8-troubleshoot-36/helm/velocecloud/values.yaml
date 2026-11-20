@@ -153,7 +153,7 @@ notifyApi:
     repository: python
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
-  port: 8089
+  port: 8087
   resources:
     requests:
       cpu: 500m
