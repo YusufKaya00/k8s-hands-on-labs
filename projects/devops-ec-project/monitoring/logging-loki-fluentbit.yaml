@@ -279,15 +279,15 @@ spec:
                 mountPath: /fluent-bit/etc/
                 readOnly: true
         
-            volumes:
-              - name: varlog
-                hostPath:
-                  path: /var/log
-              - name: state
-                emptyDir: {}
-              - name: config
-                configMap:
-                  name: fluent-bit-config
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: state
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: fluent-bit-config
   
 
 # ------------------------------------------------------------------------------
