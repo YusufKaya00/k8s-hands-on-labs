@@ -226,6 +226,7 @@
         release_namespace: monitoring
         create_namespace: true
         wait: true  
+        wait_timeout: 10m
         update_repo_cache: true
         values_files:
            - "{{ playbook_dir }}/../monitoring/values-prometheus.yaml"
