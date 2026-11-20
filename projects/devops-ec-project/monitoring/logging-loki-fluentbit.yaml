@@ -273,24 +273,24 @@ spec:
               cpu: 150m
               memory: 96Mi
        
-      volumeMounts:
-        - name: varlog
-          mountPath: /var/log
-        - name: state
-          mountPath: /var/fluent-bit/state
-        - name: config
-          mountPath: /fluent-bit/etc/
-          readOnly: true
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: state
+              mountPath: /var/fluent-bit/state
+            - name: config
+              mountPath: /fluent-bit/etc/
+              readOnly: true
         
-      volumes:
-        - name: varlog
-          hostPath:
-            path: /var/log
-        - name: state
-          emptyDir: {}
-        - name: config
-          configMap:
-            name: fluent-bit-config
+          volumes:
+            - name: varlog
+              hostPath:
+                path: /var/log
+            - name: state
+              emptyDir: {}
+            - name: config
+              configMap:
+                name: fluent-bit-config
   
 
 # ------------------------------------------------------------------------------
