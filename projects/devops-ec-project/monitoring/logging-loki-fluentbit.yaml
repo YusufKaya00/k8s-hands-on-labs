@@ -261,14 +261,26 @@ spec:
             limits:
               cpu: 150m
               memory: 96Mi
-          # TODO: [Bilet 30 - 4] Aşağıdaki 3 mount'u `volumeMounts:` içine ekle:
-          #   1. `varlog` -> `/var/log` (`readOnly: true`)
-          #   2. `state`  -> `/var/fluent-bit/state`
-          #   3. `config` -> `/fluent-bit/etc/` (`readOnly: true`)
-      # TODO: [Bilet 30 - 4] `volumes:` bloğunu yaz:
-      #   - `varlog`: `hostPath: { path: /var/log }`
-      #   - `state`:  `emptyDir: {}`
-      #   - `config`: `configMap: { name: fluent-bit-config }`
+       
+      volumeMounts:
+        - name: varlog
+          mountPath: /var/log
+        - name: state
+          mountPath: /var/fluent-bit/state
+        - name: config
+          mountPath: /fluent-bit/etc/
+          readOnly: true
+        
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: state
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: fluent-bit-config
+  
 
 # ------------------------------------------------------------------------------
 # BÖLÜM 5: Grafana Sidecar Loki Veri Kaynağı (Auto-Provisioned DataSource)
@@ -281,6 +293,7 @@ metadata:
   namespace: monitoring
   labels:
     part-of: monitoring
+    grafana_datasource: "1"
     # TODO: [Bilet 30 - 5] Grafana'daki `grafana-sc-datasources` sidecar'ının bu
     #       ConfigMap'i otomatik okuyabilmesi için gereken label'ı ekle:
     #       grafana_datasource: "1"
