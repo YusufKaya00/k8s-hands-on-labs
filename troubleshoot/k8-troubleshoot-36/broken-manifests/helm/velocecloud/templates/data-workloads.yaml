@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ledger-db
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: ledger-db
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  serviceName: ledger-db-headless
+  replicas: {{ .Values.ledgerDb.replicaCount }}
+  selector:
+    matchLabels:
+      app: ledger-db
+  template:
+    metadata:
+      labels:
+        app: ledger-db
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: ledger-db
+          image: "{{ .Values.ledgerDb.image.repository }}:{{ .Values.ledgerDb.image.tag }}"
+          imagePullPolicy: {{ .Values.ledgerDb.image.pullPolicy }}
+          command: ["python3", "/app/ledger_db.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.ledgerDb.containerPort }}"
+          ports:
+            - containerPort: {{ .Values.ledgerDb.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.ledgerDb.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.ledgerDb.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-data-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-inspector
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: cluster-inspector
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.clusterInspector.replicaCount }}
+  selector:
+    matchLabels:
+      app: cluster-inspector
+  template:
+    metadata:
+      labels:
+        app: cluster-inspector
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      serviceAccountName: {{ .Values.clusterInspector.serviceAccountName }}
+      containers:
+        - name: cluster-inspector
+          image: "{{ .Values.clusterInspector.image.repository }}:{{ .Values.clusterInspector.image.tag }}"
+          imagePullPolicy: {{ .Values.clusterInspector.image.pullPolicy }}
+          command: ["python3", "/app/inspector.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.clusterInspector.port }}"
+            - name: TARGET_NAMESPACE
+              value: "{{ .Values.namespaces.data }}"
+          ports:
+            - containerPort: {{ .Values.clusterInspector.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.clusterInspector.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.clusterInspector.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-data-code
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.archiveApi.pvc.name }}
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: archive-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.archiveApi.pvc.storageClassName }}
+  storageClassName: {{ .Values.archiveApi.pvc.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.archiveApi.pvc.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: archive-api
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: archive-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.archiveApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: archive-api
+  template:
+    metadata:
+      labels:
+        app: archive-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: archive-api
+          image: "{{ .Values.archiveApi.image.repository }}:{{ .Values.archiveApi.image.tag }}"
+          imagePullPolicy: {{ .Values.archiveApi.image.pullPolicy }}
+          command: ["python3", "/app/archive.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.archiveApi.port }}"
+          ports:
+            - containerPort: {{ .Values.archiveApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.archiveApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.archiveApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+            - name: archive-storage
+              mountPath: /data
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-data-code
+        - name: archive-storage
+          persistentVolumeClaim:
+            claimName: {{ .Values.archiveApi.pvc.name }}

@@ -1,0 +1,433 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: status-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: status-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.statusApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: status-api
+  template:
+    metadata:
+      labels:
+        app: status-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: status-api
+          image: "{{ .Values.statusApi.image.repository }}:{{ .Values.statusApi.image.tag }}"
+          imagePullPolicy: {{ .Values.statusApi.image.pullPolicy }}
+          command: ["python3", "/app/status.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.statusApi.port }}"
+          ports:
+            - containerPort: {{ .Values.statusApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.statusApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.statusApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: orders-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.ordersApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app: orders-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: orders-api
+          image: "{{ .Values.ordersApi.image.repository }}:{{ .Values.ordersApi.image.tag }}"
+          imagePullPolicy: {{ .Values.ordersApi.image.pullPolicy }}
+          command: ["python3", "/app/orders.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.ordersApi.port }}"
+          ports:
+            - containerPort: {{ .Values.ordersApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.ordersApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.ordersApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: export-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: export-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.exportApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: export-api
+  template:
+    metadata:
+      labels:
+        app: export-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: export-api
+          image: "{{ .Values.exportApi.image.repository }}:{{ .Values.exportApi.image.tag }}"
+          imagePullPolicy: {{ .Values.exportApi.image.pullPolicy }}
+          command: ["python3", "/app/export.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.exportApi.port }}"
+          ports:
+            - containerPort: {{ .Values.exportApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.exportApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.exportApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: inventory-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.inventoryApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: inventory-api
+  template:
+    metadata:
+      labels:
+        app: inventory-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: inventory-api
+          image: "{{ .Values.inventoryApi.image.repository }}:{{ .Values.inventoryApi.image.tag }}"
+          imagePullPolicy: {{ .Values.inventoryApi.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.inventoryApi.port }}"
+            - name: SERVICE_NAME
+              value: "inventory-api"
+          ports:
+            - containerPort: {{ .Values.inventoryApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.inventoryApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.inventoryApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: payments-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.paymentsApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: payments-api
+  template:
+    metadata:
+      labels:
+        app: payments-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: payments-api
+          image: "{{ .Values.paymentsApi.image.repository }}:{{ .Values.paymentsApi.image.tag }}"
+          imagePullPolicy: {{ .Values.paymentsApi.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.paymentsApi.port }}"
+            - name: SERVICE_NAME
+              value: "payments-api"
+          ports:
+            - containerPort: {{ .Values.paymentsApi.port }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.paymentsApi.readinessProbePath }}
+              port: {{ .Values.paymentsApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.paymentsApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-gateway
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: ledger-gateway
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.ledgerGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: ledger-gateway
+  template:
+    metadata:
+      labels:
+        app: ledger-gateway
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: ledger-gateway
+          image: "{{ .Values.ledgerGateway.image.repository }}:{{ .Values.ledgerGateway.image.tag }}"
+          imagePullPolicy: {{ .Values.ledgerGateway.image.pullPolicy }}
+          command: ["python3", "/app/ledger_gateway.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.ledgerGateway.port }}"
+            - name: LEDGER_URL
+              value: "http://ledger-db.{{ .Values.namespaces.data }}.svc.cluster.local:{{ .Values.ledgerDb.servicePort }}/balance"
+          ports:
+            - containerPort: {{ .Values.ledgerGateway.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.ledgerGateway.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.ledgerGateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: session-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: session-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.sessionApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: session-api
+  template:
+    metadata:
+      labels:
+        app: session-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: session-api
+          image: "{{ .Values.sessionApi.image.repository }}:{{ .Values.sessionApi.image.tag }}"
+          imagePullPolicy: {{ .Values.sessionApi.image.pullPolicy }}
+          command: ["python3", "/app/session.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.sessionApi.port }}"
+          ports:
+            - containerPort: {{ .Values.sessionApi.port }}
+          securityContext:
+            {{- toYaml .Values.sessionApi.securityContext | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.sessionApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.sessionApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+            {{- if .Values.sessionApi.writableCacheMount }}
+            - name: session-cache
+              mountPath: /var/cache/session
+            {{- end }}
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+        {{- if .Values.sessionApi.writableCacheMount }}
+        - name: session-cache
+          emptyDir: {}
+        {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-worker
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: cache-worker
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.cacheWorker.replicaCount }}
+  selector:
+    matchLabels:
+      app: cache-worker
+  template:
+    metadata:
+      labels:
+        app: cache-worker
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: cache-worker
+          image: "{{ .Values.cacheWorker.image.repository }}:{{ .Values.cacheWorker.image.tag }}"
+          imagePullPolicy: {{ .Values.cacheWorker.image.pullPolicy }}
+          command: ["python3", "/app/cache_worker.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.cacheWorker.port }}"
+          ports:
+            - containerPort: {{ .Values.cacheWorker.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.cacheWorker.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.cacheWorker.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notify-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: notify-api
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  replicas: {{ .Values.notifyApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: notify-api
+  template:
+    metadata:
+      labels:
+        app: notify-api
+        app.kubernetes.io/part-of: velocecloud
+    spec:
+      containers:
+        - name: notify-api
+          image: "{{ .Values.notifyApi.image.repository }}:{{ .Values.notifyApi.image.tag }}"
+          imagePullPolicy: {{ .Values.notifyApi.image.pullPolicy }}
+          command: ["python3", "/app/simple.py"]
+          env:
+            - name: PORT
+              value: "{{ .Values.notifyApi.port }}"
+            - name: SERVICE_NAME
+              value: "notify-api"
+          ports:
+            - containerPort: {{ .Values.notifyApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.notifyApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.notifyApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: veloce-app-code

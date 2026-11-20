@@ -1,0 +1,182 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: status-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: status-api
+  ports:
+    - port: {{ .Values.statusApi.port }}
+      targetPort: {{ .Values.statusApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: orders-api
+  ports:
+    - port: {{ .Values.ordersApi.port }}
+      targetPort: {{ .Values.ordersApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: export-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: export-api
+  ports:
+    - port: {{ .Values.exportApi.port }}
+      targetPort: {{ .Values.exportApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: {{ .Values.inventoryApi.serviceSelectorApp }}
+  ports:
+    - port: {{ .Values.inventoryApi.port }}
+      targetPort: {{ .Values.inventoryApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payments-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: payments-api
+  ports:
+    - port: {{ .Values.paymentsApi.port }}
+      targetPort: {{ .Values.paymentsApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-gateway
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: ledger-gateway
+  ports:
+    - port: {{ .Values.ledgerGateway.port }}
+      targetPort: {{ .Values.ledgerGateway.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: session-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: session-api
+  ports:
+    - port: {{ .Values.sessionApi.port }}
+      targetPort: {{ .Values.sessionApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-worker
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: cache-worker
+  ports:
+    - port: {{ .Values.cacheWorker.port }}
+      targetPort: {{ .Values.cacheWorker.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notify-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: notify-api
+  ports:
+    - port: {{ .Values.notifyApi.port }}
+      targetPort: {{ .Values.notifyApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-db-headless
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  clusterIP: None
+  selector:
+    app: ledger-db
+  ports:
+    - port: {{ .Values.ledgerDb.containerPort }}
+      targetPort: {{ .Values.ledgerDb.containerPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-db
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: ledger-db
+  ports:
+    - port: {{ .Values.ledgerDb.servicePort }}
+      targetPort: {{ .Values.ledgerDb.containerPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cluster-inspector
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: cluster-inspector
+  ports:
+    - port: {{ .Values.clusterInspector.port }}
+      targetPort: {{ .Values.clusterInspector.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: archive-api
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: velocecloud
+spec:
+  selector:
+    app: archive-api
+  ports:
+    - port: {{ .Values.archiveApi.port }}
+      targetPort: {{ .Values.archiveApi.port }}
