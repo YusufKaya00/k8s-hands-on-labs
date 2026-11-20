@@ -192,7 +192,6 @@ clusterInspector:
   serviceAccountName: "inspector-rb"
   rbac:
     resources:
-      - "configmaps"
       - "pods"
       - "services"
     verbs:
