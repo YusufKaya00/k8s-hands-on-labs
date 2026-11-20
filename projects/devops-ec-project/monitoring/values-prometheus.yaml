@@ -39,17 +39,18 @@ prometheus:
 
 # 3) Grafana Arayüzü
 grafana:
-  
   adminPassword: "erasmus-grafana-123"
+  env:
+    GF_PLUGINS_PREINSTALL_DISABLED: "true"
   resources:
     requests:
       cpu: 50m
       memory: 128Mi
     limits:
-      cpu: 250m
-      memory: 256Mi
+      cpu: 500m
+      memory: 384Mi
   livenessProbe:
-    initialDelaySeconds: 30
+    initialDelaySeconds: 60
     periodSeconds: 10
     timeoutSeconds: 10
     failureThreshold: 6
