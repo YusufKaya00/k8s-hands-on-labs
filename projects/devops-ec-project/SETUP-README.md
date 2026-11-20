@@ -1339,7 +1339,7 @@ Kümedeki mevcut ~55 pod kapasitesini hiç tüketmeden (**kümede `0` RAM / `0` 
 - [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml) dosyasında `build-push-action` artık imajı önce lokale (`load: true`, `push: false`) alıyor; taramadan geçtikten sonra `docker push` yapıyor.
 - Dosyadaki **2 `# TODO` görevini (`[Bilet 31 - 1]` ve `[Bilet 31 - 2]`)** doldur:
   1. **`[Bilet 31 - 1]` (`workflow_dispatch.inputs`):** `app_ref` altına `trivy_enforce` (`type: choice`, `default: "false"`, `options: ["false", "true"]`) girdisini ekle.
-  2. **`[Bilet 31 - 2]` (`build-push` job'ı):** `Build local image` adımının hemen arkasına (ve `ACR Push`'tan **önce**) `aquasecurity/trivy-action@0.28.0` adımını ekle (`format: "table"`, `severity: "CRITICAL,HIGH"`, `ignore-unfixed: true`, `exit-code: ${{ inputs.trivy_enforce == 'true' && '1' || '0' }}`).
+  2. **`[Bilet 31 - 2]` (`build-push` job'ı):** `Build local image` adımının hemen arkasına (ve `ACR Push`'tan **önce**) `aquasecurity/trivy-action@v0.36.0` adımını ekle (`format: "table"`, `severity: "CRITICAL,HIGH"`, `ignore-unfixed: true`, `exit-code: ${{ inputs.trivy_enforce == 'true' && '1' || '0' }}`).
 
 > [!IMPORTANT]
 > **Neden `docker push`'tan ÖNCE tarıyoruz (`load: true` → Trivy → `docker push`)?**
@@ -1355,7 +1355,7 @@ Kümedeki mevcut ~55 pod kapasitesini hiç tüketmeden (**kümede `0` RAM / `0` 
 `Build local image` adımının hemen altına:
 ```yaml
       - name: Trivy CVE Tarama (${{ matrix.image_name }})
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: "${{ secrets.ACR_NAME }}.azurecr.io/${{ matrix.image_name }}:${{ needs.prepare.outputs.app_sha }}"
           format: "table"
