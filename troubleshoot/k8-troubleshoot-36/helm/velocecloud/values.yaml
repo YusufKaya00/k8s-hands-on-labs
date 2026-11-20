@@ -173,7 +173,7 @@ ledgerDb:
   networkPolicy:
     allowedNamespaceTier: "app"
     allowedPodApp: "ledger-gateway"
-    allowedPort: 8080
+    allowedPort: 8086
   resources:
     requests:
       cpu: 20m
