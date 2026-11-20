@@ -124,10 +124,10 @@ kind: ClusterRole
 metadata:
   name: erasmus-fluent-bit-read
 rules:
-  # TODO: [Bilet 30 - 2] FluentBit [FILTER] kubernetes eklentisinin pod/namespace
-  #       metadata'sını çekebilmesi için core API grubunda (`apiGroups: [""]`)
-  #       YALNIZCA `pods` ve `namespaces` üzerinde `get`, `list`, `watch` izinlerini yaz.
-  #       (`*` wildcard KULLANMA!)
+
+  - apiGroups: [""]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -294,9 +294,7 @@ metadata:
   labels:
     part-of: monitoring
     grafana_datasource: "1"
-    # TODO: [Bilet 30 - 5] Grafana'daki `grafana-sc-datasources` sidecar'ının bu
-    #       ConfigMap'i otomatik okuyabilmesi için gereken label'ı ekle:
-    #       grafana_datasource: "1"
+
 data:
   loki-datasource.yaml: |
     apiVersion: 1
