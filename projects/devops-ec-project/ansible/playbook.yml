@@ -154,6 +154,8 @@
       no_log: true
       tags: [argocd]
 
+
+    # Adım 6 - Chaos Engineering (Helm)
     - name: chaos helm repo ekle
       kubernetes.core.helm_repository:
         name: chaos-mesh
@@ -180,7 +182,7 @@
             securityMode: true
       tags: [chaos]
 
-
+    # Adım 7 - Prometheus + Grafana + Alertmanager Kurulumu (Helm)
     - name: prometheus-community helm repo ekle
       kubernetes.core.helm_repository:
         name: prometheus-community
