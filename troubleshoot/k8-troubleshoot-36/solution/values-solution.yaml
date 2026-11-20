@@ -1,0 +1,46 @@
+ingress:
+  ordersPathType: "Prefix"
+  exportProxyReadTimeout: "10"
+
+inventoryApi:
+  serviceSelectorApp: "inventory-api"
+
+paymentsApi:
+  readinessProbePath: "/healthz"
+
+ledgerDb:
+  networkPolicy:
+    allowedPort: 8086
+
+sessionApi:
+  writableCacheMount: true
+
+cacheWorker:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+notifyApi:
+  resources:
+    requests:
+      cpu: 30m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+clusterInspector:
+  rbac:
+    resources:
+      - "pods"
+    verbs:
+      - "get"
+      - "list"
+
+archiveApi:
+  pvc:
+    storageClassName: ""
