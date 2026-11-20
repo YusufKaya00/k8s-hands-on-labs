@@ -1,7 +1,8 @@
 # CI Pipeline (GitHub Actions — İzole AKS Akışı)
 
 Canlı uygulama reposunun (`YusufKaya00/Erasmus-Connect`) mevcut CI akışına hiç dokunmamak için pipeline doğrudan bu repoda tanımlıdır:
-**[`.github/workflows/erasmus-aks-ci.yml`](../../../.github/workflows/erasmus-aks-ci.yml)**
+- GitHub Actions kök dosyası: **[`.github/workflows/erasmus-aks-ci.yml`](../../../.github/workflows/erasmus-aks-ci.yml)**
+- Proje içi referans kopya: **[`ci/erasmus-aks-ci.yml`](./erasmus-aks-ci.yml)**
 
 ## Nasıl Çalışır?
 
