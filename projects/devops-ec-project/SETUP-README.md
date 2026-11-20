@@ -1277,6 +1277,56 @@ kubectl get prometheusrule erasmus-connect-alerts -n monitoring
 
 ---
 
+### Bilet 30: FluentBit DaemonSet + Loki + Grafana Sidecar Log Panosu ([monitoring/logging-loki-fluentbit.yaml](./monitoring/logging-loki-fluentbit.yaml))
+
+> **[Ders 01](../../lessons/01-logging-pipeline/lab-1/README.md)** ile yerel Minikube'da pratiğini yaptığın merkezi loglama hattını şimdi doğrudan **Erasmus Connect AKS** kümesinin `monitoring` namespace'ine kuruyor ve mevcut **Prometheus + Grafana** ile birleştiriyorsun.
+
+**a) Görev Tanımı:**
+- [monitoring/logging-loki-fluentbit.yaml](./monitoring/logging-loki-fluentbit.yaml) dosyasındaki **5 `# TODO` bölümünü (`[Bilet 30 - 1..5]`)** doldur:
+  1. **`[Bilet 30 - 1]` (Loki Deployment & Service):** `loki` container'ı için `ports` (`containerPort: 3100`) ve `readinessProbe` (`/ready`, `3100`); `Service/loki` için `selector` (`app: loki`) ve `ports` (`3100 -> 3100`).
+  2. **`[Bilet 30 - 2]` (FluentBit RBAC):** `ClusterRole/erasmus-fluent-bit-read` içinde en az yetki (*least-privilege*) kuralıyla yalnızca core API (`""`) altında `pods` ve `namespaces` üzerinde `get`, `list`, `watch` izinlerini yaz (`*` wildcard kullanma!).
+  3. **`[Bilet 30 - 3]` (FluentBit Pipeline `ConfigMap`):**
+     - `[INPUT]`: `/var/log/containers/*_default_*.log,/var/log/containers/*_ingress-nginx_*.log` yollarını `cri` parser ile oku.
+     - `[FILTER] kubernetes`: `Merge_Log On` ve `Keep_Log Off`.
+     - `[OUTPUT] loki`: `loki.monitoring.svc.cluster.local:3100` hedefine `namespace`, `pod`, `app` etiketleriyle gönder.
+  4. **`[Bilet 30 - 4]` (FluentBit `DaemonSet`):** `serviceAccountName: fluent-bit` bağla; `volumeMounts` (`/var/log` `readOnly: true`, `/var/fluent-bit/state`, `/fluent-bit/etc/`) ve karşılık gelen `volumes` (`hostPath`, `emptyDir`, `configMap`) bloklarını yaz.
+  5. **`[Bilet 30 - 5]` (Grafana Sidecar Loki DataSource):** `kube-prometheus-stack` ile kurulan Grafana podunun içindeki `grafana-sc-datasources` sidecar'ı yalnızca `grafana_datasource: "1"` etiketli ConfigMap'leri izler! `loki-grafana-datasource` üzerine bu label'ı ve `loki-datasource.yaml` içine `url` alanını ekle. *(Bölüm 6'daki **Erasmus Connect — Live Logs & RED Metrics** panosu `grafana_dashboard: "1"` etiketiyle hazırdır; DataSource gelince Grafana'yı yeniden başlatmadan otomatik yüklenir!)*
+- Opsiyonel Day-2 otomasyonu için [ansible/playbook.yml](./ansible/playbook.yml) sonundaki `# TODO: [Bilet 30]` görevini de doldurabilirsin.
+
+> [!NOTE]
+> **30-Pod Azure CNI Sınırı Hatırlatması:** `Standard_B2s` üzerinde Azure CNI her node'a en fazla **30 pod** sığdırır. Chaos Mesh (`controller-manager`) tek replikada tutulduğunda (`controllerManager.replicaCount: 1`) her iki node'da `fluent-bit` DaemonSet ve `loki` podları için yeterli boş slot kalır (`kubectl get pods -A -o custom-columns=NODE:.spec.nodeName --no-headers | sort | uniq -c`).
+
+**b) İpucu ve Referans:**
+- `kubectl explain deployment.spec.template.spec.containers.ports`
+- `kubectl explain clusterrole.rules`
+- `kubectl explain daemonset.spec.template.spec.volumes`
+
+<details>
+<summary>🆘 Takılırsan Aç (Reveal): Bilet 30 YAML Kalıpları</summary>
+
+- **`[Bilet 30 - 2]` (`ClusterRole.rules`):** `apiGroups: [""]`, `resources: ["pods", "namespaces"]`, `verbs: ["get", "list", "watch"]` (`[]Object` → `- apiGroups:` ile başla).
+- **`[Bilet 30 - 4]` (`DaemonSet`):** `serviceAccountName: fluent-bit` `spec:` altındadır (`tolerations:` ile aynı girintide); `volumeMounts:` container altındadır; `volumes:` ise `containers:` ile aynı girintidedir.
+- **`[Bilet 30 - 5]` (`loki-grafana-datasource`):** `metadata.labels` altında `grafana_datasource: "1"` (`"1"` tırnaklı string!); `url: http://loki.monitoring.svc.cluster.local:3100`.
+
+</details>
+
+**c) Çözüm Kanıtı:**
+```bash
+# 1. Manifestoyu uygula ve podları kontrol et:
+kubectl apply -f ./monitoring/logging-loki-fluentbit.yaml
+kubectl get pods,ds -n monitoring
+
+# 2. Canlı trafik üret ki FluentBit hem default hem ingress-nginx loglarını Loki'ye taşısın:
+for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://9.205.92.223.nip.io/api/v1/ping; done
+
+# 3. Grafana arayüzünü aç (admin / erasmus-grafana-123):
+kubectl port-forward -n monitoring svc/monitoring-grafana 3001:80
+```
+- **Connections → Data sources** altında **Loki** göründüğünü ve **Test** butonunun yeşil döndüğünü doğrula.
+- **Dashboards → Erasmus Connect — Live Logs & RED Metrics (Loki + Prometheus)** panosunu açıp Express, Frontend ve NGINX Ingress loglarını Prometheus HTTP RPS grafiğiyle aynı ekranda gör.
+
+---
+
 ## Kontrol Listesi (Kendini Değerlendir)
 
 - [ ] Hiçbir şifre/connection string Git'e girmedi: değerler `.env.*` dosyalarında, kümede Secret/ConfigMap olarak duruyor; chart sadece isimlerini biliyor.
@@ -1288,6 +1338,7 @@ kubectl get prometheusrule erasmus-connect-alerts -n monitoring
 - [ ] Ortam silinip tek `terraform apply` + `ansible-playbook` ile sıfırdan kuruluyor; Ingress IP'si sabit kalıyor.
 - [ ] GitHub Actions CI imajı ACR'ye pushluyor -> `values-aks.yaml` tag'i güncelleniyor -> ArgoCD otomatik deploy ediyor.
 - [ ] Prometheus + Grafana çalışıyor, NGINX Ingress `ServiceMonitor` `UP`, özel `PrometheusRule` alarmları doğrulandı.
+- [ ] FluentBit DaemonSet + Loki `monitoring` namespace'inde çalışıyor ve Grafana **Erasmus Connect — Live Logs & RED Metrics** panosu canlı logları gösteriyor.
 - [ ] `terraform destroy` veya `az aks stop` ile gereksiz bulut maliyeti önlendi.
 
 ---
@@ -1295,7 +1346,7 @@ kubectl get prometheusrule erasmus-connect-alerts -n monitoring
 <a id="-english-section"></a>
 ## 🇬🇧 English Section — Step-by-Step Setup & 10-Phase DevOps Lab Roadmap
 
-This guide walks through building **Erasmus Connect** (**Next.js** frontend, **Vite/Nginx** admin SPA, **Express** backend, **Redis** cache, external **MongoDB Atlas** & **Supabase**) from local **Minikube + Calico** all the way to **Azure AKS + Terraform + Ansible + ArgoCD GitOps + ACR + GitHub Actions CI + Prometheus/Grafana Observability** across **10 Phases (29 Tickets)**:
+This guide walks through building **Erasmus Connect** (**Next.js** frontend, **Vite/Nginx** admin SPA, **Express** backend, **Redis** cache, external **MongoDB Atlas** & **Supabase**) from local **Minikube + Calico** all the way to **Azure AKS + Terraform + Ansible + ArgoCD GitOps + ACR + GitHub Actions CI + Full PLG/Prometheus Observability** across **10 Phases (30 Tickets)**:
 
 ### Phases Overview
 1. **Phases 1–2 — Containerization & Helm Chart Packaging:** Package Express (`:4000`), Next.js (`:3000`, `HOSTNAME=0.0.0.0`), Admin SPA (`:80`), and Redis (`StatefulSet` + Headless `Service`, `clusterIP: None`) under [`helm/erasmus-connect/`](./helm/erasmus-connect/). Keep secrets out of Git using `.env.*` -> Kubernetes `Secret` & `ConfigMap` (`envFrom`), add resource requests/limits and `readinessProbe`/`livenessProbe`.
@@ -1305,7 +1356,7 @@ This guide walks through building **Erasmus Connect** (**Next.js** frontend, **V
 5. **Phase 7 — Node Scaling & ArgoCD GitOps Migration:** Scale AKS `node_count` from `1 -> 2` in Terraform (overcoming the 30-pods-per-node Azure CNI cap), remove manual Helm releases to avoid NGINX ingress admission ownership conflicts, and onboard [`argocd/erasmus-app.yaml`](./argocd/erasmus-app.yaml) with `prune: true`, `selfHeal: true`, and `ignoreDifferences` on `/spec/replicas`.
 6. **Phase 8 — Passwordless Azure Container Registry (`ACR`) + Managed Identity:** Provision ACR (`Basic`, `admin_enabled = false`) via [`terraform/acr.tf`](./terraform/acr.tf), assign the **`AcrPull`** RBAC role to the AKS `kubelet_identity`, push images (`values-aks.yaml`), and remove `imagePullSecrets` (`dockerhub-secret`).
 7. **Phase 9 — One-Command Environment Rebuild & Isolated GitHub Actions CI:** Reserve a static Standard Public IP in [`terraform/network.tf`](./terraform/network.tf), bootstrap Ingress + Secrets + ArgoCD in [`ansible/playbook.yml`](./ansible/playbook.yml), and trigger [`.github/workflows/erasmus-aks-ci.yml`](../../.github/workflows/erasmus-aks-ci.yml) to build from `YusufKaya00/Erasmus-Connect`, push to ACR, and commit image tag bumps for ArgoCD.
-8. **Phase 10 — Observability (Prometheus, Grafana, NGINX Metrics & SRE Alerts):** Deploy a tuned `kube-prometheus-stack` ([`monitoring/values-prometheus.yaml`](./monitoring/values-prometheus.yaml)), scrape NGINX Ingress RED metrics via `ServiceMonitor`, visualize traffic in Grafana, and verify custom alerts in [`monitoring/prometheus-rules.yaml`](./monitoring/prometheus-rules.yaml).
+8. **Phase 10 — Full Observability (Prometheus, Grafana, NGINX Metrics, SRE Alerts & FluentBit + Loki Logging):** Deploy a tuned `kube-prometheus-stack` ([`monitoring/values-prometheus.yaml`](./monitoring/values-prometheus.yaml)), scrape NGINX Ingress RED metrics via `ServiceMonitor`, verify custom alerts in [`monitoring/prometheus-rules.yaml`](./monitoring/prometheus-rules.yaml), and deploy FluentBit DaemonSet + Loki + Grafana sidecar DataSource/Dashboard in [`monitoring/logging-loki-fluentbit.yaml`](./monitoring/logging-loki-fluentbit.yaml).
 
 ### Verification Checklist
 - [ ] Zero secrets/connection strings committed to Git (`.env.*` and `terraform.tfvars` gitignored).
@@ -1316,4 +1367,5 @@ This guide walks through building **Erasmus Connect** (**Next.js** frontend, **V
 - [ ] Full cluster rebuild via `terraform apply` + `ansible-playbook` preserves the static Ingress IP.
 - [ ] GitHub Actions CI builds & pushes to ACR and updates `values-aks.yaml` for ArgoCD auto-sync.
 - [ ] Prometheus/Grafana running within node capacity, NGINX `ServiceMonitor` `UP`, and custom `PrometheusRule` alerts verified.
+- [ ] FluentBit DaemonSet + Loki running in `monitoring` and Grafana displays live `default` + `ingress-nginx` logs alongside Prometheus RPS.
 - [ ] Cluster stopped (`az aks stop`) or destroyed (`terraform destroy`) after verification to prevent idle cloud spend.
