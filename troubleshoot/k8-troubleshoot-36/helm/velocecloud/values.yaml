@@ -118,12 +118,12 @@ sessionApi:
     tag: "3.11-alpine"
     pullPolicy: IfNotPresent
   port: 8087
-  writableCacheMount: false
+  writableCacheMount: true
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
     readOnlyRootFilesystem: true
-    allowPrivilegeEscalation: false
+    allowPrivilegeEscalation: true
   resources:
     requests:
       cpu: 20m
