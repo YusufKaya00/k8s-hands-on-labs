@@ -156,7 +156,7 @@ notifyApi:
   port: 8087
   resources:
     requests:
-      cpu: 500m
+      cpu: 200m
       memory: 32Mi
     limits:
       cpu: 600m
