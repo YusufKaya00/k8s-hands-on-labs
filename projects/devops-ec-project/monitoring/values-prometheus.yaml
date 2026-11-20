@@ -22,31 +22,41 @@ kubeProxy:
 # 2) Prometheus Sunucusu (2x Standard_B2s'te ~8 GB toplam RAM için hafif sınırlar)
 prometheus:
   prometheusSpec:
-    # TODO: [Bilet 27] Metrik saklama süresini ("2d") ve toplama aralığını ("30s") yaz:
-    # retention: ...
-    # scrapeInterval: ...
+ 
+    retention: "2d"
+    scrapeInterval: "30s"
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 600Mi
 
-    # TODO: [Bilet 27] KRİTİK — Tüm namespace'lerdeki ServiceMonitor ve PrometheusRule'ları
-    #       (ingress-nginx ve kendi alarmlarımız dahil) görebilmesi için bu ikisini false yap:
-    # serviceMonitorSelectorNilUsesHelmValues: ...
-    # ruleSelectorNilUsesHelmValues: ...
 
-    # TODO: [Bilet 27] Prometheus podu için kaynak sınırlarını yaz
-    #       (öneri: requests cpu 100m / memory 256Mi, limits cpu 500m / memory 600Mi)
-    # resources:
-    #   ...
 
 # 3) Grafana Arayüzü
 grafana:
-  # TODO: [Bilet 27] adminPassword belirle (ör. "erasmus-grafana-123" veya kendi şifren)
-  #       ve hafif resources bloğu ekle (requests: 50m / 128Mi, limits: 250m / 256Mi)
-  # adminPassword: ...
-  # resources:
-  #   ...
+  
+  adminPassword: "erasmus-grafana-123"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
 
 # 4) Alertmanager
 alertmanager:
   alertmanagerSpec:
-    # TODO: [Bilet 27] Hafif resources bloğu ekle (requests: 25m / 64Mi, limits: 100m / 128Mi)
-    # resources:
-    #   ...
+    
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
