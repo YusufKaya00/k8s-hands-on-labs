@@ -94,7 +94,7 @@
           controller:
             metrics:
               enabled: true
-              service.monitor:
+              serviceMonitor:
                 enabled: true
             service:
               loadBalancerIP: "{{ tf_ingress_ip.stdout }}"
@@ -230,4 +230,10 @@
         update_repo_cache: true
         values_files:
            - "{{ playbook_dir }}/../monitoring/values-prometheus.yaml"
+      tags: [monitoring]
+
+    - name: Ozel SRE alarmlarini (PrometheusRule) uygula
+      kubernetes.core.k8s:
+        state: present
+        src: ../monitoring/prometheus-rules.yaml
       tags: [monitoring]

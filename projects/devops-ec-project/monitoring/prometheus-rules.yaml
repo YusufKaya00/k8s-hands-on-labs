@@ -18,32 +18,29 @@ spec:
   groups:
     - name: erasmus-connect.rules
       rules:
-     
-        alert: ErasmusExpressDown
-        expr:  kube_deployment_status_replicas_available{namespace="default", deployment=~".*express.*"} == 0
-        for:   30s
-        labels:
-          severity: critical
-        annotations:
-          summary: "Express Backend Deployment is down"
-          description: "The Express backend deployment in the default namespace has no available replicas. This indicates that the service is down and may require immediate attention."
-       
-       
+        - alert: ErasmusExpressDown
+          expr: kube_deployment_status_replicas_available{namespace="default", deployment=~".*express.*"} == 0
+          for: 30s
+          labels:
+            severity: critical
+          annotations:
+            summary: "Express Backend Deployment is down"
+            description: "The Express backend deployment in the default namespace has no available replicas. This indicates that the service is down and may require immediate attention."
 
-        alert: ErasmusPodCrashLooping
-        expr:  increase(kube_pod_container_status_restarts_total{namespace="default"}[5m]) > 2
-        for:   1m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Pod CrashLooping in Default Namespace"
-          description: "One or more pods in the default namespace have restarted more than 2 times in the last 5 minutes. This may indicate an issue with the application or its configuration."
+        - alert: ErasmusPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="default"}[5m]) > 2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod CrashLooping in Default Namespace"
+            description: "One or more pods in the default namespace have restarted more than 2 times in the last 5 minutes. This may indicate an issue with the application or its configuration."
 
-        alert: ErasmusHigh5xxRate
-        expr:  sum(rate(nginx_ingress_controller_requests{status=~"5.."}[5m])) / clamp_min(sum(rate(nginx_ingress_controller_requests[5m])), 1) > 0.05
-        for:   1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "High HTTP 5xx Error Rate on NGINX Ingress"
-          description: "The NGINX Ingress controller is experiencing a high rate of HTTP    5xx errors, exceeding 5% of total requests in the last 5 minutes. This may indicate issues with backend services or misconfigurations."
+        - alert: ErasmusHigh5xxRate
+          expr: sum(rate(nginx_ingress_controller_requests{status=~"5.."}[5m])) / clamp_min(sum(rate(nginx_ingress_controller_requests[5m])), 1) > 0.05
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High HTTP 5xx Error Rate on NGINX Ingress"
+            description: "The NGINX Ingress controller is experiencing a high rate of HTTP 5xx errors, exceeding 5% of total requests in the last 5 minutes. This may indicate issues with backend services or misconfigurations."
