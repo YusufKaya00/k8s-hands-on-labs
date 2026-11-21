@@ -1,0 +1,38 @@
+namespaces:
+  app: payments-prod
+  velero: velero
+
+postgres:
+  image: postgres:16-alpine
+  apiImage: python:3.11-alpine
+  storageSize: 512Mi
+  archivedCloudStorageClass: "gp3-encrypted"
+
+minio:
+  image: python:3.11-alpine
+  s3Port: 9000
+  consolePort: 9001
+  bucket: "velero-backups"
+
+velero:
+  image: python:3.11-alpine
+  bsl:
+    bucket: "velero-archive-wrong"
+    s3Url: "http://minio.velero.svc.cluster.local:9099"
+  rbac:
+    resources:
+      - pods
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+  backup:
+    hook:
+      container: "sidecar-proxy"
+      dbName: "ledger_wrong"
+      onError: "Fail"
+  restore:
+    storageClassMapping:
+      from: "ebs-sc"
+      to: "local-nvme"
