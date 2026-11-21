@@ -1,0 +1,231 @@
+global:
+  ingressHost: ""
+  environment: production
+
+namespaces:
+  app: zephyr-app
+  data: zephyr-data
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  catalogIngressClassName: "traefik"
+  uploadProxyBodySize: "512k"
+
+appLimits:
+  maxCpu: "800m"
+  maxMemory: "512Mi"
+  defaultCpu: "100m"
+  defaultMemory: "128Mi"
+  defaultRequestCpu: "20m"
+  defaultRequestMemory: "32Mi"
+
+statusApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8080
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+catalogApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8081
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+uploadApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8082
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+fxApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8083
+  serviceTargetPort: 9083
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+checkoutApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8084
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+fraudBridge:
+  name: fraud-bridge
+  externalName: "fraud-engine.zephyr-security.svc.cluster.local"
+  port: 8085
+
+tokenGateway:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8086
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+authApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8088
+  actualSecretKey: "AUTH_SHARED_SECRET"
+  secretKeyRef: "JWT_SIGNING_KEY"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+billingApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8089
+  bindHost: "127.0.0.1"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+reportApi:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8090
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: "1024Mi"
+
+fraudEngine:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8085
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+vaultStore:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8087
+  networkPolicy:
+    allowedNamespaceTier: "app"
+    allowedPodApp: "token-proxy"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+auditInspector:
+  replicaCount: 1
+  image:
+    repository: python
+    tag: "3.11-alpine"
+    pullPolicy: IfNotPresent
+  port: 8091
+  serviceAccountName: "audit-sa"
+  podServiceAccountName: "default"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+
+nodeAgent:
+  image:
+    repository: busybox
+    tag: "1.36"
+    pullPolicy: IfNotPresent
+  tolerationKey: "zephyr-pool"
+  tolerationValue: "analytics"
+  tolerationEffect: "NoExecute"
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi
