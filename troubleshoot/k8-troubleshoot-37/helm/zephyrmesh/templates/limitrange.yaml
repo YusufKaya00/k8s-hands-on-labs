@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: zephyr-app-limits
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: {{ .Values.appLimits.maxCpu | quote }}
+        memory: {{ .Values.appLimits.maxMemory | quote }}
+      default:
+        cpu: {{ .Values.appLimits.defaultCpu | quote }}
+        memory: {{ .Values.appLimits.defaultMemory | quote }}
+      defaultRequest:
+        cpu: {{ .Values.appLimits.defaultRequestCpu | quote }}
+        memory: {{ .Values.appLimits.defaultRequestMemory | quote }}

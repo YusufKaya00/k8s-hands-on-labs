@@ -1,0 +1,6 @@
+apiVersion: v2
+name: zephyrmesh
+description: ZephyrMesh v20.0 - Direct Ingress Kubernetes Troubleshooting General Review #6
+type: application
+version: 0.1.0
+appVersion: "20.0.0"
