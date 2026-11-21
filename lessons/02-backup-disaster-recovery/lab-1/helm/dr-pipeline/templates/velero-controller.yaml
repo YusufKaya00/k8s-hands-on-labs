@@ -1,0 +1,291 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: velero-controller-script
+  namespace: {{ .Values.namespaces.velero }}
+data:
+  controller.py: |
+    import json
+    import os
+    import ssl
+    import time
+    import urllib.error
+    import urllib.request
+    from datetime import datetime, timezone
+
+    VELERO_NS = os.environ.get("VELERO_NS", "velero")
+    APP_NS = os.environ.get("APP_NS", "payments-prod")
+    LEDGER_API = f"http://postgres-ledger.{APP_NS}.svc.cluster.local:8080"
+    K8S_HOST = "https://kubernetes.default.svc"
+
+    def k8s_req(method, path, body=None, content_type="application/json"):
+        with open("/var/run/secrets/kubernetes.io/serviceaccount/token", "r", encoding="utf-8") as f:
+            token = f.read().strip()
+        ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(
+            f"{K8S_HOST}{path}",
+            data=data,
+            method=method,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": content_type,
+                "Accept": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, context=ctx, timeout=6) as r:
+            return json.loads(r.read().decode())
+
+    def http_json(method, url, payload=None):
+        data = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(
+            url,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                return r.status, json.loads(r.read().decode() or "{}")
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode()
+            try:
+                return e.code, json.loads(raw)
+            except Exception:
+                return e.code, {"error": raw}
+        except Exception as e:
+            return 599, {"error": str(e)}
+
+    def patch_cr_status(plural, name, status_obj):
+        try:
+            k8s_req(
+                "PATCH",
+                f"/apis/velero.io/v1/namespaces/{VELERO_NS}/{plural}/{name}",
+                body={"status": status_obj},
+                content_type="application/merge-patch+json",
+            )
+        except Exception as exc:
+            print(f"[velero-controller] status patch error on {plural}/{name}: {exc}", flush=True)
+
+    def get_bsl_config():
+        bsl = k8s_req("GET", f"/apis/velero.io/v1/namespaces/{VELERO_NS}/backupstoragelocations/default")
+        spec = bsl.get("spec", {})
+        bucket = spec.get("objectStorage", {}).get("bucket", "")
+        s3_url = spec.get("config", {}).get("s3Url", "").rstrip("/")
+        return bsl, bucket, s3_url
+
+    def reconcile_bsl():
+        try:
+            bsl, bucket, s3_url = get_bsl_config()
+            st = bsl.get("status", {})
+            if not s3_url or not bucket:
+                new_phase, new_msg = "Unavailable", "Missing s3Url or bucket on BackupStorageLocation"
+            else:
+                code, _ = http_json("GET", f"{s3_url}/healthz")
+                if code != 200:
+                    new_phase, new_msg = "Unavailable", f"S3 endpoint unreachable: {s3_url} (code={code})"
+                else:
+                    bcode, bresp = http_json("GET", f"{s3_url}/{bucket}")
+                    if bcode == 200:
+                        new_phase, new_msg = "Available", f"Connected to S3 bucket '{bucket}' at {s3_url}"
+                    else:
+                        new_phase, new_msg = "Unavailable", f"Bucket check failed on {s3_url}/{bucket}: {bresp.get('error', bcode)}"
+
+            if st.get("phase") != new_phase or st.get("message") != new_msg:
+                patch_cr_status("backupstoragelocations", "default", {
+                    "phase": new_phase,
+                    "message": new_msg,
+                    "lastSyncedTime": datetime.now(timezone.utc).isoformat(),
+                })
+                print(f"[BSL default] -> {new_phase}: {new_msg}", flush=True)
+        except Exception as exc:
+            print(f"[BSL reconcile error] {exc}", flush=True)
+
+    def check_rbac():
+        cr = k8s_req("GET", "/apis/rbac.authorization.k8s.io/v1/clusterroles/velero-server")
+        resources, verbs = set(), set()
+        for rule in cr.get("rules", []):
+            if "" in rule.get("apiGroups", []) or "apps" in rule.get("apiGroups", []):
+                resources.update(rule.get("resources", []))
+                verbs.update(rule.get("verbs", []))
+        if "*" in resources or "*" in verbs:
+            return True, "ok"
+        missing_res = {"pods", "statefulsets", "persistentvolumeclaims", "services"} - resources
+        missing_verbs = {"get", "list", "create", "delete"} - verbs
+        if missing_res or missing_verbs:
+            return False, f"403 Forbidden: velero-server ClusterRole missing resources={sorted(missing_res)} verbs={sorted(missing_verbs)}"
+        return True, "ok"
+
+    def reconcile_backups():
+        try:
+            backups = k8s_req("GET", f"/apis/velero.io/v1/namespaces/{VELERO_NS}/backups").get("items", [])
+        except Exception as exc:
+            print(f"[Backup list error] {exc}", flush=True)
+            return
+
+        for b in backups:
+            name = b["metadata"]["name"]
+            phase = b.get("status", {}).get("phase", "")
+            if phase:
+                continue
+
+            print(f"[Backup {name}] starting...", flush=True)
+            bsl, bucket, s3_url = get_bsl_config()
+            if bsl.get("status", {}).get("phase") != "Available":
+                msg = bsl.get("status", {}).get("message", "BackupStorageLocation unavailable")
+                patch_cr_status("backups", name, {"phase": "Failed", "hookStatus": "Skipped", "message": msg})
+                continue
+
+            rbac_ok, rbac_msg = check_rbac()
+            if not rbac_ok:
+                patch_cr_status("backups", name, {"phase": "Failed", "hookStatus": "Skipped", "message": rbac_msg})
+                print(f"[Backup {name}] FAILED: {rbac_msg}", flush=True)
+                continue
+
+            policy = k8s_req("GET", f"/api/v1/namespaces/{VELERO_NS}/configmaps/velero-default-policy").get("data", {})
+            spec_hooks = b.get("spec", {}).get("hooks", {})
+            container = spec_hooks.get("container") or policy.get("container", "")
+            db_name = spec_hooks.get("dbName") or policy.get("dbName", "")
+            archived_sc = policy.get("archivedCloudStorageClass", "gp3-encrypted")
+
+            hcode, hresp = http_json("POST", f"{LEDGER_API}/internal/hook/pg_dump", {
+                "container": container,
+                "dbName": db_name,
+            })
+            if hcode != 200 or not hresp.get("ok"):
+                err = hresp.get("error", f"hook HTTP {hcode}")
+                patch_cr_status("backups", name, {"phase": "Failed", "hookStatus": "Failed", "message": err})
+                print(f"[Backup {name}] Hook FAILED: {err}", flush=True)
+                continue
+
+            archive = {
+                "backupName": name,
+                "namespace": APP_NS,
+                "archivedStorageClass": archived_sc,
+                "manifests": ["statefulset/postgres-ledger", "pvc/data-postgres-ledger-0", "service/postgres-ledger"],
+                "sql_dump": hresp["sql_dump"],
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+            }
+            pcode, presp = http_json("PUT", f"{s3_url}/{bucket}/{name}.json", archive)
+            if pcode != 200:
+                patch_cr_status("backups", name, {"phase": "Failed", "hookStatus": "Completed", "message": str(presp)})
+                continue
+
+            patch_cr_status("backups", name, {
+                "phase": "Completed",
+                "hookStatus": "Completed",
+                "archivedStorageClass": archived_sc,
+                "message": f"Uploaded {name}.json to {s3_url}/{bucket}",
+            })
+            print(f"[Backup {name}] Completed", flush=True)
+
+    def reconcile_restores():
+        try:
+            restores = k8s_req("GET", f"/apis/velero.io/v1/namespaces/{VELERO_NS}/restores").get("items", [])
+        except Exception as exc:
+            print(f"[Restore list error] {exc}", flush=True)
+            return
+
+        for r in restores:
+            name = r["metadata"]["name"]
+            phase = r.get("status", {}).get("phase", "")
+            if phase:
+                continue
+
+            backup_name = r.get("spec", {}).get("backupName", "")
+            print(f"[Restore {name}] restoring backup '{backup_name}'...", flush=True)
+            bsl, bucket, s3_url = get_bsl_config()
+            if bsl.get("status", {}).get("phase") != "Available":
+                patch_cr_status("restores", name, {"phase": "Failed", "message": "BSL unavailable"})
+                continue
+
+            gcode, archive = http_json("GET", f"{s3_url}/{bucket}/{backup_name}.json")
+            if gcode != 200 or "sql_dump" not in archive:
+                patch_cr_status("restores", name, {"phase": "Failed", "message": f"Backup object '{backup_name}.json' not found in {bucket}"})
+                continue
+
+            orig_sc = archive.get("archivedStorageClass", "gp3-encrypted")
+            sc_map = k8s_req("GET", f"/api/v1/namespaces/{VELERO_NS}/configmaps/change-storage-class-config").get("data", {})
+            mapped_sc = sc_map.get(orig_sc, orig_sc)
+
+            try:
+                k8s_req("GET", f"/apis/storage.k8s.io/v1/storageclasses/{mapped_sc}")
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    msg = f"PVC restore failed: source StorageClass '{orig_sc}' mapped to '{mapped_sc}', which does not exist in cluster (check change-storage-class-config)"
+                    patch_cr_status("restores", name, {
+                        "phase": "PartiallyFailed",
+                        "mappedStorageClass": mapped_sc,
+                        "message": msg,
+                    })
+                    print(f"[Restore {name}] PartiallyFailed: {msg}", flush=True)
+                    continue
+                raise
+
+            rcode, rresp = http_json("POST", f"{LEDGER_API}/internal/hook/pg_restore", {
+                "sql_dump": archive["sql_dump"],
+            })
+            if rcode != 200 or not rresp.get("ok"):
+                patch_cr_status("restores", name, {
+                    "phase": "Failed",
+                    "mappedStorageClass": mapped_sc,
+                    "message": rresp.get("error", f"restore HTTP {rcode}"),
+                })
+                continue
+
+            patch_cr_status("restores", name, {
+                "phase": "Completed",
+                "mappedStorageClass": mapped_sc,
+                "message": f"Restored '{backup_name}' (StorageClass {orig_sc} -> {mapped_sc})",
+            })
+            print(f"[Restore {name}] Completed ({orig_sc} -> {mapped_sc})", flush=True)
+
+    print("[velero-controller] starting reconcile loop...", flush=True)
+    while True:
+        reconcile_bsl()
+        reconcile_backups()
+        reconcile_restores()
+        time.sleep(2)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: velero-controller
+  namespace: {{ .Values.namespaces.velero }}
+  labels:
+    app: velero-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: velero-controller
+  template:
+    metadata:
+      labels:
+        app: velero-controller
+    spec:
+      serviceAccountName: velero-server
+      containers:
+        - name: velero-controller
+          image: {{ .Values.velero.image }}
+          command: ["python3", "/scripts/controller.py"]
+          env:
+            - name: VELERO_NS
+              value: {{ .Values.namespaces.velero | quote }}
+            - name: APP_NS
+              value: {{ .Values.namespaces.app | quote }}
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 150m
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: velero-controller-script

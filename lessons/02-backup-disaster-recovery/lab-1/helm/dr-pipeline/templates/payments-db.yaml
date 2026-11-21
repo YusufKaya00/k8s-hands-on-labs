@@ -1,0 +1,302 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payments-db-scripts
+  namespace: {{ .Values.namespaces.app }}
+data:
+  postgres_entrypoint.sh: |
+    #!/bin/sh
+    set -eu
+    rm -f /ipc/go /ipc/go.tmp /ipc/rc /ipc/rc.tmp /ipc/out.txt /ipc/op.txt /ipc/arg.txt
+
+    /usr/local/bin/docker-entrypoint.sh postgres &
+    PG_PID=$!
+
+    until pg_isready -U postgres -d payments >/dev/null 2>&1; do
+      sleep 1
+    done
+
+    if [ ! -f /var/lib/postgresql/data/.seeded ]; then
+      psql -U postgres -d payments -v ON_ERROR_STOP=1 <<'SQL'
+    CREATE TABLE IF NOT EXISTS ledger_entries (
+      tx_id TEXT PRIMARY KEY,
+      customer TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      currency TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    INSERT INTO ledger_entries (tx_id, customer, amount, currency) VALUES
+      ('tx-1001', 'acme-eu', 450.00, 'EUR'),
+      ('tx-1002', 'nordic-pay', 1290.50, 'EUR')
+    ON CONFLICT (tx_id) DO NOTHING;
+    SQL
+      touch /var/lib/postgresql/data/.seeded
+    fi
+
+    while kill -0 "$PG_PID" 2>/dev/null; do
+      if [ -f /ipc/go ]; then
+        OP=$(cat /ipc/op.txt 2>/dev/null || echo "")
+        RC=0
+        case "$OP" in
+          list)
+            psql -U postgres -d payments -t -A -F '|' -c "SELECT tx_id, customer, amount, currency FROM ledger_entries ORDER BY tx_id;" > /ipc/out.txt 2>&1 || RC=$?
+            ;;
+          sql)
+            psql -U postgres -d payments -v ON_ERROR_STOP=1 -f /ipc/arg.txt > /ipc/out.txt 2>&1 || RC=$?
+            ;;
+          dump)
+            DBNAME=$(cat /ipc/arg.txt 2>/dev/null || echo "payments")
+            pg_dump -U postgres -d "$DBNAME" --clean --if-exists > /ipc/out.txt 2>&1 || RC=$?
+            ;;
+          *)
+            echo "unknown op: $OP" > /ipc/out.txt
+            RC=1
+            ;;
+        esac
+        echo "$RC" > /ipc/rc.tmp
+        mv /ipc/rc.tmp /ipc/rc
+        rm -f /ipc/go
+      fi
+      sleep 0.1
+    done
+    wait "$PG_PID"
+
+  ledger_api.py: |
+    import json
+    import os
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    IPC_LOCK = threading.Lock()
+    PORT = int(os.environ.get("PORT", "8080"))
+
+    def run_ipc(op, arg=""):
+        with IPC_LOCK:
+            for p in ("/ipc/rc", "/ipc/rc.tmp", "/ipc/out.txt"):
+                if os.path.exists(p):
+                    os.remove(p)
+            with open("/ipc/op.txt", "w", encoding="utf-8") as f:
+                f.write(op)
+            with open("/ipc/arg.txt", "w", encoding="utf-8") as f:
+                f.write(arg)
+            with open("/ipc/go.tmp", "w", encoding="utf-8") as f:
+                f.write("1")
+            os.replace("/ipc/go.tmp", "/ipc/go")
+
+            deadline = time.monotonic() + 20
+            while not os.path.exists("/ipc/rc"):
+                if time.monotonic() > deadline:
+                    return 1, "postgres ipc timeout"
+                time.sleep(0.05)
+            rc = int(open("/ipc/rc", "r", encoding="utf-8").read().strip() or "1")
+            out = open("/ipc/out.txt", "r", encoding="utf-8").read() if os.path.exists("/ipc/out.txt") else ""
+            return rc, out
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code, payload):
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(payload).encode())
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                rc, _ = run_ipc("sql", "SELECT 1;")
+                self.send_response(200 if rc == 0 else 503)
+                self.end_headers()
+                self.wfile.write(b"ok" if rc == 0 else b"db-not-ready")
+                return
+
+            if self.path == "/entries":
+                rc, out = run_ipc("list")
+                if rc != 0:
+                    self._send(500, {"service": "ledger-api", "count": 0, "error": out.strip()})
+                    return
+                entries = []
+                for line in out.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split("|")
+                    if len(parts) == 4:
+                        entries.append({
+                            "tx_id": parts[0],
+                            "customer": parts[1],
+                            "amount": parts[2],
+                            "currency": parts[3],
+                        })
+                self._send(200, {"service": "ledger-api", "count": len(entries), "entries": entries})
+                return
+
+            self._send(404, {"error": "not found"})
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+            data = json.loads(raw) if raw.strip() else {}
+
+            if self.path == "/entries":
+                tx_id = str(data.get("tx_id", "")).replace("'", "")
+                customer = str(data.get("customer", "demo")).replace("'", "")
+                amount = float(data.get("amount", 100.0))
+                currency = str(data.get("currency", "EUR")).replace("'", "")
+                sql = (
+                    "INSERT INTO ledger_entries (tx_id, customer, amount, currency) "
+                    f"VALUES ('{tx_id}', '{customer}', {amount:.2f}, '{currency}') "
+                    "ON CONFLICT (tx_id) DO NOTHING;"
+                )
+                rc, out = run_ipc("sql", sql)
+                if rc != 0:
+                    self._send(500, {"inserted": False, "error": out.strip()})
+                    return
+                self._send(200, {"inserted": True, "tx_id": tx_id})
+                return
+
+            if self.path == "/disaster/wipe":
+                rc, out = run_ipc("sql", "DROP TABLE IF EXISTS ledger_entries;")
+                if rc != 0:
+                    self._send(500, {"wiped": False, "error": out.strip()})
+                    return
+                self._send(200, {"wiped": True, "event": "DROP TABLE ledger_entries executed"})
+                return
+
+            if self.path == "/internal/hook/pg_dump":
+                container = data.get("container", "")
+                db_name = data.get("dbName", "")
+                if container != "postgres":
+                    self._send(500, {"ok": False, "error": f"Pre-backup hook failed: container '{container}' not found in pod postgres-ledger-0"})
+                    return
+                rc, out = run_ipc("dump", db_name)
+                if rc != 0:
+                    self._send(500, {"ok": False, "error": f"pg_dump hook failed for db '{db_name}': {out.strip()}"})
+                    return
+                self._send(200, {"ok": True, "dbName": db_name, "sql_dump": out})
+                return
+
+            if self.path == "/internal/hook/pg_restore":
+                sql_dump = data.get("sql_dump", "")
+                if not sql_dump.strip():
+                    self._send(400, {"ok": False, "error": "empty sql_dump"})
+                    return
+                rc, out = run_ipc("sql", sql_dump)
+                if rc != 0:
+                    self._send(500, {"ok": False, "error": out.strip()})
+                    return
+                self._send(200, {"ok": True, "restored": True})
+                return
+
+            self._send(404, {"error": "not found"})
+
+        def log_message(self, format, *args):
+            pass
+
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-ledger
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: postgres-ledger
+spec:
+  serviceName: postgres-ledger
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-ledger
+  template:
+    metadata:
+      labels:
+        app: postgres-ledger
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image }}
+          command: ["sh", "/scripts/postgres_entrypoint.sh"]
+          env:
+            - name: POSTGRES_DB
+              value: payments
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              value: payments
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: pg
+              containerPort: 5432
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 384Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: ipc
+              mountPath: /ipc
+        - name: ledger-api
+          image: {{ .Values.postgres.apiImage }}
+          command: ["python3", "/scripts/ledger_api.py"]
+          env:
+            - name: PORT
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 4
+            periodSeconds: 4
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: ipc
+              mountPath: /ipc
+      volumes:
+        - name: scripts
+          configMap:
+            name: payments-db-scripts
+        - name: ipc
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgres.storageSize }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-ledger
+  namespace: {{ .Values.namespaces.app }}
+spec:
+  selector:
+    app: postgres-ledger
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: 5432
+    - name: http
+      port: 8080
+      targetPort: 8080
