@@ -26,10 +26,14 @@ velero:
       - secrets
       - endpoints
       - persistentvolumeclaims
+      - services
+      - statefulsets
     verbs:
       - get
       - list
       - watch
+      - create
+      - delete
   backup:
     hook:
       container: "sidecar-proxy"
