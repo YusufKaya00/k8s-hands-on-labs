@@ -1,0 +1,129 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zephyr-app-ingress
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /healthz
+            pathType: Prefix
+            backend:
+              service:
+                name: status-api
+                port:
+                  number: {{ .Values.statusApi.port }}
+          - path: /api/fx
+            pathType: Prefix
+            backend:
+              service:
+                name: fx-api
+                port:
+                  number: {{ .Values.fxApi.port }}
+          - path: /api/checkout
+            pathType: Prefix
+            backend:
+              service:
+                name: checkout-api
+                port:
+                  number: {{ .Values.checkoutApi.port }}
+          - path: /api/vault
+            pathType: Prefix
+            backend:
+              service:
+                name: token-gateway
+                port:
+                  number: {{ .Values.tokenGateway.port }}
+          - path: /api/auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-api
+                port:
+                  number: {{ .Values.authApi.port }}
+          - path: /api/billing
+            pathType: Prefix
+            backend:
+              service:
+                name: billing-api
+                port:
+                  number: {{ .Values.billingApi.port }}
+          - path: /api/reports
+            pathType: Prefix
+            backend:
+              service:
+                name: report-api
+                port:
+                  number: {{ .Values.reportApi.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zephyr-catalog-ingress
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  ingressClassName: {{ .Values.ingress.catalogIngressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /api/catalog
+            pathType: Prefix
+            backend:
+              service:
+                name: catalog-api
+                port:
+                  number: {{ .Values.catalogApi.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zephyr-upload-ingress
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.ingress.uploadProxyBodySize | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /api/uploads
+            pathType: Prefix
+            backend:
+              service:
+                name: upload-api
+                port:
+                  number: {{ .Values.uploadApi.port }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: zephyr-data-ingress
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.global.ingressHost | quote }}
+      http:
+        paths:
+          - path: /api/audit
+            pathType: Prefix
+            backend:
+              service:
+                name: audit-inspector
+                port:
+                  number: {{ .Values.auditInspector.port }}
+{{- end }}

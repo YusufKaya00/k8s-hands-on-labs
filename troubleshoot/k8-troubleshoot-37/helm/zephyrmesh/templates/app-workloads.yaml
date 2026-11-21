@@ -1,0 +1,422 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: status-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: status-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.statusApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: status-api
+  template:
+    metadata:
+      labels:
+        app: status-api
+    spec:
+      containers:
+        - name: status-api
+          image: "{{ .Values.statusApi.image.repository }}:{{ .Values.statusApi.image.tag }}"
+          imagePullPolicy: {{ .Values.statusApi.image.pullPolicy }}
+          command: ["python3", "/scripts/status_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.statusApi.port | quote }}
+          ports:
+            - containerPort: {{ .Values.statusApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.statusApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.statusApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: catalog-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.catalogApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: catalog-api
+  template:
+    metadata:
+      labels:
+        app: catalog-api
+    spec:
+      containers:
+        - name: catalog-api
+          image: "{{ .Values.catalogApi.image.repository }}:{{ .Values.catalogApi.image.tag }}"
+          imagePullPolicy: {{ .Values.catalogApi.image.pullPolicy }}
+          command: ["python3", "/scripts/catalog_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.catalogApi.port | quote }}
+          ports:
+            - containerPort: {{ .Values.catalogApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.catalogApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.catalogApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upload-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: upload-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.uploadApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: upload-api
+  template:
+    metadata:
+      labels:
+        app: upload-api
+    spec:
+      containers:
+        - name: upload-api
+          image: "{{ .Values.uploadApi.image.repository }}:{{ .Values.uploadApi.image.tag }}"
+          imagePullPolicy: {{ .Values.uploadApi.image.pullPolicy }}
+          command: ["python3", "/scripts/upload_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.uploadApi.port | quote }}
+          ports:
+            - containerPort: {{ .Values.uploadApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.uploadApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.uploadApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fx-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: fx-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.fxApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: fx-api
+  template:
+    metadata:
+      labels:
+        app: fx-api
+    spec:
+      containers:
+        - name: fx-api
+          image: "{{ .Values.fxApi.image.repository }}:{{ .Values.fxApi.image.tag }}"
+          imagePullPolicy: {{ .Values.fxApi.image.pullPolicy }}
+          command: ["python3", "/scripts/fx_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.fxApi.port | quote }}
+          ports:
+            - containerPort: {{ .Values.fxApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.fxApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.fxApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: checkout-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.checkoutApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: checkout-api
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+    spec:
+      containers:
+        - name: checkout-api
+          image: "{{ .Values.checkoutApi.image.repository }}:{{ .Values.checkoutApi.image.tag }}"
+          imagePullPolicy: {{ .Values.checkoutApi.image.pullPolicy }}
+          command: ["python3", "/scripts/checkout_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.checkoutApi.port | quote }}
+            - name: FRAUD_URL
+              value: "http://{{ .Values.fraudBridge.name }}:{{ .Values.fraudBridge.port }}"
+          ports:
+            - containerPort: {{ .Values.checkoutApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.checkoutApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.checkoutApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: token-gateway
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: token-gateway
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.tokenGateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: token-gateway
+  template:
+    metadata:
+      labels:
+        app: token-gateway
+    spec:
+      containers:
+        - name: token-gateway
+          image: "{{ .Values.tokenGateway.image.repository }}:{{ .Values.tokenGateway.image.tag }}"
+          imagePullPolicy: {{ .Values.tokenGateway.image.pullPolicy }}
+          command: ["python3", "/scripts/token_gateway.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.tokenGateway.port | quote }}
+            - name: VAULT_URL
+              value: "http://vault-store.{{ .Values.namespaces.data }}.svc.cluster.local:{{ .Values.vaultStore.port }}"
+          ports:
+            - containerPort: {{ .Values.tokenGateway.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.tokenGateway.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.tokenGateway.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: auth-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.authApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: auth-api
+  template:
+    metadata:
+      labels:
+        app: auth-api
+    spec:
+      containers:
+        - name: auth-api
+          image: "{{ .Values.authApi.image.repository }}:{{ .Values.authApi.image.tag }}"
+          imagePullPolicy: {{ .Values.authApi.image.pullPolicy }}
+          command: ["python3", "/scripts/auth_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.authApi.port | quote }}
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-jwt-secret
+                  key: {{ .Values.authApi.secretKeyRef | quote }}
+          ports:
+            - containerPort: {{ .Values.authApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.authApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.authApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: billing-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.billingApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: billing-api
+  template:
+    metadata:
+      labels:
+        app: billing-api
+    spec:
+      containers:
+        - name: billing-api
+          image: "{{ .Values.billingApi.image.repository }}:{{ .Values.billingApi.image.tag }}"
+          imagePullPolicy: {{ .Values.billingApi.image.pullPolicy }}
+          command: ["python3", "/scripts/billing_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.billingApi.port | quote }}
+            - name: BIND_HOST
+              value: {{ .Values.billingApi.bindHost | quote }}
+          ports:
+            - containerPort: {{ .Values.billingApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.billingApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 4
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.billingApi.port }}
+            initialDelaySeconds: 6
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.billingApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: report-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app: report-api
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.reportApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: report-api
+  template:
+    metadata:
+      labels:
+        app: report-api
+    spec:
+      containers:
+        - name: report-api
+          image: "{{ .Values.reportApi.image.repository }}:{{ .Values.reportApi.image.tag }}"
+          imagePullPolicy: {{ .Values.reportApi.image.pullPolicy }}
+          command: ["python3", "/scripts/report_api.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.reportApi.port | quote }}
+          ports:
+            - containerPort: {{ .Values.reportApi.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.reportApi.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.reportApi.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-app-scripts

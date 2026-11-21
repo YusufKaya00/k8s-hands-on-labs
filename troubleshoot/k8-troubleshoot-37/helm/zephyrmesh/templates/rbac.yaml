@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.auditInspector.serviceAccountName }}
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: audit-role
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+rules:
+  - apiGroups: [""]
+    resources: ["services", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: audit-rb
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.auditInspector.serviceAccountName }}
+    namespace: {{ .Values.namespaces.data }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: audit-role
