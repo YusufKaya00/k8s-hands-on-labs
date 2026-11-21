@@ -25,6 +25,7 @@ velero:
       - configmaps
       - secrets
       - endpoints
+      - persistentvolumeclaims
     verbs:
       - get
       - list
