@@ -14,7 +14,7 @@ ingress:
 
 appLimits:
   maxCpu: "2000m"
-  maxMemory: "2000Mi"
+  maxMemory: "512Mi"
   defaultCpu: "100m"
   defaultMemory: "128Mi"
   defaultRequestCpu: "100m"
