@@ -69,23 +69,90 @@ helm --kube-context dr-lab-1 upgrade --install dr-lab ./helm/dr-pipeline \
   -f ./helm/dr-pipeline/values.yaml
 ```
 
-### 💥 Kendi Elinle Felaket & Kurtarma Tatbikatı (İsteğe Bağlı Canlı Deney)
+### 📦 MinIO Nedir ve Bu Labda Neden Var?
 
-`./check.sh` 6/6 geçtiğinde veya kendin elle adım adım denemek istediğinde doğrudan felaketi tetikleyip MinIO konsolundan izleyebilirsin:
+**MinIO**, Kubernetes üzerinde kendi kendine barındırılabilen, açık kaynaklı ve **AWS S3 protokolüyle %100 uyumlu bir Object Storage (Nesne Depolama)** sistemidir.
 
+- Gerçek hayatta Velero yedekleri asla veritabanıyla aynı diske (PVC) yazılmaz; **cluster dışındaki** bir Object Storage servisine (AWS S3, Azure Blob Storage, Google Cloud Storage veya şirket içi MinIO) yüklenir. Çünkü veritabanı diski bozulursa veya tüm Kubernetes cluster'ı çökerse yedekler S3 tarafında güvende kalır.
+- Bu labda bulut hesabı veya kredi kartı gerektirmeden (`$0`) aynı mimariyi deneyimleyebilmek için S3 uyumlu hafif bir **MinIO** servisi çalışır:
+  - **`:9000` portu (S3 API):** Velero controller yedek dosyalarını (`*.json` + `pg_dump` SQL çıktısı) buraya `PUT` ile yükler, restore sırasında `GET` ile geri çeker.
+  - **`:9001` portu (Web Console):** Tarayıcıdan (`http://localhost:9001`) bucket içindeki yedekleri ve boyutlarını görsel olarak izleyebilmeni sağlar.
+
+### 💥 Adım Adım Manuel Yedekleme, Felaket ve Kurtarma Simülasyonu
+
+`./check.sh` arka planda otomatik test yapar; ama mekanizmayı kendi gözünle görüp tam kavramak için tüm akışı (veri yaz → yedek al → veritabanını sil → geri yükle → veriyi doğrula) elle şu 5 adımda simüle edebilirsin:
+
+#### Adım 1 — PostgreSQL'e yeni bir ödeme kaydı yaz ve mevcut verileri gör
 ```bash
-# 1. MinIO S3 Web Konsolunu aç (http://localhost:9001):
-kubectl --context dr-lab-1 -n velero port-forward svc/minio 9001:9001
+# Yeni test işlemi ekle (tx-manuel-01):
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import json, urllib.request; req=urllib.request.Request('http://127.0.0.1:8080/entries', data=json.dumps({'tx_id':'tx-manuel-01','customer':'test-user','amount':999.0,'currency':'EUR'}).encode(), headers={'Content-Type':'application/json'}, method='POST'); print(urllib.request.urlopen(req).read().decode())"
 
-# 2. PostgreSQL veritabanındaki mevcut ödeme kayıtlarını gör:
+# Veritabanındaki tüm kayıtları listele (tx-manuel-01 görünmeli):
 kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
   python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/entries').read().decode())"
-
-# 3. Yanlışlıkla tabloyu sil (Felaket simülasyonu - DROP TABLE ledger_entries):
-kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
-  python3 -c "import urllib.request; print(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8080/disaster/wipe', data=b'{}', method='POST')).read().decode())"
 ```
-Ardından bir `Backup` adına işaret eden `Restore` nesnesi uygulayarak tüm kayıtların geri döndüğünü `./check.sh` ve MinIO konsolu üzerinden görebilirsin!
+
+#### Adım 2 — Velero ile manuel `Backup` al ve MinIO'da gör
+```bash
+# Backup CRD nesnesini oluştur:
+cat <<'EOF' | kubectl --context dr-lab-1 apply -f -
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: manuel-yedek-1
+  namespace: velero
+spec:
+  includedNamespaces:
+    - payments-prod
+  storageLocation: default
+EOF
+
+# Durumun 'Completed' olmasını izle (2-4 sn sürer):
+kubectl --context dr-lab-1 -n velero get backups
+kubectl --context dr-lab-1 -n velero describe backup manuel-yedek-1
+```
+İstersen ayrı bir terminalde MinIO arayüzünü açıp `manuel-yedek-1.json` dosyasının S3 kovasına düştüğünü görebilirsin:
+```bash
+kubectl --context dr-lab-1 -n velero port-forward svc/minio 9001:9001
+# Tarayıcıda aç: http://localhost:9001
+```
+
+#### Adım 3 — Felaket simülasyonu (`DROP TABLE ledger_entries`)
+```bash
+# Yanlışlıkla tüm ödeme tablosunu sil:
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import urllib.request; req=urllib.request.Request('http://127.0.0.1:8080/disaster/wipe', data=b'{}', method='POST'); print(urllib.request.urlopen(req).read().decode())"
+
+# Verilerin gerçekten silindiğini doğrula (tablo yok / hata veya boş dönmeli):
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/entries').read().decode())"
+```
+
+#### Adım 4 — Velero `Restore` ile MinIO'dan geri yükle
+```bash
+# Aldığın yedeğe işaret eden Restore nesnesini uygula:
+cat <<'EOF' | kubectl --context dr-lab-1 apply -f -
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: manuel-kurtarma-1
+  namespace: velero
+spec:
+  backupName: manuel-yedek-1
+EOF
+
+# Durumun 'Completed' olmasını ve StorageClass dönüşümünü izle:
+kubectl --context dr-lab-1 -n velero get restores
+kubectl --context dr-lab-1 -n velero describe restore manuel-kurtarma-1
+```
+
+#### Adım 5 — Sıfır Veri Kaybını (`RPO = 0`) Doğrula
+```bash
+# Tüm kayıtların ve 'tx-manuel-01' işleminin geri geldiğini doğrula:
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/entries').read().decode())"
+```
 
 ### 🧹 Sıfırlama ve Temizlik
 
