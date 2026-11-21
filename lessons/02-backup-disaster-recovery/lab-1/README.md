@@ -190,11 +190,65 @@ helm --kube-context dr-lab-1 upgrade --install dr-lab ./helm/dr-pipeline \
   -f ./helm/dr-pipeline/values.yaml
 ```
 
-Inspect stored JSON/SQL backups in the MinIO Console after passing `./check.sh`:
+### 📦 What is MinIO?
+
+**MinIO** is an open-source, self-hosted **S3-compatible Object Storage** server.
+
+- In production, Velero never stores backups on the same PVC as the database — it pushes them to **off-cluster Object Storage** (AWS S3, Azure Blob, GCS, or self-hosted MinIO) so backups survive disk corruption or full cluster loss.
+- In this local `$0` lab, a lightweight MinIO service emulates that exact S3 target:
+  - **Port `9000` (S3 API):** Velero `PUT`s backup archives (`*.json` + `pg_dump` SQL) and `GET`s them during restores.
+  - **Port `9001` (Web Console):** Browser UI (`http://localhost:9001`) to visually inspect buckets and stored backup objects.
+
+### 💥 Step-by-Step Manual Backup, Disaster & Restore Simulation
+
+After fixing the lab (or to experience every stage by hand), run the full lifecycle manually:
 
 ```bash
+# 1. Insert a new transaction ('tx-manual-01') & verify it exists in PostgreSQL:
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import json, urllib.request; req=urllib.request.Request('http://127.0.0.1:8080/entries', data=json.dumps({'tx_id':'tx-manual-01','customer':'test-user','amount':999.0,'currency':'EUR'}).encode(), headers={'Content-Type':'application/json'}, method='POST'); print(urllib.request.urlopen(req).read().decode())"
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/entries').read().decode())"
+
+# 2. Create a manual Velero Backup & wait for phase=Completed:
+cat <<'EOF' | kubectl --context dr-lab-1 apply -f -
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: manual-backup-1
+  namespace: velero
+spec:
+  includedNamespaces:
+    - payments-prod
+  storageLocation: default
+EOF
+kubectl --context dr-lab-1 -n velero get backups
+
+# (Optional) Inspect stored backups in the MinIO Web Console:
 kubectl --context dr-lab-1 -n velero port-forward svc/minio 9001:9001
 # Open http://localhost:9001
+
+# 3. Simulate a disaster (DROP TABLE ledger_entries) & confirm data is gone:
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import urllib.request; req=urllib.request.Request('http://127.0.0.1:8080/disaster/wipe', data=b'{}', method='POST'); print(urllib.request.urlopen(req).read().decode())"
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/entries').read().decode())"
+
+# 4. Trigger a manual Velero Restore from 'manual-backup-1':
+cat <<'EOF' | kubectl --context dr-lab-1 apply -f -
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: manual-restore-1
+  namespace: velero
+spec:
+  backupName: manual-backup-1
+EOF
+kubectl --context dr-lab-1 -n velero get restores
+
+# 5. Verify RPO = 0 ('tx-manual-01' and all baseline rows are restored):
+kubectl --context dr-lab-1 -n payments-prod exec postgres-ledger-0 -c ledger-api -- \
+  python3 -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/entries').read().decode())"
 ```
 
 Reset or clean up anytime:
