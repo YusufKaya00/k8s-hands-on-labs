@@ -23,6 +23,8 @@ velero:
     resources:
       - pods
       - configmaps
+      - secrets
+      - endpoints
     verbs:
       - get
       - list
