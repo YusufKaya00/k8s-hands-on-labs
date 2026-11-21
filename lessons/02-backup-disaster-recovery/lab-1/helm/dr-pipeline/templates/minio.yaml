@@ -148,14 +148,19 @@ data:
                     f"<td><a href='/object?bucket={html.escape(BUCKET)}&key={urllib.parse.quote(name)}'>Inspect JSON/SQL</a></td></tr>"
                 )
             table = "".join(rows) or "<tr><td colspan='5'>No backup objects stored yet.</td></tr>"
-            page = f"""<!doctype html><html><head><title>MinIO Object Storage Console</title>
-            <style>body{{font-family:sans-serif;margin:2rem;background:#0f172a;color:#e2e8f0}}
-            table{{border-collapse:collapse;width:100%}}th,td{{border:1px solid #334155;padding:.6rem;text-align:left}}
-            th{{background:#1e293b}}a{{color:#38bdf8}}</style></head>
-            <body><h1>MinIO S3 Console — Bucket: {html.escape(BUCKET)}</h1>
-            <p>S3 API endpoint: <code>http://minio.velero.svc.cluster.local:{S3_PORT}</code></p>
-            <table><thead><tr><th>Object</th><th>Archived StorageClass</th><th>Size</th><th>Created</th><th>Payload</th></tr></thead>
-            <tbody>{table}</tbody></table></body></html>"""
+            css = (
+                "<style>body{font-family:sans-serif;margin:2rem;background:#0f172a;color:#e2e8f0}"
+                "table{border-collapse:collapse;width:100%}th,td{border:1px solid #334155;padding:.6rem;text-align:left}"
+                "th{background:#1e293b}a{color:#38bdf8}</style>"
+            )
+            page = (
+                "<!doctype html><html><head><title>MinIO Object Storage Console</title>"
+                + css
+                + f"</head><body><h1>MinIO S3 Console — Bucket: {html.escape(BUCKET)}</h1>"
+                + f"<p>S3 API endpoint: <code>http://minio.velero.svc.cluster.local:{S3_PORT}</code></p>"
+                + "<table><thead><tr><th>Object</th><th>Archived StorageClass</th><th>Size</th><th>Created</th><th>Payload</th></tr></thead>"
+                + f"<tbody>{table}</tbody></table></body></html>"
+            )
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
