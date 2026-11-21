@@ -6,7 +6,7 @@ postgres:
   image: postgres:16-alpine
   apiImage: python:3.11-alpine
   storageSize: 2000Mi
-  archivedCloudStorageClass: "gp3-encrypted"
+  archivedCloudStorageClass: "standard"
 
 minio:
   image: python:3.11-alpine
