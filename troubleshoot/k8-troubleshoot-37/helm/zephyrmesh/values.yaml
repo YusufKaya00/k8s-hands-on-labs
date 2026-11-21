@@ -188,7 +188,7 @@ vaultStore:
   port: 8087
   networkPolicy:
     allowedNamespaceTier: "app"
-    allowedPodApp: "token-proxy"
+    allowedPodApp: "token-gateway"
   resources:
     requests:
       cpu: 20m
