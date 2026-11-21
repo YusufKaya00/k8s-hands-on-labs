@@ -221,7 +221,7 @@ nodeAgent:
     pullPolicy: IfNotPresent
   tolerationKey: "zephyr-pool"
   tolerationValue: "analytics"
-  tolerationEffect: "NoExecute"
+  tolerationEffect: "NoSchedule"
   resources:
     requests:
       cpu: 10m
