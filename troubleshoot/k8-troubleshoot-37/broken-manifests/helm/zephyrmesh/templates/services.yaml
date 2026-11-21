@@ -1,0 +1,180 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: status-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: status-api
+  ports:
+    - port: {{ .Values.statusApi.port }}
+      targetPort: {{ .Values.statusApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: catalog-api
+  ports:
+    - port: {{ .Values.catalogApi.port }}
+      targetPort: {{ .Values.catalogApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upload-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: upload-api
+  ports:
+    - port: {{ .Values.uploadApi.port }}
+      targetPort: {{ .Values.uploadApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fx-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: fx-api
+  ports:
+    - port: {{ .Values.fxApi.port }}
+      targetPort: {{ .Values.fxApi.serviceTargetPort }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: checkout-api
+  ports:
+    - port: {{ .Values.checkoutApi.port }}
+      targetPort: {{ .Values.checkoutApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.fraudBridge.name }}
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  type: ExternalName
+  externalName: {{ .Values.fraudBridge.externalName | quote }}
+  ports:
+    - port: {{ .Values.fraudBridge.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: token-gateway
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: token-gateway
+  ports:
+    - port: {{ .Values.tokenGateway.port }}
+      targetPort: {{ .Values.tokenGateway.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: auth-api
+  ports:
+    - port: {{ .Values.authApi.port }}
+      targetPort: {{ .Values.authApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: billing-api
+  ports:
+    - port: {{ .Values.billingApi.port }}
+      targetPort: {{ .Values.billingApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: report-api
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: report-api
+  ports:
+    - port: {{ .Values.reportApi.port }}
+      targetPort: {{ .Values.reportApi.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fraud-engine
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: fraud-engine
+  ports:
+    - port: {{ .Values.fraudEngine.port }}
+      targetPort: {{ .Values.fraudEngine.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vault-store
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: vault-store
+  ports:
+    - port: {{ .Values.vaultStore.port }}
+      targetPort: {{ .Values.vaultStore.port }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-inspector
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    app: audit-inspector
+  ports:
+    - port: {{ .Values.auditInspector.port }}
+      targetPort: {{ .Values.auditInspector.port }}

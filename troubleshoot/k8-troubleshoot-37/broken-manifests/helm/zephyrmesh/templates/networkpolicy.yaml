@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-store-netpol
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  podSelector:
+    matchLabels:
+      app: vault-store
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              tier: {{ .Values.vaultStore.networkPolicy.allowedNamespaceTier }}
+          podSelector:
+            matchLabels:
+              app: {{ .Values.vaultStore.networkPolicy.allowedPodApp }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.vaultStore.port }}

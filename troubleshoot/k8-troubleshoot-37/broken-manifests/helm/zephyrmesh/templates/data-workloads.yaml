@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fraud-engine
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: fraud-engine
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.fraudEngine.replicaCount }}
+  selector:
+    matchLabels:
+      app: fraud-engine
+  template:
+    metadata:
+      labels:
+        app: fraud-engine
+    spec:
+      containers:
+        - name: fraud-engine
+          image: "{{ .Values.fraudEngine.image.repository }}:{{ .Values.fraudEngine.image.tag }}"
+          imagePullPolicy: {{ .Values.fraudEngine.image.pullPolicy }}
+          command: ["python3", "/scripts/fraud_engine.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.fraudEngine.port | quote }}
+          ports:
+            - containerPort: {{ .Values.fraudEngine.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.fraudEngine.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.fraudEngine.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-data-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-store
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: vault-store
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.vaultStore.replicaCount }}
+  selector:
+    matchLabels:
+      app: vault-store
+  template:
+    metadata:
+      labels:
+        app: vault-store
+    spec:
+      containers:
+        - name: vault-store
+          image: "{{ .Values.vaultStore.image.repository }}:{{ .Values.vaultStore.image.tag }}"
+          imagePullPolicy: {{ .Values.vaultStore.image.pullPolicy }}
+          command: ["python3", "/scripts/vault_store.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.vaultStore.port | quote }}
+          ports:
+            - containerPort: {{ .Values.vaultStore.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.vaultStore.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.vaultStore.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-data-scripts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-inspector
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: audit-inspector
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  replicas: {{ .Values.auditInspector.replicaCount }}
+  selector:
+    matchLabels:
+      app: audit-inspector
+  template:
+    metadata:
+      labels:
+        app: audit-inspector
+    spec:
+      serviceAccountName: {{ .Values.auditInspector.podServiceAccountName | quote }}
+      containers:
+        - name: audit-inspector
+          image: "{{ .Values.auditInspector.image.repository }}:{{ .Values.auditInspector.image.tag }}"
+          imagePullPolicy: {{ .Values.auditInspector.image.pullPolicy }}
+          command: ["python3", "/scripts/audit_inspector.py"]
+          env:
+            - name: PORT
+              value: {{ .Values.auditInspector.port | quote }}
+            - name: WATCH_NAMESPACE
+              value: {{ .Values.namespaces.data | quote }}
+          ports:
+            - containerPort: {{ .Values.auditInspector.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.auditInspector.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.auditInspector.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: zephyr-data-scripts
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-log-agent
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: node-log-agent
+    app.kubernetes.io/part-of: zephyrmesh
+spec:
+  selector:
+    matchLabels:
+      app: node-log-agent
+  template:
+    metadata:
+      labels:
+        app: node-log-agent
+    spec:
+      tolerations:
+        - key: {{ .Values.nodeAgent.tolerationKey | quote }}
+          operator: Equal
+          value: {{ .Values.nodeAgent.tolerationValue | quote }}
+          effect: {{ .Values.nodeAgent.tolerationEffect | quote }}
+      containers:
+        - name: node-log-agent
+          image: "{{ .Values.nodeAgent.image.repository }}:{{ .Values.nodeAgent.image.tag }}"
+          imagePullPolicy: {{ .Values.nodeAgent.image.pullPolicy }}
+          command: ["sh", "-c", "while true; do sleep 3600; done"]
+          resources:
+            {{- toYaml .Values.nodeAgent.resources | nindent 12 }}

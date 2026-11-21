@@ -1,0 +1,332 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-jwt-secret
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+type: Opaque
+stringData:
+  {{ .Values.authApi.actualSecretKey }}: "zephyr-prod-hmac-2026"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zephyr-app-scripts
+  namespace: {{ .Values.namespaces.app }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+data:
+  status_api.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = json.dumps({"service": "status-api", "status": "healthy"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8080"))), Handler).serve_forever()
+
+  catalog_api.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            body = json.dumps({"service": "catalog-api", "items": ["mesh-pro", "edge-gw", "vault-kms"]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8081"))), Handler).serve_forever()
+
+  upload_api.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            _ = self.rfile.read(length)
+            body = json.dumps({"service": "upload-api", "bytes_received": length, "status": "accepted"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8082"))), Handler).serve_forever()
+
+  fx_api.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            body = json.dumps({"service": "fx-api", "base": "EUR", "rates": {"USD": 1.08, "TRY": 36.4}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8083"))), Handler).serve_forever()
+
+  checkout_api.py: |
+    import json
+    import os
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    FRAUD_URL = os.environ["FRAUD_URL"]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            try:
+                with urllib.request.urlopen(f"{FRAUD_URL}/score", timeout=3) as resp:
+                    fraud_data = json.loads(resp.read().decode())
+                body = json.dumps({"service": "checkout-api", "verified": True, "fraud": fraud_data}).encode()
+                self.send_response(200)
+            except Exception as exc:
+                body = json.dumps({"service": "checkout-api", "verified": False, "error": str(exc)}).encode()
+                self.send_response(502)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8084"))), Handler).serve_forever()
+
+  token_gateway.py: |
+    import json
+    import os
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    VAULT_URL = os.environ["VAULT_URL"]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            try:
+                with urllib.request.urlopen(f"{VAULT_URL}/issue", timeout=2.5) as resp:
+                    vault_data = json.loads(resp.read().decode())
+                body = json.dumps({"service": "token-gateway", "issued": True, "vault": vault_data}).encode()
+                self.send_response(200)
+            except Exception as exc:
+                body = json.dumps({"service": "token-gateway", "issued": False, "error": str(exc)}).encode()
+                self.send_response(504)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8086"))), Handler).serve_forever()
+
+  auth_api.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    SECRET_LOADED = bool(os.environ.get("AUTH_SECRET"))
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            body = json.dumps({"service": "auth-api", "authenticated": SECRET_LOADED}).encode()
+            self.send_response(200 if SECRET_LOADED else 500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8088"))), Handler).serve_forever()
+
+  billing_api.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    BIND_HOST = os.environ.get("BIND_HOST", "0.0.0.0")
+    PORT = int(os.environ.get("PORT", "8089"))
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            body = json.dumps({"service": "billing-api", "bind": BIND_HOST, "charged": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer((BIND_HOST, PORT), Handler).serve_forever()
+
+  report_api.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            body = json.dumps({"service": "report-api", "status": "generated"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8090"))), Handler).serve_forever()
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zephyr-data-scripts
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app.kubernetes.io/part-of: zephyrmesh
+data:
+  fraud_engine.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            body = json.dumps({"service": "fraud-engine", "risk": "low", "score": 12}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8085"))), Handler).serve_forever()
+
+  vault_store.py: |
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            body = json.dumps({"service": "vault-store", "token_id": "vlt-9041"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8087"))), Handler).serve_forever()
+
+  audit_inspector.py: |
+    import json
+    import os
+    import ssl
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    NS = os.environ["WATCH_NAMESPACE"]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"ok")
+                return
+            try:
+                with open("/var/run/secrets/kubernetes.io/serviceaccount/token", "r", encoding="utf-8") as f:
+                    token = f.read().strip()
+                ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+                req = urllib.request.Request(
+                    f"https://kubernetes.default.svc/api/v1/namespaces/{NS}/services",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, context=ctx, timeout=4) as resp:
+                    data = json.loads(resp.read().decode())
+                names = [item["metadata"]["name"] for item in data.get("items", [])]
+                body = json.dumps({"service": "audit-inspector", "discovered_services": len(names), "services": names}).encode()
+                self.send_response(200)
+            except Exception as exc:
+                body = json.dumps({"service": "audit-inspector", "error": str(exc)}).encode()
+                self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            pass
+
+    HTTPServer(("0.0.0.0", int(os.environ.get("PORT", "8091"))), Handler).serve_forever()
