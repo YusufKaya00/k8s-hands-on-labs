@@ -98,7 +98,7 @@ checkoutApi:
 
 fraudBridge:
   name: fraud-bridge
-  externalName: "fraud-engine.zephyr-security.svc.cluster.local"
+  externalName: "fraud-engine.zephyr-data.svc.cluster.local"
   port: 8085
 
 tokenGateway:
