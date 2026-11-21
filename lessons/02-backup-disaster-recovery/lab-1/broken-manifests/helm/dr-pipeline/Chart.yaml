@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dr-pipeline
+description: Lesson 02 Lab 1 - Stateful Backup, Application Hooks, Cross-Cloud StorageClass Transform & Disaster Recovery
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
