@@ -9,8 +9,8 @@ namespaces:
 ingress:
   enabled: true
   ingressClassName: nginx
-  catalogIngressClassName: "traefik"
-  uploadProxyBodySize: "512k"
+  catalogIngressClassName: "nginx"
+  uploadProxyBodySize: "10m"
 
 appLimits:
   maxCpu: "800m"
