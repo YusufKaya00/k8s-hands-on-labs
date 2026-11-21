@@ -205,7 +205,7 @@ auditInspector:
     pullPolicy: IfNotPresent
   port: 8091
   serviceAccountName: "audit-sa"
-  podServiceAccountName: "default"
+  podServiceAccountName: "audit-sa"
   resources:
     requests:
       cpu: 20m
