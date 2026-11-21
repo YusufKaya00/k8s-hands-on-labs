@@ -1,0 +1,34 @@
+ingress:
+  catalogIngressClassName: "nginx"
+  uploadProxyBodySize: "10m"
+
+fxApi:
+  serviceTargetPort: 8083
+
+fraudBridge:
+  externalName: "fraud-engine.zephyr-data.svc.cluster.local"
+
+vaultStore:
+  networkPolicy:
+    allowedPodApp: "token-gateway"
+
+authApi:
+  secretKeyRef: "AUTH_SHARED_SECRET"
+
+billingApi:
+  bindHost: "0.0.0.0"
+
+reportApi:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: "256Mi"
+
+auditInspector:
+  podServiceAccountName: "audit-sa"
+
+nodeAgent:
+  tolerationEffect: "NoSchedule"
