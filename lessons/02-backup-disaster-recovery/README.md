@@ -41,7 +41,7 @@
 
 | Lab | Klasör | Konu / Senaryo | Durum |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(oluşturulacak)* | Velero / MinIO + PostgreSQL StatefulSet Namespace Silme & Tam Geri Yükleme (DR) Tatbikatı | ⬜ Planlandı |
+| **Lab 1** | [`./lab-1/`](./lab-1/README.md) | Velero CRD + MinIO S3 + PostgreSQL 16 (`pg_dump` hook) + `StorageClass` Transform & `DROP TABLE` Felaket Tatbikatı — %100 Yerel Minikube | 🟡 Hazır |
 
 ---
 
@@ -60,4 +60,4 @@ My projects deploy PostgreSQL, Redis, MongoDB, Cassandra, and Kafka, yet lacked 
 
 | Lab | Directory | Topic / Scenario | Status |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(upcoming)* | Velero / MinIO + PostgreSQL StatefulSet Deletion & Full DR Restore Drill | ⬜ Planned |
+| **Lab 1** | [`./lab-1/`](./lab-1/README.md) | Velero CRDs + MinIO S3 + PostgreSQL 16 (`pg_dump` hook) + `StorageClass` Transform & `DROP TABLE` Restore Drill — 100% Local Minikube | 🟡 Ready |

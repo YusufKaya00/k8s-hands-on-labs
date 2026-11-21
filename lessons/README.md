@@ -28,7 +28,7 @@ Her ders klasörünün içinde:
 | # | Ders Klasörü | Odak Konu | `90DaysOfDevOps` Kaynağı | Durum | Yapılan Lab Sayısı |
 | :-: | :--- | :--- | :--- | :---: | :---: |
 | **01** | [**01-logging-pipeline**](./01-logging-pipeline/README.md) | Merkezi Loglama & Log Pipeline (ELK / Fluentd / FluentBit / EFK + OpenTelemetry) | `2022` Days 79–82 + `2024` Day 12, 29 | 🟡 Aktif | 1 ([Lab 1](./01-logging-pipeline/lab-1/README.md)) |
-| **02** | [**02-backup-disaster-recovery**](./02-backup-disaster-recovery/README.md) | Veri Koruma, Stateful Backup & Disaster Recovery (Velero, Kanister, K10) | `2022` Days 84–90 + `2023` Days 65–66, 68–69 + `2024` Day 11 | ⬜ Bekliyor | 0 |
+| **02** | [**02-backup-disaster-recovery**](./02-backup-disaster-recovery/README.md) | Veri Koruma, Stateful Backup & Disaster Recovery (Velero, Kanister, K10) | `2022` Days 84–90 + `2023` Days 65–66, 68–69 + `2024` Day 11 | 🟡 Aktif | 1 ([Lab 1](./02-backup-disaster-recovery/lab-1/README.md)) |
 | **03** | [**03-secrets-management-vault**](./03-secrets-management-vault/README.md) | Secrets Management, HashiCorp Vault, Dynamic Creds & TLS | `2023` Days 35–41 + `2024` Day 39 | ⬜ Bekliyor | 0 |
 | **04** | [**04-devsecops-runtime-security**](./04-devsecops-runtime-security/README.md) | İleri DevSecOps: SAST/DAST, Auditing, Falco, Tetragon & Runtime Defense | `2023` Days 02–20, 24, 28–34 + `2024` Day 09, 14, 69, 84 | ⬜ Bekliyor | 0 |
 | **05** | [**05-day2-ops-rbac-platform**](./05-day2-ops-rbac-platform/README.md) | Day-2 Ops, Service Mesh, Multi-Cluster Add-Ons & Ansible K8s RBAC | `2023` Days 77–83, 86–89 + `2024` Day 04, 06, 17, 18, 27, 36, 43, 63, 68, 90 | ⬜ Bekliyor | 0 |
@@ -57,7 +57,7 @@ Each lesson folder contains:
 | # | Lesson Folder | Focus Area | `90DaysOfDevOps` Source | Status | Labs Built |
 | :-: | :--- | :--- | :--- | :---: | :---: |
 | **01** | [**01-logging-pipeline**](./01-logging-pipeline/README.md) | Centralized Logging & Tracing (ELK / Fluentd / FluentBit / EFK + OpenTelemetry) | `2022` Days 79–82 + `2024` Day 12, 29 | 🟡 Active | 1 ([Lab 1](./01-logging-pipeline/lab-1/README.md)) |
-| **02** | [**02-backup-disaster-recovery**](./02-backup-disaster-recovery/README.md) | Data Protection, Stateful Backup & Disaster Recovery (Velero, Kanister, K10) | `2022` Days 84–90 + `2023` Days 65–66, 68–69 + `2024` Day 11 | ⬜ Pending | 0 |
+| **02** | [**02-backup-disaster-recovery**](./02-backup-disaster-recovery/README.md) | Data Protection, Stateful Backup & Disaster Recovery (Velero, Kanister, K10) | `2022` Days 84–90 + `2023` Days 65–66, 68–69 + `2024` Day 11 | 🟡 Active | 1 ([Lab 1](./02-backup-disaster-recovery/lab-1/README.md)) |
 | **03** | [**03-secrets-management-vault**](./03-secrets-management-vault/README.md) | Secrets Management, HashiCorp Vault, Dynamic Credentials & TLS | `2023` Days 35–41 + `2024` Day 39 | ⬜ Pending | 0 |
 | **04** | [**04-devsecops-runtime-security**](./04-devsecops-runtime-security/README.md) | Advanced DevSecOps: SAST/DAST, Auditing, Falco, Tetragon & Runtime Defense | `2023` Days 02–20, 24, 28–34 + `2024` Day 09, 14, 69, 84 | ⬜ Pending | 0 |
 | **05** | [**05-day2-ops-rbac-platform**](./05-day2-ops-rbac-platform/README.md) | Day-2 Ops, Service Mesh, Multi-Cluster Add-Ons & Ansible K8s RBAC | `2023` Days 77–83, 86–89 + `2024` Day 04, 06, 17, 18, 27, 36, 43, 63, 68, 90 | ⬜ Pending | 0 |

@@ -7,7 +7,7 @@
 [![IaC](https://img.shields.io/badge/IaC-Terraform_%26_Ansible-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)](https://www.terraform.io/)
 [![SRE Troubleshooting](https://img.shields.io/badge/SRE_Practice-48_Troubleshooting_Simulations-10B981?style=for-the-badge&logo=prometheus&logoColor=white)](./troubleshoot/)
 
-Welcome to the ultimate **Kubernetes Training, Real-World Troubleshooting Simulation, Site Reliability Engineering (SRE), DevSecOps, and Chaos Engineering Practice** repository. This workspace provides **63+ hands-on labs and production capstone projects** covering foundational container orchestration, multi-node RKE2/AKS/OKE clusters, polyglot data architectures (Kafka, RabbitMQ, Cassandra, PostgreSQL, Redis), self-hosted **Harbor OCI Registry + Trivy + Jenkins CI/CD**, **48 break-and-fix incident triage simulations**, **Chaos Mesh Game Days**, and **curated Deep-Dive Lessons (`lessons/`)**.
+Welcome to the ultimate **Kubernetes Training, Real-World Troubleshooting Simulation, Site Reliability Engineering (SRE), DevSecOps, and Chaos Engineering Practice** repository. This workspace provides **64+ hands-on labs and production capstone projects** covering foundational container orchestration, multi-node RKE2/AKS/OKE clusters, polyglot data architectures (Kafka, RabbitMQ, Cassandra, PostgreSQL, Redis), self-hosted **Harbor OCI Registry + Trivy + Jenkins CI/CD**, **48 break-and-fix incident triage simulations**, **Chaos Mesh Game Days**, and **curated Deep-Dive Lessons (`lessons/`)**.
 
 All projects and troubleshooting scenarios are fully reproducible on local clusters (**Minikube**), managed cloud clusters (**Oracle Cloud OKE**, **Azure AKS**), and self-managed IaaS clusters (**Azure RKE2 & K3s via Terraform and Ansible**).
 
@@ -21,6 +21,7 @@ k8s-hands-on-labs/
 │   ├── 01-logging-pipeline/         # Centralized Logging & Tracing (ELK, Fluentd, FluentBit, EFK, OpenTelemetry)
 │   │   └── lab-1/                   # Local Minikube FluentBit DaemonSet + Loki + Grafana Break-and-Fix Lab
 │   ├── 02-backup-disaster-recovery/ # Stateful Backup, Velero/Kasten/Kanister & Disaster Recovery
+│   │   └── lab-1/                   # Local Minikube Velero CRDs + MinIO S3 + PostgreSQL pg_dump & DR Drill
 │   ├── 03-secrets-management-vault/ # HashiCorp Vault, Dynamic Credentials & TLS
 │   ├── 04-devsecops-runtime-security/ # SAST/DAST, Auditing, Falco, Tetragon & Runtime Defense
 │   └── 05-day2-ops-rbac-platform/   # Day-2 Ops, Service Mesh, Multi-Cluster Add-Ons & Ansible K8s RBAC
@@ -212,6 +213,7 @@ k8s-hands-on-labs/
 ### 3. Curated Deep-Dive Tracks & Topic Labs (`lessons/`)
 * [**lessons/README.md:** Selected DevOps Mastery Tracks (`90DaysOfDevOps` Reference)](./lessons/README.md) — Structured theory links, YouTube sessions, and topic-specific labs across [**Logging & Tracing**](./lessons/01-logging-pipeline/README.md), [**Backup & Disaster Recovery**](./lessons/02-backup-disaster-recovery/README.md), [**Vault Secrets & Dynamic Credentials**](./lessons/03-secrets-management-vault/README.md), [**DevSecOps SAST/DAST & Runtime Defense**](./lessons/04-devsecops-runtime-security/README.md), and [**Day-2 Ops, Service Mesh & Ansible RBAC**](./lessons/05-day2-ops-rbac-platform/README.md).
   * [**Lesson 01 / Lab 1:** Centralized Logging Pipeline (FluentBit DaemonSet + Loki + Grafana)](./lessons/01-logging-pipeline/lab-1/README.md) — 100% local Minikube blind-mode break-and-fix lab covering DaemonSet taint/toleration, least-privilege Kubernetes filter RBAC, CRI JSON merging + PII redaction, Loki delivery, and cross-service `X-Request-ID` correlation in Grafana.
+  * [**Lesson 02 / Lab 1:** Stateful Backup, App Hooks & Disaster Recovery (Velero CRDs + MinIO S3 + PostgreSQL)](./lessons/02-backup-disaster-recovery/lab-1/README.md) — 100% local Minikube blind-mode DR drill covering `BackupStorageLocation` S3 endpoint/bucket config, least-privilege stateful RBAC, application-consistent `pg_dump` hook, cross-cluster `StorageClass` transformation (`gp3-encrypted -> standard`), and `RPO = 0` recovery after `DROP TABLE`.
 
 ---
 
@@ -309,6 +311,7 @@ Tüm projeler ve sorun giderme laboratuvarları hem yerel kümelerde (**Minikube
 #### 3. Konu Bazlı Teori & Spesifik Lab Serisi (`lessons/`)
 * [**lessons/README.md:** DevOps Maceram — Seçili Dersler & Konu Bazlı Lablar (`90DaysOfDevOps` Referanslı)](./lessons/README.md) — [**Merkezi Loglama & Tracing**](./lessons/01-logging-pipeline/README.md), [**Backup & Disaster Recovery**](./lessons/02-backup-disaster-recovery/README.md), [**HashiCorp Vault Secrets**](./lessons/03-secrets-management-vault/README.md), [**İleri DevSecOps (SAST & Runtime Defense)**](./lessons/04-devsecops-runtime-security/README.md) ve [**Day-2 Ops, Service Mesh & Ansible RBAC**](./lessons/05-day2-ops-rbac-platform/README.md) dersleri ve bağlı labları.
   * [**Ders 01 / Lab 1:** Merkezi Loglama Hattı (FluentBit DaemonSet + Loki + Grafana)](./lessons/01-logging-pipeline/lab-1/README.md) — %100 yerel Minikube üzerinde DaemonSet taint/toleration, en az yetki RBAC, JSON parse + PII maskeleme, Loki teslimi ve Grafana'da mikroservisler arası `X-Request-ID` korelasyonu kör mod labı.
+  * [**Ders 02 / Lab 1:** Stateful Yedekleme, Uygulama Hook & Felaket Kurtarma (Velero CRD + MinIO S3 + PostgreSQL)](./lessons/02-backup-disaster-recovery/lab-1/README.md) — %100 yerel Minikube üzerinde `BackupStorageLocation` S3 hedefi, en az yetki stateful RBAC, `pg_dump` tutarlılık kancası, bulutlar arası `StorageClass` dönüşümü (`gp3-encrypted -> standard`) ve `DROP TABLE` felaketi sonrası `RPO = 0` geri yükleme tatbikatı.
 
 ---
 
