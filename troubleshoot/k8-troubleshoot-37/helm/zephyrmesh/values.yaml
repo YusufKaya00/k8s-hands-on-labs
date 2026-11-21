@@ -13,12 +13,12 @@ ingress:
   uploadProxyBodySize: "10m"
 
 appLimits:
-  maxCpu: "800m"
-  maxMemory: "512Mi"
+  maxCpu: "2000m"
+  maxMemory: "2000Mi"
   defaultCpu: "100m"
   defaultMemory: "128Mi"
-  defaultRequestCpu: "20m"
-  defaultRequestMemory: "32Mi"
+  defaultRequestCpu: "100m"
+  defaultRequestMemory: "128Mi"
 
 statusApi:
   replicaCount: 1
