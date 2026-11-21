@@ -1,0 +1,35 @@
+apiVersion: velero.io/v1
+kind: BackupStorageLocation
+metadata:
+  name: default
+  namespace: {{ .Values.namespaces.velero }}
+spec:
+  provider: aws
+  objectStorage:
+    bucket: {{ .Values.velero.bsl.bucket | quote }}
+  config:
+    region: minio
+    s3ForcePathStyle: "true"
+    s3Url: {{ .Values.velero.bsl.s3Url | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: change-storage-class-config
+  namespace: {{ .Values.namespaces.velero }}
+  labels:
+    velero.io/plugin-config: ""
+    velero.io/change-storage-class: RestoreItemAction
+data:
+  {{ .Values.velero.restore.storageClassMapping.from }}: {{ .Values.velero.restore.storageClassMapping.to | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: velero-default-policy
+  namespace: {{ .Values.namespaces.velero }}
+data:
+  container: {{ .Values.velero.backup.hook.container | quote }}
+  dbName: {{ .Values.velero.backup.hook.dbName | quote }}
+  onError: {{ .Values.velero.backup.hook.onError | quote }}
+  archivedCloudStorageClass: {{ .Values.postgres.archivedCloudStorageClass | quote }}
