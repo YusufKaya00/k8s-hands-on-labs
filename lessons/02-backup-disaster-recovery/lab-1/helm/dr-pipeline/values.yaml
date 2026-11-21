@@ -18,7 +18,7 @@ velero:
   image: python:3.11-alpine
   bsl:
     bucket: "velero-archive-wrong"
-    s3Url: "http://minio.velero.svc.cluster.local:9099"
+    s3Url: "http://minio.velero.svc.cluster.local:9000"
   rbac:
     resources:
       - pods
