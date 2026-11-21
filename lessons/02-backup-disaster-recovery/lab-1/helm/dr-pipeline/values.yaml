@@ -36,8 +36,8 @@ velero:
       - delete
   backup:
     hook:
-      container: "sidecar-proxy"
-      dbName: "ledger_wrong"
+      container: "postgres"
+      dbName: "payments"
       onError: "Fail"
   restore:
     storageClassMapping:
