@@ -34,7 +34,8 @@ else
   echo "[1-2/3] Skipping Minikube start (--skip-minikube)."
 fi
 
-echo "[3/3] Deploying Helm chart '${RELEASE}' (initial lab state)..."
+echo "[3/3] Installing Velero CRDs and deploying Helm chart '${RELEASE}' (initial lab state)..."
+kubectl --context "${PROFILE}" apply -f "${CHART_DIR}/crds/crds.yaml"
 helm --kube-context "${PROFILE}" upgrade --install "${RELEASE}" "${CHART_DIR}" \
   -f "${CHART_DIR}/values.yaml"
 
