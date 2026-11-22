@@ -41,7 +41,7 @@ shards:
 
 auth:
   secretKeyRef: "signing_key"
-  configMapKeyRef: "TOKEN_ISSUER"
+  configMapKeyRef: "signing_key"
   servicePort: 80
   containerPort: 8080
 
