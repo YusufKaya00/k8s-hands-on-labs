@@ -7,7 +7,7 @@ namespaces:
   core: "horizon-core"
 
 inventory:
-  ingressClassName: "nginx-external"
+  ingressClassName: "nginx"
   ingressServicePort: 8090
   servicePort: 80
   containerPort: 8080
