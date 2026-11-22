@@ -24,8 +24,8 @@ orders:
   containerPort: 8080
 
 networkPolicy:
-  allowedNamespaceLabelKey: "edge"
-  allowedNamespaceLabelValue: "horizon-edge"
+  allowedNamespaceLabelKey: "tier"
+  allowedNamespaceLabelValue: "edge"
   allowedPort: 8080
 
 media:
