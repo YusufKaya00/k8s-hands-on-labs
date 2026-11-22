@@ -59,4 +59,4 @@ catalog:
 batchWorker:
   tolerationEffect: "NoSchedule"
   memoryRequest: "128Mi"
-  memoryLimit: "1000Mi"
+  memoryLimit: "256Mi"
