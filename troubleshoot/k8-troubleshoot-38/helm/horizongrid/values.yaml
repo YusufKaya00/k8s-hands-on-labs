@@ -15,7 +15,7 @@ inventory:
 pricing:
   serviceSelectorApp: "pricing-svc"
   servicePort: 80
-  serviceTargetPort: 8085
+  serviceTargetPort: 8080
   containerPort: 8080
 
 orders:
