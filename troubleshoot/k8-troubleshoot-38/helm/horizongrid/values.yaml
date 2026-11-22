@@ -40,8 +40,8 @@ shards:
   port: 8080
 
 auth:
-  secretKeyRef: "signing_key"
-  configMapKeyRef: "signing_key"
+  secretKeyRef: "JWT_SECRET"
+  configMapKeyRef: "ISSUER_URL"
   servicePort: 80
   containerPort: 8080
 
