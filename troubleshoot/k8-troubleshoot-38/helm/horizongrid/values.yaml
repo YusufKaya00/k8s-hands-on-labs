@@ -52,7 +52,7 @@ reports:
 
 catalog:
   readinessPath: "/readyz"
-  readinessPort: 8081
+  readinessPort: 8080
   servicePort: 80
   containerPort: 8080
 
