@@ -8,7 +8,7 @@ namespaces:
 
 inventory:
   ingressClassName: "nginx"
-  ingressServicePort: 8090
+  ingressServicePort: 80
   servicePort: 80
   containerPort: 8080
 
