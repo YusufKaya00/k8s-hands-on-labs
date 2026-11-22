@@ -19,7 +19,7 @@ pricing:
   containerPort: 8080
 
 orders:
-  ledgerExternalName: "ledger-svc.horizon-edge.svc.cluster.local"
+  ledgerExternalName: "ledger-svc.horizon-core.svc.cluster.local"
   servicePort: 80
   containerPort: 8080
 
