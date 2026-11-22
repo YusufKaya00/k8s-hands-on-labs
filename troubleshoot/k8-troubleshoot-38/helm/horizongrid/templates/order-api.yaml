@@ -41,7 +41,7 @@ spec:
                           self.wfile.write(b"ok")
                           return
                       try:
-                          with urllib.request.urlopen("http://ledger-bridge:8080/quote", timeout=3) as r:
+                          with urllib.request.urlopen("http://ledger-svc:8080/quote", timeout=3) as r:
                               upstream = json.loads(r.read().decode())
                           body = json.dumps({"service": "order-api", "status": "ok", "ledger": upstream}).encode()
                           self.send_response(200)
