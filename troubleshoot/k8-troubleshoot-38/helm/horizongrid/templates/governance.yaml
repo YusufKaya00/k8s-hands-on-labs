@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: core-limits
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 150m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      max:
+        cpu: 500m
+        memory: 256Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-order-to-ledger
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ledger-svc
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{ .Values.networkPolicy.allowedNamespaceLabelKey }}: {{ .Values.networkPolicy.allowedNamespaceLabelValue | quote }}
+          podSelector:
+            matchLabels:
+              app: order-api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.allowedPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-shards
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app: shard-store
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              tier: edge
+          podSelector:
+            matchLabels:
+              app: shard-gateway
+      ports:
+        - protocol: TCP
+          port: {{ .Values.shards.port }}
