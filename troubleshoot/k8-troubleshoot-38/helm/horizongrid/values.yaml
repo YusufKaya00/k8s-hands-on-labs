@@ -46,7 +46,7 @@ auth:
   containerPort: 8080
 
 reports:
-  mountCacheVolume: false
+  mountCacheVolume: true
   servicePort: 80
   containerPort: 8080
 
