@@ -13,7 +13,7 @@ inventory:
   containerPort: 8080
 
 pricing:
-  serviceSelectorApp: "pricing-svc"
+  serviceSelectorApp: "pricing-api"
   servicePort: 80
   serviceTargetPort: 8080
   containerPort: 8080
