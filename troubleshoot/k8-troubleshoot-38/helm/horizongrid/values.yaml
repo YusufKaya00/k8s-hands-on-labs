@@ -1,0 +1,62 @@
+global:
+  ingressHost: "horizon.local.nip.io"
+  pythonImage: "python:3.11-alpine"
+
+namespaces:
+  edge: "horizon-edge"
+  core: "horizon-core"
+
+inventory:
+  ingressClassName: "nginx-external"
+  ingressServicePort: 8090
+  servicePort: 80
+  containerPort: 8080
+
+pricing:
+  serviceSelectorApp: "pricing-svc"
+  servicePort: 80
+  serviceTargetPort: 8085
+  containerPort: 8080
+
+orders:
+  ledgerExternalName: "ledger-svc.horizon-edge.svc.cluster.local"
+  servicePort: 80
+  containerPort: 8080
+
+networkPolicy:
+  allowedNamespaceLabelKey: "role"
+  allowedNamespaceLabelValue: "frontend"
+  allowedPort: 9090
+
+media:
+  proxyBodySize: "512k"
+  servicePort: 80
+  containerPort: 8080
+
+shards:
+  replicas: 2
+  headlessServiceName: "shard-headless"
+  statefulSetServiceName: "shard-headless-legacy"
+  port: 8080
+
+auth:
+  secretKeyRef: "signing_key"
+  configMapKeyRef: "TOKEN_ISSUER"
+  servicePort: 80
+  containerPort: 8080
+
+reports:
+  mountCacheVolume: false
+  servicePort: 80
+  containerPort: 8080
+
+catalog:
+  readinessPath: "/readyz"
+  readinessPort: 8081
+  servicePort: 80
+  containerPort: 8080
+
+batchWorker:
+  tolerationEffect: "PreferNoSchedule"
+  memoryRequest: "384Mi"
+  memoryLimit: "512Mi"
