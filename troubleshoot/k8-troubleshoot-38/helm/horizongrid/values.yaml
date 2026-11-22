@@ -36,7 +36,7 @@ media:
 shards:
   replicas: 2
   headlessServiceName: "shard-headless"
-  statefulSetServiceName: "shard-headless-legacy"
+  statefulSetServiceName: "shard-headless"
   port: 8080
 
 auth:
