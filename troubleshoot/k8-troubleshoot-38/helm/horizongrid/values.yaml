@@ -26,7 +26,7 @@ orders:
 networkPolicy:
   allowedNamespaceLabelKey: "edge"
   allowedNamespaceLabelValue: "horizon-edge"
-  allowedPort: 9090
+  allowedPort: 8080
 
 media:
   proxyBodySize: "512k"
