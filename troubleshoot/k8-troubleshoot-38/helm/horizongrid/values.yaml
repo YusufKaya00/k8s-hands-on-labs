@@ -58,5 +58,5 @@ catalog:
 
 batchWorker:
   tolerationEffect: "NoSchedule"
-  memoryRequest: "384Mi"
+  memoryRequest: "128Mi"
   memoryLimit: "1000Mi"
