@@ -57,6 +57,6 @@ catalog:
   containerPort: 8080
 
 batchWorker:
-  tolerationEffect: "PreferNoSchedule"
+  tolerationEffect: "NoSchedule"
   memoryRequest: "384Mi"
-  memoryLimit: "512Mi"
+  memoryLimit: "1000Mi"
