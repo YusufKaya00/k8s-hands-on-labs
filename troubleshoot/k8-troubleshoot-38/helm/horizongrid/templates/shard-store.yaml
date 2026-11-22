@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.shards.headlessServiceName }}
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  clusterIP: None
+  selector:
+    app: shard-store
+  ports:
+    - name: http
+      port: {{ .Values.shards.port }}
+      targetPort: {{ .Values.shards.port }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard-store
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  serviceName: {{ .Values.shards.statefulSetServiceName }}
+  replicas: {{ .Values.shards.replicas }}
+  selector:
+    matchLabels:
+      app: shard-store
+  template:
+    metadata:
+      labels:
+        app: shard-store
+    spec:
+      containers:
+        - name: shard-store
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import json, socket
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              host = socket.gethostname()
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = json.dumps({"shard": host, "status": "ok"}).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.shards.port }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.shards.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.shards.port }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shard-gateway
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: shard-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: shard-gateway
+  template:
+    metadata:
+      labels:
+        app: shard-gateway
+    spec:
+      containers:
+        - name: shard-gateway
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import json, urllib.request
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              TARGETS = [
+                  "http://shard-store-0.shard-headless.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.shards.port }}/id",
+                  "http://shard-store-1.shard-headless.{{ .Values.namespaces.core }}.svc.cluster.local:{{ .Values.shards.port }}/id",
+              ]
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b"ok")
+                          return
+                      results = []
+                      try:
+                          for url in TARGETS:
+                              with urllib.request.urlopen(url, timeout=3) as r:
+                                  results.append(json.loads(r.read().decode()))
+                          body = json.dumps({"service": "shard-gateway", "status": "ok", "shards": results}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except Exception as e:
+                          body = json.dumps({"service": "shard-gateway", "error": str(e)}).encode()
+                          self.send_response(502)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", 8080), H).serve_forever()
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard-gateway
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  selector:
+    app: shard-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shard-ingress
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: /shards
+            pathType: Prefix
+            backend:
+              service:
+                name: shard-gateway
+                port:
+                  number: 80

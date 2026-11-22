@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-config
+  namespace: {{ .Values.namespaces.edge }}
+data:
+  ISSUER_URL: "https://auth.horizongrid.internal"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: auth-signing-key
+  namespace: {{ .Values.namespaces.edge }}
+type: Opaque
+stringData:
+  JWT_SECRET: "hg-prod-signing-key-2026"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-api
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: auth-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-api
+  template:
+    metadata:
+      labels:
+        app: auth-api
+    spec:
+      containers:
+        - name: auth-api
+          image: {{ .Values.global.pythonImage }}
+          env:
+            - name: SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-signing-key
+                  key: {{ .Values.auth.secretKeyRef }}
+            - name: ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: auth-config
+                  key: {{ .Values.auth.configMapKeyRef }}
+          command:
+            - python3
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = json.dumps({
+                          "service": "auth-api",
+                          "status": "ok",
+                          "issuer": os.environ.get("ISSUER", ""),
+                          "keyLoaded": bool(os.environ.get("SIGNING_SECRET", "")),
+                      }).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.auth.containerPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.auth.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.auth.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-api
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  selector:
+    app: auth-api
+  ports:
+    - name: http
+      port: {{ .Values.auth.servicePort }}
+      targetPort: {{ .Values.auth.containerPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth-ingress
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-api
+                port:
+                  number: {{ .Values.auth.servicePort }}

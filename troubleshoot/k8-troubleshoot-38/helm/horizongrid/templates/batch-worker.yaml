@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batch-worker
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: batch-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: batch-worker
+  template:
+    metadata:
+      labels:
+        app: batch-worker
+    spec:
+      nodeSelector:
+        workload: compute
+      tolerations:
+        - key: "horizon-pool"
+          operator: "Equal"
+          value: "compute"
+          effect: {{ .Values.batchWorker.tolerationEffect | quote }}
+      containers:
+        - name: batch-worker
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import time
+              print("batch-worker started", flush=True)
+              while True:
+                  time.sleep(30)
+          resources:
+            requests:
+              cpu: 50m
+              memory: {{ .Values.batchWorker.memoryRequest | quote }}
+            limits:
+              cpu: 200m
+              memory: {{ .Values.batchWorker.memoryLimit | quote }}
