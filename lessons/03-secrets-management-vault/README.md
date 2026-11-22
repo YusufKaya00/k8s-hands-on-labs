@@ -39,7 +39,7 @@
 
 | Lab | Klasör | Konu / Senaryo | Durum |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(oluşturulacak)* | Kubernetes + Vault Agent Injector & Sealed State / Role Policy 403 Arıza Giderme Labı | ⬜ Planlandı |
+| **Lab 1** | [./lab-1/](./lab-1/README.md) | HashiCorp Vault, Dynamic PostgreSQL Credentials & K8s Agent Injector Uygulamalı Playground (Yerel Minikube `$0`) | ✅ Hazır |
 
 ---
 
@@ -59,4 +59,4 @@ Standard Kubernetes `Secret` objects are merely base64-encoded unless etcd encry
 
 | Lab | Directory | Topic / Scenario | Status |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(upcoming)* | Kubernetes + Vault Agent Injector, Sealed State & Policy 403 Triage Lab | ⬜ Planned |
+| **Lab 1** | [./lab-1/](./lab-1/README.md) | HashiCorp Vault, Dynamic PostgreSQL Credentials & K8s Agent Injector Guided Playground (Local Minikube `$0`) | ✅ Ready |
