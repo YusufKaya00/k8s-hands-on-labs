@@ -1,0 +1,6 @@
+apiVersion: v2
+name: horizongrid
+description: HorizonGrid v21.0 — Kubernetes Core Objects & Networking Troubleshooting Lab
+type: application
+version: 21.0.0
+appVersion: "21.0.0"

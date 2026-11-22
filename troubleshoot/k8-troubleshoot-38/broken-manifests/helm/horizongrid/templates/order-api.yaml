@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-bridge
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  type: ExternalName
+  externalName: {{ .Values.orders.ledgerExternalName }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-api
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: order-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-api
+  template:
+    metadata:
+      labels:
+        app: order-api
+    spec:
+      containers:
+        - name: order-api
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import json, urllib.request
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b"ok")
+                          return
+                      try:
+                          with urllib.request.urlopen("http://ledger-bridge:8080/quote", timeout=3) as r:
+                              upstream = json.loads(r.read().decode())
+                          body = json.dumps({"service": "order-api", "status": "ok", "ledger": upstream}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except Exception as e:
+                          body = json.dumps({"service": "order-api", "error": str(e)}).encode()
+                          self.send_response(502)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.orders.containerPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.orders.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.orders.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-api
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  selector:
+    app: order-api
+  ports:
+    - name: http
+      port: {{ .Values.orders.servicePort }}
+      targetPort: {{ .Values.orders.containerPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: order-ingress
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: /orders
+            pathType: Prefix
+            backend:
+              service:
+                name: order-api
+                port:
+                  number: {{ .Values.orders.servicePort }}
