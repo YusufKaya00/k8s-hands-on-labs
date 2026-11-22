@@ -1,0 +1,37 @@
+inventory:
+  ingressClassName: "nginx"
+  ingressServicePort: 80
+
+pricing:
+  serviceSelectorApp: "pricing-api"
+  serviceTargetPort: 8080
+
+orders:
+  ledgerExternalName: "ledger-svc.horizon-core.svc.cluster.local"
+
+networkPolicy:
+  allowedNamespaceLabelKey: "tier"
+  allowedNamespaceLabelValue: "edge"
+  allowedPort: 8080
+
+media:
+  proxyBodySize: "5m"
+
+shards:
+  statefulSetServiceName: "shard-headless"
+
+auth:
+  secretKeyRef: "JWT_SECRET"
+  configMapKeyRef: "ISSUER_URL"
+
+reports:
+  mountCacheVolume: true
+
+catalog:
+  readinessPath: "/healthz"
+  readinessPort: 8080
+
+batchWorker:
+  tolerationEffect: "NoSchedule"
+  memoryRequest: "128Mi"
+  memoryLimit: "256Mi"
