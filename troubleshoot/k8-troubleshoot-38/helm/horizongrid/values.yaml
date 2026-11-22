@@ -51,7 +51,7 @@ reports:
   containerPort: 8080
 
 catalog:
-  readinessPath: "/readyz"
+  readinessPath: "/healthz"
   readinessPort: 8080
   servicePort: 80
   containerPort: 8080
