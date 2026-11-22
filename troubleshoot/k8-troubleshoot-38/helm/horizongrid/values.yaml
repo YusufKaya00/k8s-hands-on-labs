@@ -29,7 +29,7 @@ networkPolicy:
   allowedPort: 8080
 
 media:
-  proxyBodySize: "512k"
+  proxyBodySize: "10m"
   servicePort: 80
   containerPort: 8080
 
