@@ -47,6 +47,8 @@ metrics:
   containerPort: 8080
 
 workerSync:
+  cpuRequest: "20m"
+  cpuLimit: "150m"
   memoryRequest: "24Mi"
   memoryLimit: "32Mi"
 
