@@ -1,0 +1,119 @@
+name: Lesson 04 — DevSecOps CI Pipeline (SAST + Trivy + Build + DAST)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "lessons/04-devsecops-runtime-security/lab-1/ci-app/**"
+      - ".github/workflows/devsecops-ci-app.yml"
+
+env:
+  APP_DIR: lessons/04-devsecops-runtime-security/lab-1/ci-app
+  IMAGE_NAME: devsecops-ci-app
+
+jobs:
+  # 1. Hızlı Birim Test
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run pytest
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pytest -v
+
+  # 2. SAST (Kaynak Kod Analizi) — unit-test sonrası paralel koşar
+  sast-semgrep:
+    needs: unit-test
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep SAST scan
+        working-directory: ${{ env.APP_DIR }}
+        run: semgrep scan --config=auto --error
+
+  # 3. SCA + Secret Scan + Dockerfile/IaC (Trivy) — paralel koşar
+  sca-secret-iac-trivy:
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy FS (SCA + Secrets)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "${{ env.APP_DIR }}"
+          scanners: "vuln,secret"
+          severity: "CRITICAL"
+          exit-code: "1"
+      - name: Trivy Config (Dockerfile / IaC)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "config"
+          scan-ref: "${{ env.APP_DIR }}"
+          severity: "CRITICAL"
+          exit-code: "1"
+
+  # 4. İmajı Üret (Local tar dosyasına kaydet, henüz push etme)
+  build-image:
+    needs: [sast-semgrep, sca-secret-iac-trivy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image and export tar
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          docker build -t "${{ env.IMAGE_NAME }}:${{ github.sha }}" .
+          docker save "${{ env.IMAGE_NAME }}:${{ github.sha }}" -o image.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-image-tar
+          path: ${{ env.APP_DIR }}/image.tar
+          retention-days: 1
+
+  # 5. Üretilen İmajı Registry'ye Basmadan Tara
+  trivy-image-scan:
+    needs: build-image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-image-tar
+      - name: Trivy Image Scan (from tar)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: "image.tar"
+          severity: "CRITICAL"
+          exit-code: "1"
+
+  # 6. DAST (OWASP ZAP) — İmajı geçici ayağa kaldırıp canlı HTTP taraması yap
+  dast-owasp-zap:
+    needs: trivy-image-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-image-tar
+      - name: Start container & run OWASP ZAP Baseline
+        run: |
+          docker load -i image.tar
+          docker run -d --name dast-target --network host "${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          sleep 2
+          curl -sf http://127.0.0.1:8080/healthz
+          mkdir -p zap-report && chmod 777 zap-report
+          docker run --rm --network host -v "$PWD/zap-report:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py -t http://127.0.0.1:8080 -r zap-report.html || true
+          docker rm -f dast-target
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zap-dast-report
+          path: zap-report/zap-report.html
+          retention-days: 7
