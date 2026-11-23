@@ -61,9 +61,9 @@ kubectl --context devsecops-lab-1 -n demo-sec describe configauditreports
 - `require-run-as-nonroot`: `runAsNonRoot: true` olmayan pod'ları engeller.
 
 ```bash
-# 1. Kyverno kurallarını cluster'a yükle:
+# 1. Kyverno kurallarını cluster'a yükle (Kyverno v1.20+ CEL NamespacedValidatingPolicy):
 kubectl --context devsecops-lab-1 apply -f manifests/kyverno-policies.yaml
-kubectl --context devsecops-lab-1 get clusterpolicy
+kubectl --context devsecops-lab-1 -n demo-sec get nvpol
 
 # 2. Güvensiz pod'u (nginx:latest + root) göndermeyi dene -> KAPIDA REDDEDİLECEK!
 kubectl --context devsecops-lab-1 apply -f manifests/bad-pod.yaml
