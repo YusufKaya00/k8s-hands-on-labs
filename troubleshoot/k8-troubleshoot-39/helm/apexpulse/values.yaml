@@ -37,7 +37,7 @@ search:
   containerPort: 8080
 
 notify:
-  initLedgerHost: "ledger-core.apex-web.svc.cluster.local"
+  initLedgerHost: "ledger-core.apex-backend.svc.cluster.local"
   servicePort: 80
   containerPort: 8080
 
