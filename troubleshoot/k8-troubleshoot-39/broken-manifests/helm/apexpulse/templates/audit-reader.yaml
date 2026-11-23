@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-reader-sa
+  namespace: {{ .Values.namespaces.backend }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-settings
+  namespace: {{ .Values.namespaces.backend }}
+data:
+  POLICY_VERSION: "v22.0-strict"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: audit-reader-role
+  namespace: {{ .Values.namespaces.backend }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs:
+{{- range .Values.auditReader.roleVerbs }}
+      - {{ . | quote }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: audit-reader-binding
+  namespace: {{ .Values.namespaces.backend }}
+subjects:
+  - kind: ServiceAccount
+    name: audit-reader-sa
+    namespace: {{ .Values.namespaces.backend }}
+roleRef:
+  kind: Role
+  name: audit-reader-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-reader
+  namespace: {{ .Values.namespaces.backend }}
+  labels:
+    app: audit-reader
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audit-reader
+  template:
+    metadata:
+      labels:
+        app: audit-reader
+    spec:
+      serviceAccountName: audit-reader-sa
+      nodeSelector:
+        workload: ops
+      tolerations:
+        - key: {{ .Values.auditReader.tolerationKey | quote }}
+          operator: "Equal"
+          value: "ops"
+          effect: "NoSchedule"
+      containers:
+        - name: audit-reader
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import json, ssl, urllib.request
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              def read_cm():
+                  with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                      tok = f.read().strip()
+                  ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+                  req = urllib.request.Request(
+                      "https://kubernetes.default.svc/api/v1/namespaces/{{ .Values.namespaces.backend }}/configmaps/audit-settings",
+                      headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+                  )
+                  with urllib.request.urlopen(req, context=ctx, timeout=4) as r:
+                      return json.loads(r.read().decode())
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b"ok")
+                          return
+                      try:
+                          cm = read_cm()
+                          body = json.dumps({"service": "audit-reader", "status": "ok", "policy": cm.get("data", {}).get("POLICY_VERSION")}).encode()
+                          self.send_response(200)
+                      except Exception as e:
+                          body = json.dumps({"service": "audit-reader", "error": str(e)}).encode()
+                          self.send_response(403)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.auditReader.containerPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.auditReader.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.auditReader.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-reader
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  selector:
+    app: audit-reader
+  ports:
+    - name: http
+      port: {{ .Values.auditReader.servicePort }}
+      targetPort: {{ .Values.auditReader.containerPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: audit-ingress
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: /audit
+            pathType: Prefix
+            backend:
+              service:
+                name: audit-reader
+                port:
+                  number: {{ .Values.auditReader.servicePort }}

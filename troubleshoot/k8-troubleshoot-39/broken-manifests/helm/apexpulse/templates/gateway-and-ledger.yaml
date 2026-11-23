@@ -1,0 +1,165 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-core
+  namespace: {{ .Values.namespaces.backend }}
+  labels:
+    app: ledger-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ledger-core
+  template:
+    metadata:
+      labels:
+        app: ledger-core
+    spec:
+      containers:
+        - name: ledger-core
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = json.dumps({"ledger": "healthy", "txCount": 904}).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", 8080), H).serve_forever()
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-core
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  selector:
+    app: ledger-core
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-api
+  namespace: {{ .Values.namespaces.web }}
+  labels:
+    app: gateway-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway-api
+  template:
+    metadata:
+      labels:
+        app: gateway-api
+    spec:
+      containers:
+        - name: gateway-api
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import json, urllib.request
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b"ok")
+                          return
+                      try:
+                          with urllib.request.urlopen("http://ledger-core.{{ .Values.namespaces.backend }}.svc.cluster.local:8080/status", timeout=3) as r:
+                              upstream = json.loads(r.read().decode())
+                          body = json.dumps({"service": "gateway-api", "status": "ok", "ledger": upstream}).encode()
+                          self.send_response(200)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                      except Exception as e:
+                          body = json.dumps({"service": "gateway-api", "error": str(e)}).encode()
+                          self.send_response(502)
+                          self.send_header("Content-Type", "application/json")
+                          self.send_header("Content-Length", str(len(body)))
+                          self.end_headers()
+                          self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.gateway.containerPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.gateway.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.gateway.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-api
+  namespace: {{ .Values.namespaces.web }}
+spec:
+  selector:
+    app: gateway-api
+  ports:
+    - name: http
+      port: {{ .Values.gateway.servicePort }}
+      targetPort: {{ .Values.gateway.containerPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway-ingress
+  namespace: {{ .Values.namespaces.web }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: /gateway
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-api
+                port:
+                  number: {{ .Values.gateway.servicePort }}
