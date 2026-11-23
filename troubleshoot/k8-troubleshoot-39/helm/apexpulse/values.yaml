@@ -50,7 +50,7 @@ workerSync:
   cpuRequest: "20m"
   cpuLimit: "150m"
   memoryRequest: "24Mi"
-  memoryLimit: "32Mi"
+  memoryLimit: "100Mi"
 
 auditReader:
   tolerationKey: "apex-pool"
