@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notify-api
+  namespace: {{ .Values.namespaces.web }}
+  labels:
+    app: notify-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notify-api
+  template:
+    metadata:
+      labels:
+        app: notify-api
+    spec:
+      initContainers:
+        - name: wait-for-ledger
+          image: {{ .Values.global.busyboxImage }}
+          command:
+            - sh
+            - -c
+            - |
+              echo "Checking ledger dependency at {{ .Values.notify.initLedgerHost }}:8080..."
+              nc -z -w 3 {{ .Values.notify.initLedgerHost }} 8080
+      containers:
+        - name: notify-api
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import json
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = json.dumps({"service": "notify-api", "status": "ok", "channel": "email"}).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.notify.containerPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.notify.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.notify.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notify-api
+  namespace: {{ .Values.namespaces.web }}
+spec:
+  selector:
+    app: notify-api
+  ports:
+    - name: http
+      port: {{ .Values.notify.servicePort }}
+      targetPort: {{ .Values.notify.containerPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: notify-ingress
+  namespace: {{ .Values.namespaces.web }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: /notify
+            pathType: Prefix
+            backend:
+              service:
+                name: notify-api
+                port:
+                  number: {{ .Values.notify.servicePort }}

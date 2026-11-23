@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-sync
+  namespace: {{ .Values.namespaces.backend }}
+  labels:
+    app: worker-sync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker-sync
+  template:
+    metadata:
+      labels:
+        app: worker-sync
+    spec:
+      containers:
+        - name: worker-sync
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import time
+              buf = bytearray(55 * 1024 * 1024)
+              for i in range(0, len(buf), 4096):
+                  buf[i] = 1
+              print("worker-sync buffer initialized (55MB)", flush=True)
+              while True:
+                  time.sleep(30)
+          resources:
+            requests:
+              cpu: 20m
+              memory: {{ .Values.workerSync.memoryRequest | quote }}
+            limits:
+              cpu: 150m
+              memory: {{ .Values.workerSync.memoryLimit | quote }}
