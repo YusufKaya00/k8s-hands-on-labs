@@ -24,7 +24,7 @@ billing:
   containerPort: 8080
 
 gateway:
-  allowDnsEgress: false
+  allowDnsEgress: true
   servicePort: 80
   containerPort: 8080
 
