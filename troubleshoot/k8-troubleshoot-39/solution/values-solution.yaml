@@ -1,0 +1,34 @@
+users:
+  ingressPathType: "Prefix"
+
+export:
+  proxyReadTimeout: "10"
+
+billing:
+  serviceTargetPort: "http-api"
+
+gateway:
+  allowDnsEgress: true
+
+ledgerPolicy:
+  allowedPodApp: "gateway-api"
+
+search:
+  bindHost: "0.0.0.0"
+
+notify:
+  initLedgerHost: "ledger-core.apex-backend.svc.cluster.local"
+
+metrics:
+  livenessPath: "/healthz"
+
+workerSync:
+  memoryRequest: "64Mi"
+  memoryLimit: "128Mi"
+
+auditReader:
+  tolerationKey: "apex-pool"
+  roleVerbs:
+    - "get"
+    - "list"
+    - "watch"
