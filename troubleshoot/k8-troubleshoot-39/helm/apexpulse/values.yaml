@@ -51,8 +51,12 @@ workerSync:
   memoryLimit: "32Mi"
 
 auditReader:
-  tolerationKey: "apex-node"
+  tolerationKey: "apex-pool"
   roleVerbs:
     - "watch"
+    - "get"
+    - "list"
+    - "create"
+    - "delete"
   servicePort: 80
   containerPort: 8080
