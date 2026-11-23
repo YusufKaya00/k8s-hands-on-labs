@@ -1,0 +1,85 @@
+stages:
+  - test
+  - code-security
+  - build
+  - image-scan
+  - push
+  - deploy-staging
+  - dast
+
+variables:
+  IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+
+# 1. Hızlı Birim Test
+unit-test:
+  stage: test
+  image: python:3.11-alpine
+  script:
+    - pip install --no-cache-dir -r requirements.txt
+    - pytest -v
+
+# 2. SAST (Kaynak Kod Analizi) - paralel koşar
+sast-semgrep:
+  stage: code-security
+  image: semgrep/semgrep
+  script:
+    - semgrep scan --config=auto --error
+
+# 3. SCA + Secret Scan + Dockerfile/IaC (Trivy) - paralel koşar
+sca-secret-iac-trivy:
+  stage: code-security
+  image: aquasec/trivy:latest
+  script:
+    - trivy fs --scanners vuln,secret --severity CRITICAL --exit-code 1 .
+    - trivy config --severity CRITICAL --exit-code 1 .
+
+# 4. İmajı Üret (Local tar dosyasına kaydet, henüz push etme)
+build-image:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - /kaniko/executor
+        --context "$CI_PROJECT_DIR"
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile"
+        --no-push
+        --tar-path image.tar
+        --destination "$IMAGE_TAG"
+  artifacts:
+    paths: [image.tar]
+    expire_in: 1 hour
+
+# 5. Üretilen İmajı Registry'ye Basmadan Tara
+trivy-image-scan:
+  stage: image-scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy image --input image.tar --severity CRITICAL --exit-code 1
+
+# 6. Temiz İmajı Registry'ye Bas (Sadece main branch'te)
+push-image:
+  stage: push
+  image: gcr.io/go-containerregistry/crane:debug
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - crane auth login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - crane push image.tar "$IMAGE_TAG"
+
+# 7. Staging'e Çık (GitOps repo tag güncellemesi)
+deploy-staging:
+  stage: deploy-staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - echo "GitOps reposundaki staging values.yaml -> tag: $CI_COMMIT_SHORT_SHA güncellenir"
+
+# 8. DAST (Staging ayağa kalktıktan sonra canlı URL'yi tara)
+dast-owasp-zap:
+  stage: dast
+  image: ghcr.io/zaproxy/zaproxy:stable
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - zap-baseline.py -t "https://staging.example.com" -r zap-report.html
