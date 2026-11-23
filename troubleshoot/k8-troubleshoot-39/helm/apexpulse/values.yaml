@@ -18,7 +18,7 @@ export:
   containerPort: 8080
 
 billing:
-  containerPortName: "http-api"
+  containerPortName: "http-web"
   serviceTargetPort: "http-web"
   servicePort: 80
   containerPort: 8080
