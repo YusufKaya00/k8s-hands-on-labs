@@ -29,7 +29,7 @@ gateway:
   containerPort: 8080
 
 ledgerPolicy:
-  allowedPodApp: "web-gateway"
+  allowedPodApp: "gateway-api"
 
 search:
   bindHost: "0.0.0.0"
