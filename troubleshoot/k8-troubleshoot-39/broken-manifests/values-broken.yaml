@@ -1,0 +1,58 @@
+global:
+  ingressHost: "apex.local.nip.io"
+  pythonImage: "python:3.11-alpine"
+  busyboxImage: "busybox:1.36"
+
+namespaces:
+  web: "apex-web"
+  backend: "apex-backend"
+
+users:
+  ingressPathType: "Exact"
+  servicePort: 80
+  containerPort: 8080
+
+export:
+  proxyReadTimeout: "2"
+  servicePort: 80
+  containerPort: 8080
+
+billing:
+  containerPortName: "http-api"
+  serviceTargetPort: "http-web"
+  servicePort: 80
+  containerPort: 8080
+
+gateway:
+  allowDnsEgress: false
+  servicePort: 80
+  containerPort: 8080
+
+ledgerPolicy:
+  allowedPodApp: "web-gateway"
+
+search:
+  bindHost: "127.0.0.1"
+  servicePort: 80
+  containerPort: 8080
+
+notify:
+  initLedgerHost: "ledger-core.apex-web.svc.cluster.local"
+  servicePort: 80
+  containerPort: 8080
+
+metrics:
+  livenessPath: "/alive"
+  servicePort: 80
+  containerPort: 8080
+
+workerSync:
+  memoryRequest: "24Mi"
+  memoryLimit: "32Mi"
+
+auditReader:
+  tolerationKey: "apex-node"
+  roleVerbs:
+    - "watch"
+  servicePort: 80
+  containerPort: 8080
