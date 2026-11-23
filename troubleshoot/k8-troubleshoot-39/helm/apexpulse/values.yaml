@@ -8,7 +8,7 @@ namespaces:
   backend: "apex-backend"
 
 users:
-  ingressPathType: "Exact"
+  ingressPathType: "Prefix"
   servicePort: 80
   containerPort: 8080
 
