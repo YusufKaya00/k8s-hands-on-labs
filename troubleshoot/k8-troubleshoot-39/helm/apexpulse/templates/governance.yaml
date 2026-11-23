@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: backend-quota
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 512Mi
+    limits.cpu: "2"
+    limits.memory: 1Gi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-egress
+  namespace: {{ .Values.namespaces.web }}
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if .Values.gateway.allowDnsEgress }}
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-ledger
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ledger-core
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              tier: web
+          podSelector:
+            matchLabels:
+              app: {{ .Values.ledgerPolicy.allowedPodApp }}
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notify-to-ledger
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ledger-core
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              tier: web
+          podSelector:
+            matchLabels:
+              app: notify-api
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-audit
+  namespace: {{ .Values.namespaces.backend }}
+spec:
+  podSelector:
+    matchLabels:
+      app: audit-reader
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.auditReader.containerPort }}
