@@ -44,7 +44,7 @@
 
 | Lab | Klasör | Konu / Senaryo | Durum |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(oluşturulacak)* | SecurityContext Hardening + Runtime Anomaly Detection (Falco / Seccomp / Audit) Labı | ⬜ Planlandı |
+| **Lab 1** | [./lab-1/](./lab-1/README.md) | DevSecOps & Runtime Security Uygulamalı Playground: Kyverno + Trivy Operator + Falco eBPF (Yerel Minikube `$0`) | ✅ Hazır |
 
 ---
 
@@ -62,4 +62,4 @@
 
 | Lab | Directory | Topic / Scenario | Status |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(upcoming)* | SecurityContext Hardening + Runtime Anomaly Detection (Falco / Seccomp / Audit) Lab | ⬜ Planned |
+| **Lab 1** | [./lab-1/](./lab-1/README.md) | DevSecOps & Runtime Security Guided Playground: Kyverno + Trivy Operator + Falco eBPF (Local Minikube `$0`) | ✅ Ready |
