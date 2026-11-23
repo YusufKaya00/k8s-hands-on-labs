@@ -42,7 +42,7 @@ notify:
   containerPort: 8080
 
 metrics:
-  livenessPath: "/alive"
+  livenessPath: "/healthz"
   servicePort: 80
   containerPort: 8080
 
