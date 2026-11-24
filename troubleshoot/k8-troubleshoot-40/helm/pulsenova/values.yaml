@@ -28,7 +28,7 @@ checkout:
   containerPort: 8080
 
 features:
-  overrideFeatureMode: "maintenance"
+  overrideFeatureMode: ""
   servicePort: 80
   containerPort: 8080
 
