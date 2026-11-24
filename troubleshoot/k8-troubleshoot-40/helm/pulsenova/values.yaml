@@ -33,7 +33,7 @@ features:
   containerPort: 8080
 
 analytics:
-  livenessInitialDelaySeconds: 1
+  livenessInitialDelaySeconds: 10
   servicePort: 80
   containerPort: 8080
 
