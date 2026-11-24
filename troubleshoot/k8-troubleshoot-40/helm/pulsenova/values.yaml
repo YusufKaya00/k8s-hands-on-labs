@@ -52,7 +52,7 @@ nodeAgent:
 
 opsInspector:
   serviceAccountName: "default"
-  memoryRequest: "384Mi"
+  memoryRequest: "256Mi"
   memoryLimit: "512Mi"
   servicePort: 80
   containerPort: 8080
