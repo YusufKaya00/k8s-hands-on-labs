@@ -1,0 +1,79 @@
+name: DevOps Platform Mastery — DevSecOps CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "projects/devops-platform-project/app/**"
+
+env:
+  APP_DIR: projects/devops-platform-project/app
+  # TODO [Bilet 2.1]: Kendi ACR login server adını yaz (ör. acrplatformmastery2026.azurecr.io)
+  ACR_LOGIN_SERVER: "acrplatformmastery2026.azurecr.io"
+  IMAGE_NAME: "orders-api"
+
+jobs:
+  unit-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - working-directory: ${{ env.APP_DIR }}
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pytest -v
+
+  sast-semgrep:
+    needs: unit-test
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - working-directory: ${{ env.APP_DIR }}
+        run: semgrep scan --config=auto --error
+
+  sca-secret-iac-trivy:
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "fs"
+          scan-ref: "${{ env.APP_DIR }}"
+          scanners: "vuln,secret"
+          severity: "CRITICAL"
+          exit-code: "1"
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: "config"
+          scan-ref: "${{ env.APP_DIR }}"
+          severity: "CRITICAL"
+          exit-code: "1"
+
+  build-scan-push:
+    needs: [sast-semgrep, sca-secret-iac-trivy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image & save tar
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          docker build -t "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" .
+          docker save "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" -o image.tar
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          input: "${{ env.APP_DIR }}/image.tar"
+          severity: "CRITICAL"
+          exit-code: "1"
+      # TODO [Bilet 2.2]: GitHub Secrets (ACR_USERNAME, ACR_PASSWORD) ekleyip push adımını aç
+      - name: Push to ACR (when secrets configured)
+        if: ${{ secrets.ACR_USERNAME != '' }}
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login "${{ env.ACR_LOGIN_SERVER }}" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+          docker push "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
