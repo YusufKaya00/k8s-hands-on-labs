@@ -1,0 +1,67 @@
+# TODO [Bilet 6.1]: Kyverno v1.20+ CEL NamespacedValidatingPolicy ile :latest ve root pod'ları engelle
+apiVersion: policies.kyverno.io/v1
+kind: NamespacedValidatingPolicy
+metadata:
+  name: disallow-latest-tag
+  namespace: shop-prod
+spec:
+  validationActions:
+    - Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  validations:
+    - expression: "object.spec.containers.all(c, !c.image.endsWith(':latest'))"
+      message: "Using ':latest' image tag is forbidden in shop-prod."
+---
+apiVersion: policies.kyverno.io/v1
+kind: NamespacedValidatingPolicy
+metadata:
+  name: require-run-as-nonroot
+  namespace: shop-prod
+spec:
+  validationActions:
+    - Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  validations:
+    - expression: "has(object.spec.securityContext) && has(object.spec.securityContext.runAsNonRoot) && object.spec.securityContext.runAsNonRoot == true"
+      message: "Running as root is forbidden in shop-prod."
+---
+# TODO [Bilet 7.3]: Multi-Team Day-2 Ops Least-Privilege RBAC (dev-readonly-sa)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dev-readonly-sa
+  namespace: shop-prod
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dev-readonly-role
+  namespace: shop-prod
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dev-readonly-binding
+  namespace: shop-prod
+subjects:
+  - kind: ServiceAccount
+    name: dev-readonly-sa
+    namespace: shop-prod
+roleRef:
+  kind: Role
+  name: dev-readonly-role
+  apiGroup: rbac.authorization.k8s.io

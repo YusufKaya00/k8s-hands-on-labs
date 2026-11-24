@@ -1,0 +1,70 @@
+# TODO [Bilet 7.1]: Canary ağırlıklarını (80/20 -> 50/50) ve beta header kuralını dene
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: orders-subsets
+  namespace: shop-prod
+spec:
+  host: orders-api
+  subsets:
+    - name: v1
+      labels:
+        version: v1
+    - name: v2
+      labels:
+        version: v2
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: orders-canary
+  namespace: shop-prod
+spec:
+  hosts:
+    - orders-api
+  http:
+    - match:
+        - headers:
+            x-user:
+              exact: beta
+      route:
+        - destination:
+            host: orders-api
+            subset: v2
+    - route:
+        - destination:
+            host: orders-api
+            subset: v1
+          weight: 80
+        - destination:
+            host: orders-api
+            subset: v2
+          weight: 20
+---
+# TODO [Bilet 7.2]: STRICT mTLS ve L7 AuthorizationPolicy (sadece GET izinli, POST 403) uygula
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: shop-prod
+spec:
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: orders-allow-get-from-client
+  namespace: shop-prod
+spec:
+  selector:
+    matchLabels:
+      app: orders-api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/shop-prod/sa/client-sa"]
+      to:
+        - operation:
+            methods: ["GET"]

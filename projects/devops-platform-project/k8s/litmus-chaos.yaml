@@ -1,0 +1,64 @@
+# TODO [Bilet 8.2]: LitmusChaos ChaosEngine ile orders-api üzerinde canlı Pod-Delete dayanıklılık testi yap
+# Ön şart: ChaosExperiment (pod-delete) hub manifestini yükle:
+#   kubectl apply -f https://hub.litmuschaos.io/api/chaos/master?file=charts/generic/pod-delete/experiment.yaml -n shop-prod
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-delete-sa
+  namespace: shop-prod
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-delete-role
+  namespace: shop-prod
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "events", "pods/log", "pods/exec"]
+    verbs: ["create", "list", "get", "patch", "update", "delete", "deletecollection"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["list", "get"]
+  - apiGroups: ["litmuschaos.io"]
+    resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+    verbs: ["create", "list", "get", "patch", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-delete-binding
+  namespace: shop-prod
+subjects:
+  - kind: ServiceAccount
+    name: pod-delete-sa
+    namespace: shop-prod
+roleRef:
+  kind: Role
+  name: pod-delete-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: orders-pod-delete-chaos
+  namespace: shop-prod
+spec:
+  appinfo:
+    appns: "shop-prod"
+    applabel: "app=orders-api,version=v1"
+    appkind: "deployment"
+  engineState: "active"
+  chaosServiceAccount: pod-delete-sa
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "30"
+            - name: CHAOS_INTERVAL
+              value: "10"
+            - name: FORCE
+              value: "false"
+            - name: PODS_AFFECTED_PERC
+              value: "50"
