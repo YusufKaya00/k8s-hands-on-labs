@@ -12,12 +12,12 @@ status:
   containerPort: 8080
 
 ingest:
-  proxyBodySize: "256k"
+  proxyBodySize: "10m"
   servicePort: 80
   containerPort: 8080
 
 catalog:
-  serviceProtocol: "UDP"
+  serviceProtocol: "TCP"
   servicePort: 80
   containerPort: 8080
 
