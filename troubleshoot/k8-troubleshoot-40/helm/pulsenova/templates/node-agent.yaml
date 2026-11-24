@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: node-agent
+spec:
+  selector:
+    matchLabels:
+      app: node-agent
+  template:
+    metadata:
+      labels:
+        app: node-agent
+    spec:
+      tolerations:
+        - key: "nova-pool"
+          operator: "Equal"
+          value: "storage"
+          effect: {{ .Values.nodeAgent.tolerationEffect | quote }}
+      containers:
+        - name: node-agent
+          image: {{ .Values.global.pythonImage }}
+          command:
+            - python3
+            - -c
+            - |
+              import time
+              print("node-agent running", flush=True)
+              while True:
+                  time.sleep(30)
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi

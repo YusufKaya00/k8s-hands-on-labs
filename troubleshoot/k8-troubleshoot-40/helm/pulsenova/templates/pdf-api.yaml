@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdf-api
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: pdf-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pdf-api
+  template:
+    metadata:
+      labels:
+        app: pdf-api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: pdf-api
+          image: {{ .Values.global.pythonImage }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          command:
+            - python3
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              os.makedirs("/tmp/pdf", exist_ok=True)
+              with open("/tmp/pdf/init.ok", "w") as f:
+                  f.write("ok\n")
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = json.dumps({"service": "pdf-api", "status": "ok", "writable": True}).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.pdf.containerPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.pdf.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.pdf.containerPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          {{- if .Values.pdf.mountTmpVolume }}
+          volumeMounts:
+            - name: pdf-tmp
+              mountPath: /tmp/pdf
+          {{- end }}
+      {{- if .Values.pdf.mountTmpVolume }}
+      volumes:
+        - name: pdf-tmp
+          emptyDir: {}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pdf-api
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  selector:
+    app: pdf-api
+  ports:
+    - name: http
+      port: {{ .Values.pdf.servicePort }}
+      targetPort: {{ .Values.pdf.containerPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pdf-ingress
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: /pdf
+            pathType: Prefix
+            backend:
+              service:
+                name: pdf-api
+                port:
+                  number: {{ .Values.pdf.servicePort }}
