@@ -1,0 +1,58 @@
+global:
+  ingressHost: "nova.local.nip.io"
+  pythonImage: "python:3.11-alpine"
+
+namespaces:
+  edge: "nova-edge"
+  data: "nova-data"
+
+status:
+  ingressHostOverride: "status.wrong.nip.io"
+  servicePort: 80
+  containerPort: 8080
+
+ingest:
+  proxyBodySize: "256k"
+  servicePort: 80
+  containerPort: 8080
+
+catalog:
+  serviceProtocol: "UDP"
+  servicePort: 80
+  containerPort: 8080
+
+checkout:
+  vaultExternalName: "vault-core.nova-edge.svc.cluster.local"
+  netpolAllowedPort: 9000
+  servicePort: 80
+  containerPort: 8080
+
+features:
+  overrideFeatureMode: "maintenance"
+  servicePort: 80
+  containerPort: 8080
+
+analytics:
+  livenessInitialDelaySeconds: 1
+  servicePort: 80
+  containerPort: 8080
+
+pdf:
+  mountTmpVolume: false
+  servicePort: 80
+  containerPort: 8080
+
+token:
+  secretKeyRef: "API_KEY"
+  servicePort: 80
+  containerPort: 8080
+
+nodeAgent:
+  tolerationEffect: "NoExecute"
+
+opsInspector:
+  serviceAccountName: "default"
+  memoryRequest: "384Mi"
+  memoryLimit: "512Mi"
+  servicePort: 80
+  containerPort: 8080
