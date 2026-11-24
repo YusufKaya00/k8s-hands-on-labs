@@ -22,8 +22,8 @@ catalog:
   containerPort: 8080
 
 checkout:
-  vaultExternalName: "vault-core.nova-edge.svc.cluster.local"
-  netpolAllowedPort: 9000
+  vaultExternalName: "vault-core.nova-data.svc.cluster.local"
+  netpolAllowedPort: 8080
   servicePort: 80
   containerPort: 8080
 
