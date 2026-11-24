@@ -10,3 +10,6 @@
 **/*.pub
 **/id_rsa
 **/id_rsa.*
+
+# Local Agent Instructions
+AGENTS.md
