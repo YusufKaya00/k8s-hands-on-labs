@@ -7,7 +7,7 @@ namespaces:
   data: "nova-data"
 
 status:
-  ingressHostOverride: "nova.local.nip.io"
+  ingressHostOverride: ""
   servicePort: 80
   containerPort: 8080
 
