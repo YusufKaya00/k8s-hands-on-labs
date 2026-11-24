@@ -43,7 +43,7 @@ pdf:
   containerPort: 8080
 
 token:
-  secretKeyRef: "API_KEY"
+  secretKeyRef: "TOKEN_KEY"
   servicePort: 80
   containerPort: 8080
 
