@@ -48,7 +48,7 @@ token:
   containerPort: 8080
 
 nodeAgent:
-  tolerationEffect: "NoExecute"
+  tolerationEffect: "NoSchedule"
 
 opsInspector:
   serviceAccountName: "default"
