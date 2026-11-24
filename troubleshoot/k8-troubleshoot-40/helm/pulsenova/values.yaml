@@ -51,7 +51,7 @@ nodeAgent:
   tolerationEffect: "NoSchedule"
 
 opsInspector:
-  serviceAccountName: "default"
+  serviceAccountName: "ops-inspector-sa"
   memoryRequest: "128Mi"
   memoryLimit: "256Mi"
   servicePort: 80
