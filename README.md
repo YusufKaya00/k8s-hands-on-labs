@@ -110,12 +110,13 @@ k8s-hands-on-labs/
 | **Control Plane & Management** | Rancher Manager (v2.10+ Multi-Cluster Dashboard), Cert-Manager (Let's Encrypt / Self-Signed PKI), nip.io DNS routing |
 | **Package & Config Management** | Helm 3, Kustomize, ConfigMaps, Secrets, Custom Resource Definitions (CRDs) |
 | **Distributed Data & Messaging** | Apache Kafka (KRaft mode), RabbitMQ (DLQ & Exchanges), Apache Cassandra (LSM-Tree), PostgreSQL 16, Redis 7.2 |
-| **Chaos Engineering & Resilience** | Chaos Mesh (PodChaos, NetworkChaos, DNSChaos, StressChaos, IOChaos, Workflows), Circuit Breaker, Exponential Backoff |
-| **Storage & Persistence** | Local-Path Provisioner, OCI Block Volume (`oci-bv` CSI), Azure Managed Disks (`managed-csi`), PVCs, `subPath`, `fsGroup` |
-| **Networking & Ingress** | Ingress NGINX Controller, Traefik Ingress, Calico / Canal CNI, Azure NAT Gateway, ClusterIP, Headless Services, CoreDNS |
+| **Chaos Engineering & Resilience** | Chaos Mesh (PodChaos, NetworkChaos, DNSChaos, StressChaos, IOChaos, Workflows), LitmusChaos (ChaosEngine, ChaosExperiment, ChaosCenter), PodDisruptionBudgets, Circuit Breaker |
+| **Storage, Backup & DR** | Velero (App-Consistent Hooks, StorageClass Mapping), MinIO (S3-Compatible Object Storage), OCI Block Volume (`oci-bv` CSI), Azure Managed Disks (`managed-csi`), Local-Path Provisioner, PVCs |
+| **Networking, Ingress & Service Mesh** | Istio Service Mesh (Envoy Sidecar, STRICT mTLS, Canary `VirtualService`, L7 `AuthorizationPolicy`), Ingress NGINX Controller, Traefik Ingress, Calico / Canal CNI, CoreDNS, Headless & ExternalName Services |
+| **Secrets & Runtime Security** | HashiCorp Vault (Raft, Dynamic DB Credentials, K8s Auth, Agent Injector), Kyverno (v1.20+ CEL `ValidatingPolicy`), Falco (eBPF Runtime Threat Detection), Trivy Operator (`VulnerabilityReport` / `ConfigAuditReport`), Seccomp & Least-Privilege RBAC |
 | **GitOps & Progressive Delivery** | ArgoCD (Declarative Application Management, Auto-Sync, Self-Healing), Argo Rollouts (Canary, Blue/Green, AnalysisTemplates) |
-| **CI/CD & DevSecOps** | Jenkins (JCasC, Kubernetes Dynamic Agents), Harbor OCI Registry, Kaniko, GitLab CI (Kubernetes Executor), Rootless Buildah, Trivy Security Scanner, CycloneDX SBOM |
-| **Observability & SRE** | Prometheus Operator, Grafana, Alertmanager, PromQL, ServiceMonitors, PrometheusRules, Kube-State-Metrics |
+| **CI/CD & DevSecOps** | GitHub Actions, GitLab CI (Kubernetes Executor), Jenkins (JCasC, K8s Dynamic Agents), Harbor OCI & Azure ACR, Kaniko, Rootless Buildah, Trivy (FS/Config/Image), Semgrep (SAST), OWASP ZAP (DAST), CycloneDX SBOM |
+| **Observability & SRE** | Prometheus Operator, Grafana, Grafana Loki, Fluent Bit / Promtail, Alertmanager, PromQL, ServiceMonitors, PrometheusRules, Kube-State-Metrics |
 | **Application Runtimes** | Python (FastAPI, Uvicorn, background threads), Nginx (L7 Reverse Proxy), Docker multi-stage builds |
 
 ---
