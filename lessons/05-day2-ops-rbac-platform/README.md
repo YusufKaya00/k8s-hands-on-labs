@@ -44,7 +44,7 @@
 
 | Lab | Klasör | Konu / Senaryo | Durum |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(oluşturulacak)* | Ansible ile Multi-Team Kubernetes RBAC Otomasyonu veya Istio mTLS Labı | ⬜ Planlandı |
+| **Lab 1** | [./lab-1/](./lab-1/README.md) | Service Mesh (Istio mTLS, Canary 80/20, L7 AuthZ) & Day-2 Ops RBAC Uygulamalı Playground (Yerel Minikube `$0`) | ✅ Hazır |
 
 ---
 
@@ -63,4 +63,4 @@ My IaC projects automate Day-1 cluster provisioning (`K3s`/`RKE2`). This lesson 
 
 | Lab | Directory | Topic / Scenario | Status |
 | :-: | :--- | :--- | :---: |
-| **Lab 1** | `./lab-1/` *(upcoming)* | Ansible Multi-Team Kubernetes RBAC Automation or Istio mTLS Lab | ⬜ Planned |
+| **Lab 1** | [./lab-1/](./lab-1/README.md) | Service Mesh (Istio mTLS, Canary 80/20, L7 AuthZ) & Day-2 Ops RBAC Guided Playground (Local Minikube `$0`) | ✅ Ready |
