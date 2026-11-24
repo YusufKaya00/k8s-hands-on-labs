@@ -1,0 +1,155 @@
+---
+- name: DevOps Platform Mastery — Day-1/Day-2 Stack Installation on AKS
+  hosts: local
+  gather_facts: false
+  vars:
+    rg_name: "rg-devops-platform-project"
+    aks_name: "aks-platform-mastery"
+    k8s_dir: "{{ playbook_dir }}/../k8s"
+
+  tasks:
+    - name: Fetch AKS kubeconfig credentials
+      ansible.builtin.command: >
+        az aks get-credentials
+        --resource-group {{ rg_name }}
+        --name {{ aks_name }}
+        --overwrite-existing
+      changed_when: true
+
+    - name: Add all required Helm repositories
+      ansible.builtin.shell: |
+        helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx || true
+        helm repo add grafana https://grafana.github.io/helm-charts || true
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+        helm repo add hashicorp https://helm.releases.hashicorp.com || true
+        helm repo add kyverno https://kyverno.github.io/kyverno/ || true
+        helm repo add aqua https://aquasecurity.github.io/helm-charts/ || true
+        helm repo add falcosecurity https://falcosecurity.github.io/charts || true
+        helm repo add istio https://istio-release.storage.googleapis.com/charts || true
+        helm repo add minio https://charts.min.io/ || true
+        helm repo add vmware-tanzu https://vmware-tanzu.github.io/helm-charts || true
+        helm repo add litmuschaos https://litmuschaos.github.io/litmus-helm/ || true
+        helm repo update
+      changed_when: true
+
+    # ── Faz 2: Ingress Controller ─────────────────────────────────────────
+    - name: Install ingress-nginx controller
+      ansible.builtin.shell: |
+        helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+          --namespace ingress-nginx --create-namespace \
+          --set controller.replicaCount=1 \
+          --set 'controller.service.annotations.service\.beta\.kubernetes\.io/azure-load-balancer-health-probe-request-path=/healthz' \
+          --wait --timeout=180s
+      changed_when: true
+
+    # ── Faz 3 (Ders 01): Observability — Prometheus + Grafana + Loki ──────
+    # TODO [Bilet 3.1]: kube-prometheus-stack ve loki-stack kurulumunu aktifleştir
+    - name: Install kube-prometheus-stack (Prometheus + Grafana)
+      ansible.builtin.shell: |
+        helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+          --namespace monitoring --create-namespace \
+          --set grafana.adminPassword=admin \
+          --set alertmanager.enabled=false \
+          --wait --timeout=300s
+      tags: [observability]
+      changed_when: true
+
+    - name: Install Loki + Promtail/Fluent-Bit logging stack
+      ansible.builtin.shell: |
+        helm upgrade --install loki grafana/loki-stack \
+          --namespace monitoring \
+          --set promtail.enabled=true \
+          --set grafana.enabled=false \
+          --wait --timeout=180s
+      tags: [observability]
+      changed_when: true
+
+    # ── Faz 4 (Ders 02): Backup & DR — MinIO + Velero ─────────────────────
+    # TODO [Bilet 4.1]: MinIO S3 kurulumu ve Velero Helm kurulumunu tamamla
+    - name: Install MinIO (S3 Backup Target) in velero namespace
+      ansible.builtin.shell: |
+        helm upgrade --install minio minio/minio \
+          --namespace velero --create-namespace \
+          --set mode=standalone \
+          --set replicas=1 \
+          --set rootUser=minioadmin \
+          --set rootPassword=minioadmin \
+          --set buckets[0].name=velero-backups \
+          --set buckets[0].policy=none \
+          --set persistence.size=5Gi \
+          --set resources.requests.memory=256Mi \
+          --wait --timeout=180s
+      tags: [backup]
+      changed_when: true
+
+    # ── Faz 5 (Ders 03): Secrets — HashiCorp Vault (Raft + Injector) ──────
+    # TODO [Bilet 5.1]: Vault kurulumundan sonra 'vault operator init' ve 'unseal' adımlarını uygula
+    - name: Install HashiCorp Vault (Raft + UI + Agent Injector)
+      ansible.builtin.shell: |
+        helm upgrade --install vault hashicorp/vault \
+          --namespace vault --create-namespace \
+          --set server.ha.enabled=true \
+          --set server.ha.raft.enabled=true \
+          --set server.ha.replicas=1 \
+          --set injector.enabled=true \
+          --set ui.enabled=true
+      tags: [vault]
+      changed_when: true
+
+    # ── Faz 6 (Ders 04): DevSecOps — Kyverno + Trivy Operator + Falco ─────
+    - name: Install Kyverno (Policy Engine)
+      ansible.builtin.shell: |
+        helm upgrade --install kyverno kyverno/kyverno \
+          --namespace kyverno --create-namespace \
+          --set admissionController.replicas=1 \
+          --set backgroundController.replicas=1 \
+          --set cleanupController.replicas=1 \
+          --set reportsController.replicas=1 \
+          --wait --timeout=180s
+      tags: [security]
+      changed_when: true
+
+    - name: Install Trivy Operator (Continuous In-Cluster Scanner)
+      ansible.builtin.shell: |
+        helm upgrade --install trivy-operator aqua/trivy-operator \
+          --namespace trivy-system --create-namespace \
+          --set targetNamespaces=shop-prod \
+          --wait --timeout=180s
+      tags: [security]
+      changed_when: true
+
+    - name: Install Falco (eBPF Runtime Threat Detection)
+      ansible.builtin.shell: |
+        helm upgrade --install falco falcosecurity/falco \
+          --namespace falco --create-namespace \
+          --set driver.kind=modern_ebpf \
+          --set tty=true \
+          --wait --timeout=180s
+      tags: [security]
+      changed_when: true
+
+    # ── Faz 7 (Ders 05): Service Mesh — Istio ─────────────────────────────
+    - name: Install Istio Control Plane (istio-base + istiod)
+      ansible.builtin.shell: |
+        helm upgrade --install istio-base istio/base \
+          --namespace istio-system --create-namespace --wait --timeout=120s
+        helm upgrade --install istiod istio/istiod \
+          --namespace istio-system --wait --timeout=180s
+      tags: [istio]
+      changed_when: true
+
+    # ── Faz 8: Chaos Engineering — LitmusChaos ────────────────────────────
+    # TODO [Bilet 8.1]: LitmusChaos ChaosCenter + Chaos Operator kurulumunu çalıştır
+    - name: Install LitmusChaos (ChaosCenter + Chaos Operator)
+      ansible.builtin.shell: |
+        helm upgrade --install chaos litmuschaos/litmus \
+          --namespace litmus --create-namespace \
+          --wait --timeout=300s
+      tags: [litmus]
+      changed_when: true
+
+    # ── Uygulama & Politikaları Uygula ────────────────────────────────────
+    - name: Apply shop-prod application stack
+      ansible.builtin.command: kubectl apply -f {{ k8s_dir }}/app-stack.yaml
+      tags: [app]
+      changed_when: true
