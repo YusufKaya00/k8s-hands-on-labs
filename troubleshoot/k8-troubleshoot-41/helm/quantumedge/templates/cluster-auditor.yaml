@@ -19,8 +19,9 @@ metadata:
   namespace: {{ .Values.namespaces.core }}
 rules:
   - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["list"]
+    resources: ["configmaps", "pods", "services", "endpoints"]
+
+    verbs: ["list", "get", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
