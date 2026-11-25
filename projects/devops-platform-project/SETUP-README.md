@@ -146,18 +146,26 @@ LitmusChaos 3.x Web UI'dan deney başlatabilmek için önce cluster'a bir **Chao
    ```
 4. **ChaosCenter Web UI'da Environment oluştur *(henüz yoksa)*:**
    - Sol menüden **Environments** → **+ New Environment** → **Name:** `aks-prod`, **Type:** `Production` → **Confirm**.
-5. **Cluster'ı Chaos Infrastructure olarak bağla:**
+5. **Cluster'ı Chaos Infrastructure olarak bağla *(tek komutta, interaktif sorusuz)*:**
    ```bash
+   # Proje ve Environment ID'lerini görmek için:
+   litmusctl get projects
+   litmusctl get chaos-environments --project-id=<PROJECT_ID>
+
+   # Tek seferde bağla (sorusuz):
    litmusctl connect chaos-infra \
      --name="aks-platform-infra" \
+     --project-id="<PROJECT_ID>" \
+     --environment-id="aks-prod" \
      --installation-mode="cluster" \
      --namespace="litmus" \
      --ns-exists=true \
      --service-account="litmus" \
      --sa-exists=false \
-     --platform-name="Others"
+     --platform-name="Others" \
+     --non-interactive=true
    ```
-   - Açılan interaktif listeden projeni ve `aks-prod` environment'ını seç, onay için `Y` yaz.
+   *(Not: İnteraktif moda düşersen `NodeSelector` sorusuna **`N`** ver — buraya namespace adı yazılmaz.)*
    > **Neden `Namespace: litmus` + `Cluster-wide`?** Deney runner pod'ları `shop-prod` içine düşerse `shop-prod`'daki Kyverno `require-run-as-nonroot` politikası veya Istio sidecar enjeksiyonu tarafından engellenir/geciktirilir. `litmus` namespace'inde `Cluster-wide` yetkiyle kurulduğunda `shop-prod` iş yüklerine temiz şekilde kaos enjekte edebilir. Ayrıca `chaos-litmus-server` üzerinde `CHAOS_CENTER_UI_ENDPOINT=http://chaos-litmus-frontend-service.litmus.svc.cluster.local:9091` tanımlı olduğu için `subscriber` pod'u cluster içinden doğrudan ChaosCenter'a bağlanır.
 6. **Bağlantıyı doğrula:**
    - `kubectl -n litmus get pods` çıktısında `subscriber`, `chaos-operator`, `workflow-controller`, `event-tracker`, `chaos-exporter` pod'larının `Running` olduğunu ve ChaosCenter Web UI → **Environments → aks-prod** ekranında `aks-platform-infra` durumunun yeşil **`CONNECTED`** döndüğünü gör.
