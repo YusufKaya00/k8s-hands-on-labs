@@ -32,7 +32,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: session-keys
-                  key: SIGNING_SECRET
+                  key: HMAC_SECRET
           command:
             - python3
             - -c
