@@ -67,7 +67,7 @@ metadata:
   namespace: {{ .Values.namespaces.edge }}
 spec:
   type: ExternalName
-  externalName: payment-core.edge-core.svc.cluster.local
+  externalName: payment-core.core-prod.svc.cluster.local
 ---
 apiVersion: apps/v1
 kind: Deployment
