@@ -237,6 +237,7 @@
           --set mongodb.architecture=replicaset \
           --set mongodb.replicaCount=1 \
           --set mongodb.arbiter.enabled=false \
+          --set portal.server.graphqlServer.genericEnv.CHAOS_CENTER_UI_ENDPOINT="http://chaos-litmus-frontend-service.litmus.svc.cluster.local:9091" \
           --wait --timeout=300s
       tags: [litmus]
       changed_when: true
