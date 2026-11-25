@@ -130,7 +130,7 @@ LitmusChaos 3.x Web UI'dan deney başlatabilmek için önce cluster'a bir **Chao
 
 1. **(`litmusctl` yoksa) CLI aracını yükle** *(UI'nin ürettiği kurulum komutunu çalıştırmak için gerekir)*:
    ```bash
-   curl -sL https://litmusctl-production-bucket.s3.amazonaws.com/litmusctl-linux-amd64-v1.18.0.tar.gz | tar -xz
+   curl -sL https://litmusctl-production-bucket.s3.amazonaws.com/litmusctl-linux-amd64-1.28.0.tar.gz | tar -xz
    sudo mv litmusctl /usr/local/bin/ && litmusctl version
    ```
 2. **ChaosCenter Web UI içinde:**
