@@ -188,7 +188,7 @@ indexerSvc:
       memory: 24Mi
     limits:
       cpu: 150m
-      memory: 32Mi
+      memory: 100Mi
 
 telemetryAgent:
   image: "python:3.11-alpine"
