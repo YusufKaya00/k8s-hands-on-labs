@@ -41,7 +41,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              env: edge
+              tier: edge
           podSelector:
             matchLabels:
               app: checkout-api
