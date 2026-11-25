@@ -72,7 +72,7 @@ metadata:
   name: report-ingress
   namespace: {{ .Values.namespaces.edge }}
   annotations:
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "2"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "10"
 spec:
   ingressClassName: {{ .Values.reportGen.ingress.className }}
   rules:
