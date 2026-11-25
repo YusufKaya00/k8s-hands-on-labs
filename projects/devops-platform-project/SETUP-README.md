@@ -128,20 +128,41 @@ Bu dosya, [projects/devops-platform-project](./README.md) projesini sıfırdan A
 #### Bilet 8.2 — Chaos Infrastructure Bağlama (Tek Seferlik)
 LitmusChaos 3.x Web UI'dan deney başlatabilmek için önce cluster'a bir **Chaos Infrastructure** ajanı bağlamalısın:
 
-1. **(`litmusctl` yoksa) CLI aracını yükle** *(UI'nin ürettiği kurulum komutunu çalıştırmak için gerekir)*:
+1. **Terminal 1'de port-forward açık kalsın:**
+   ```bash
+   kubectl -n litmus port-forward svc/chaos-litmus-frontend-service 9091:9091
+   ```
+2. **(`litmusctl` yoksa) CLI aracını yükle:**
    ```bash
    curl -sL https://litmusctl-production-bucket.s3.amazonaws.com/litmusctl-linux-amd64-1.28.0.tar.gz | tar -xz
    sudo mv litmusctl /usr/local/bin/ && litmusctl version
    ```
-2. **ChaosCenter Web UI içinde:**
-   - Sol menüden **Environments** → mevcut **`default`** (veya `+ New Environment` ile **`aks-prod`**, Type: `Production`) ortamına tıkla.
-   - **+ Enable Chaos** → **Kubernetes** → **Connect New Chaos Infrastructure** seç:
-     - **Name:** `aks-platform-infra`
-     - **Installation Mode / Namespace:** **`litmus`** *(ÖNEMLİ!)*
-     - **Scope:** **`Cluster-wide`** *(ÖNEMLİ!)*
-     > **Neden `Namespace: litmus` + `Cluster-wide`?** Deney runner pod'ları `shop-prod` içine düşerse `shop-prod`'daki Kyverno `require-run-as-nonroot` politikası veya Istio sidecar enjeksiyonu tarafından engellenir/geciktirilir. `litmus` namespace'inde `Cluster-wide` yetkiyle kurulduğunda `shop-prod` iş yüklerine temiz şekilde kaos enjekte edebilir.
-   - Ekranda verilen `litmusctl create chaos-infra ...` komutunu (veya indirilen `kubectl apply -f ...` YAML'ını) terminalinde çalıştır.
-3. Arayüzde `aks-platform-infra` durumunun yeşil **`CONNECTED`** olduğunu gör (`kubectl -n litmus get pods` ile `subscriber` ve `chaos-operator` pod'larının ayağa kalktığını doğrula).
+3. **`litmusctl` hesabını tanımla *(zorunlu — `~/.litmusconfig` dosyasını oluşturur)*:**
+   ```bash
+   litmusctl config set-account \
+     --endpoint http://localhost:9091 \
+     --username admin \
+     --password <CHAOSCENTER_SIFREN>
+   ```
+4. **ChaosCenter Web UI'da Environment oluştur *(henüz yoksa)*:**
+   - Sol menüden **Environments** → **+ New Environment** → **Name:** `aks-prod`, **Type:** `Production` → **Confirm**.
+5. **Cluster'ı Chaos Infrastructure olarak bağla:**
+   ```bash
+   litmusctl connect chaos-infra \
+     --name="aks-platform-infra" \
+     --installation-mode="cluster" \
+     --namespace="litmus" \
+     --ns-exists=true \
+     --service-account="litmus" \
+     --sa-exists=false \
+     --platform-name="Others"
+   ```
+   - Açılan interaktif listeden projeni ve `aks-prod` environment'ını seç, onay için `Y` yaz.
+   > **Neden `Namespace: litmus` + `Cluster-wide`?** Deney runner pod'ları `shop-prod` içine düşerse `shop-prod`'daki Kyverno `require-run-as-nonroot` politikası veya Istio sidecar enjeksiyonu tarafından engellenir/geciktirilir. `litmus` namespace'inde `Cluster-wide` yetkiyle kurulduğunda `shop-prod` iş yüklerine temiz şekilde kaos enjekte edebilir. Ayrıca `chaos-litmus-server` üzerinde `CHAOS_CENTER_UI_ENDPOINT=http://chaos-litmus-frontend-service.litmus.svc.cluster.local:9091` tanımlı olduğu için `subscriber` pod'u cluster içinden doğrudan ChaosCenter'a bağlanır.
+6. **Bağlantıyı doğrula:**
+   - `kubectl -n litmus get pods` çıktısında `subscriber`, `chaos-operator`, `workflow-controller`, `event-tracker`, `chaos-exporter` pod'larının `Running` olduğunu ve ChaosCenter Web UI → **Environments → aks-prod** ekranında `aks-platform-infra` durumunun yeşil **`CONNECTED`** döndüğünü gör.
+   > **Kapasite Notu (2-Node `Standard_B2ms`):** Azure CNI node başına en fazla 30 pod sınırına (`maxPods=30`) yaklaşırsan (`Too many pods` / `Insufficient cpu`), 3. node ekleyerek hemen yer açabilirsin:
+   > `az aks nodepool scale -g rg-devops-platform-project --cluster-name aks-platform-mastery -n systempool --node-count 3`
 
 ---
 
