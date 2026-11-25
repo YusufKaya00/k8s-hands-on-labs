@@ -33,7 +33,7 @@ variable "cluster_name" {
 }
 
 # TODO [Bilet 1.1]: Benzersiz bir ACR adı belirle (sadece küçük harf ve rakam, 5-50 karakter)
-variable "acr_name" "devops_platform_acr" {
+variable "devops_platform_acr"  {
   type    = string
   default = "acrplatformmastery2026"
 }
@@ -45,7 +45,7 @@ resource "azurerm_resource_group" "rg" {
 
 # TODO [Bilet 1.2]: Azure Container Registry (Basic SKU, admin_enabled = false) kaynağını tamamla
 resource "azurerm_container_registry" "acr" {
-  name                = var.acr_name
+  name                = var.devops_platform_acr
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   sku                 = "Basic"
