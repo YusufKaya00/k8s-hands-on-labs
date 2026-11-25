@@ -70,9 +70,14 @@ jobs:
           input: "${{ env.APP_DIR }}/image.tar"
           severity: "CRITICAL"
           exit-code: "1"
-      # TODO [Bilet 2.2]: GitHub Secrets (ACR_USERNAME, ACR_PASSWORD) ekleyip push adımını aç
       - name: Push to ACR (when secrets configured)
-        if: ${{ secrets.ACR_USERNAME != '' }}
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          echo "${{ secrets.ACR_PASSWORD }}" | docker login "${{ env.ACR_LOGIN_SERVER }}" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+          if [ -z "$ACR_USERNAME" ] || [ -z "$ACR_PASSWORD" ]; then
+            echo "ACR secrets not configured, skipping push."
+            exit 0
+          fi
+          printf '%s' "$ACR_PASSWORD" | docker login "${{ env.ACR_LOGIN_SERVER }}" -u "$ACR_USERNAME" --password-stdin
           docker push "${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
