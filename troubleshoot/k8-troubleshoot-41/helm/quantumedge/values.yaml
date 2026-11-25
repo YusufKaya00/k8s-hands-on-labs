@@ -16,7 +16,7 @@ ordersApi:
     targetPort: 8080
   ingress:
     enabled: true
-    className: "nginx-internal"
+    className: "nginx"
     path: "/orders"
     pathType: "Prefix"
   probes:
