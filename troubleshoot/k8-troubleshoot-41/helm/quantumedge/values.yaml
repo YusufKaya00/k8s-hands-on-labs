@@ -170,7 +170,7 @@ exportWorker:
     runAsNonRoot: true
     runAsUser: 1000
     runAsGroup: 1000
-    readOnlyRootFilesystem: true
+    readOnlyRootFilesystem: false
   resources:
     requests:
       cpu: 20m
