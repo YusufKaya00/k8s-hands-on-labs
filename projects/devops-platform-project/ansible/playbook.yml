@@ -60,6 +60,7 @@
       ansible.builtin.shell: |
         helm upgrade --install loki grafana/loki-stack \
           --namespace monitoring \
+          --set loki.image.tag=2.9.10 \
           --set promtail.enabled=true \
           --set grafana.enabled=false \
           --wait --timeout=180s
