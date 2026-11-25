@@ -215,7 +215,7 @@ clusterAuditor:
   resources:
     requests:
       cpu: 20m
-      memory: 256Mi
+      memory: 128Mi
     limits:
       cpu: 150m
-      memory: 384Mi
+      memory: 256Mi
