@@ -167,7 +167,7 @@ exportWorker:
     path: "/export"
     pathType: "Prefix"
   securityContext:
-    runAsNonRoot: true
+    runAsNonRoot: false
     runAsUser: 1000
     runAsGroup: 1000
     readOnlyRootFilesystem: false
