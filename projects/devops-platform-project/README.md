@@ -27,10 +27,13 @@ Bir üretim Kubernetes platformu sadece `kubectl apply` değildir; kodun yazılm
 | **Service Mesh & Day-2 Ops (`Ders 05`)** | **Istio + RBAC + PDB** | **Istio**, pod'lar arası trafiği otomatik **mTLS** ile şifreler, kod değiştirmeden **%80/%20 Canary** yapar ve L7 katmanında (`GET` izinli / `POST` 403) yetkilendirir. **RBAC** takımlara en az yetki verir; **PDB** bakım/kaos anında en az 1 pod'u ayakta tutar. |
 | **Chaos Engineering** | **LitmusChaos** | *"Gerçekten dayanıklı mıyız?"* sorusunu kanıtlar. Bilinçli olarak pod silip/ağ gecikmesi verip sistemin kesintisiz kalıp kalmadığını test eder. |
 
-#### 🔥 LitmusChaos Nasıl Çalışır? (3 Temel Obje)
-1. **`ChaosExperiment`:** Litmus Hub'dan çekilen hazır deney tarifi (ör. `pod-delete`, `pod-network-latency`).
-2. **`ChaosEngine`:** Deneyi belirli bir hedefe (`shop-prod` / `app=orders-api,version=v1`) ve sürelere (`TOTAL_CHAOS_DURATION: 30`) bağlayıp çalıştıran motor.
-3. **`ChaosResult`:** Deney bitince **`Verdict: Pass`** veya **`Fail`** sonucunu yazan rapor objesi. (Ek olarak **ChaosCenter** Web UI üzerinden görsel olarak da yönetilebilir.)
+#### 🔥 LitmusChaos 3.x Nasıl Çalışır?
+1. **ChaosCenter (Web UI Control Plane):** Deneyleri tarayıcıdan tasarlayıp başlattığın, Resilience Score ve geçmiş koşuları izlediğin kontrol merkezi (`svc/chaos-litmus-frontend-service:9091`).
+2. **Chaos Infrastructure (Execution Agent):** Hedef Kubernetes cluster'ına (`litmus` namespace, `Cluster-wide` scope) kurulan ajan; ChaosCenter'dan aldığı deneyleri cluster içinde koşturur.
+3. **3 Temel CRD Obje:**
+   - **`ChaosExperiment`:** Litmus ChaosHub'dan gelen hazır deney tarifi (`pod-delete`, `pod-network-latency`, `pod-cpu-hog`).
+   - **`ChaosEngine`:** Deneyi belirli bir hedefe (`shop-prod` / `app=orders-api,version=v1`) ve sürelere (`TOTAL_CHAOS_DURATION: 30`) bağlayıp çalıştıran motor.
+   - **`ChaosResult`:** Deney bitince **`Verdict: Pass`** veya **`Fail`** sonucunu yazan rapor objesi.
 
 ### 📁 Sadeleştirilmiş Proje Yapısı
 ```text
@@ -63,6 +66,6 @@ A consolidated, TODO-driven AKS Platform Mastery capstone uniting **all 5 DevOps
 
 ### 🚀 Execution Order
 1. **Terraform (`terraform/main.tf`):** Provision Azure RG + AKS + ACR + `AcrPull`.
-2. **Ansible (`ansible/playbook.yml`):** Install the full platform stack in one shot or phase-by-phase using `--tags observability|backup|vault|security|istio|litmus|app`.
-3. **Kubernetes Policies & Mesh (`k8s/`):** Apply `app-stack.yaml`, `security-policies.yaml`, and `istio-mesh.yaml`.
-4. **LitmusChaos (`k8s/litmus-chaos.yaml`):** Run `pod-delete` against `orders-api` and verify `Verdict: Pass` with zero downtime under `orders-pdb` + Istio.
+2. **Ansible (`ansible/playbook.yml`):** Install the full platform stack phase-by-phase using `--tags observability|backup|istio,app|vault|security|litmus`.
+3. **Kubernetes Policies & Mesh (`k8s/`):** Apply `app-stack.yaml`, `istio-mesh.yaml`, and `security-policies.yaml`.
+4. **LitmusChaos ChaosCenter UI (`SETUP-README.md` Faz 8):** Connect a `Cluster-wide` Chaos Infrastructure in the `litmus` namespace and run `pod-delete`, `pod-network-latency`, and `pod-cpu-hog` against `shop-prod` via the Web UI while verifying zero-downtime with `orders-pdb` + Istio.
