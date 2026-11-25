@@ -55,7 +55,7 @@ metadata:
 spec:
   type: {{ .Values.cartApi.service.type }}
   selector:
-    app: cart-app
+    app: cart-api
   ports:
     - name: http
       port: {{ .Values.cartApi.service.port }}
