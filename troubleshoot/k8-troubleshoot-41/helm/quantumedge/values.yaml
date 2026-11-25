@@ -122,7 +122,7 @@ inventoryApi:
     pathType: "Prefix"
   probes:
     readiness:
-      path: "/ready"
+      path: "/healthz"
       port: 8080
       initialDelaySeconds: 10
       periodSeconds: 10
