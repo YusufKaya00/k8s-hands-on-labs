@@ -9,7 +9,6 @@ on:
 
 env:
   APP_DIR: projects/devops-platform-project/app
-  # TODO [Bilet 2.1]: Kendi ACR login server adını yaz (ör. acrplatformmastery2026.azurecr.io)
   ACR_LOGIN_SERVER: "acrplatformmastery2026.azurecr.io"
   IMAGE_NAME: "orders-api"
 
