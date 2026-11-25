@@ -1,0 +1,26 @@
+ordersApi:
+  ingress:
+    className: "nginx"
+
+inventoryApi:
+  probes:
+    readiness:
+      path: "/healthz"
+
+indexerSvc:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+clusterAuditor:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
