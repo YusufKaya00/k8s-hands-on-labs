@@ -58,8 +58,9 @@ spec:
           volumes:
             - name: export-worker-data
               emptyDir: {}
-      volumes:
-        - name: export-worker-data
+    volumeMounts:
+      - name: export-worker-data
+        mountPath: /var/tmp/exports
 ---
 apiVersion: v1
 kind: Service
