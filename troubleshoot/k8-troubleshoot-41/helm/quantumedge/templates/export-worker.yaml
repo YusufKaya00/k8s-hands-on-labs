@@ -55,6 +55,11 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml .Values.exportWorker.resources | nindent 12 }}
+          volumes:
+            - name: export-worker-data
+              emptyDir: {}
+      volumes:
+        - name: export-worker-data
 ---
 apiVersion: v1
 kind: Service
