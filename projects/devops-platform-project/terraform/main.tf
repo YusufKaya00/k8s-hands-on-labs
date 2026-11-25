@@ -33,7 +33,7 @@ variable "cluster_name" {
 }
 
 # TODO [Bilet 1.1]: Benzersiz bir ACR adı belirle (sadece küçük harf ve rakam, 5-50 karakter)
-variable "acr_name" {
+variable "acr_name" "devops_platform_acr" {
   type    = string
   default = "acrplatformmastery2026"
 }
@@ -63,7 +63,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   default_node_pool {
     name       = "systempool"
     node_count = 2
-    vm_size    = "Standard_B4ms"
+    vm_size    = "Standard_B2ms"
   }
 
   identity {
