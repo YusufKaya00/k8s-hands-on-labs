@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: auditor-sa
+  namespace: {{ .Values.namespaces.core }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auditor-policy
+  namespace: {{ .Values.namespaces.core }}
+data:
+  AUDIT_LEVEL: "strict-v24"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: auditor-role
+  namespace: {{ .Values.namespaces.core }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: auditor-binding
+  namespace: {{ .Values.namespaces.core }}
+subjects:
+  - kind: ServiceAccount
+    name: auditor-sa
+    namespace: {{ .Values.namespaces.core }}
+roleRef:
+  kind: Role
+  name: auditor-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-auditor
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: cluster-auditor
+spec:
+  replicas: {{ .Values.clusterAuditor.replicaCount }}
+  selector:
+    matchLabels:
+      app: cluster-auditor
+  template:
+    metadata:
+      labels:
+        app: cluster-auditor
+    spec:
+      serviceAccountName: auditor-sa
+      containers:
+        - name: cluster-auditor
+          image: {{ .Values.clusterAuditor.image }}
+          command:
+            - python3
+            - -c
+            - |
+              import json, ssl, urllib.request
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              def read_policy():
+                  with open("/var/run/secrets/kubernetes.io/serviceaccount/token") as f:
+                      tok = f.read().strip()
+                  ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+                  req = urllib.request.Request(
+                      "https://kubernetes.default.svc/api/v1/namespaces/{{ .Values.namespaces.core }}/configmaps/auditor-policy",
+                      headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+                  )
+                  with urllib.request.urlopen(req, context=ctx, timeout=4) as r:
+                      return json.loads(r.read().decode())
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      if self.path == "/healthz":
+                          self.send_response(200)
+                          self.end_headers()
+                          self.wfile.write(b"ok")
+                          return
+                      try:
+                          cm = read_policy()
+                          body = json.dumps({"service": "cluster-auditor", "status": "ok", "level": cm.get("data", {}).get("AUDIT_LEVEL")}).encode()
+                          self.send_response(200)
+                      except Exception as e:
+                          body = json.dumps({"service": "cluster-auditor", "error": str(e)}).encode()
+                          self.send_response(403)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.clusterAuditor.service.targetPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.clusterAuditor.service.targetPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.clusterAuditor.service.targetPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.clusterAuditor.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cluster-auditor
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  type: {{ .Values.clusterAuditor.service.type }}
+  selector:
+    app: cluster-auditor
+  ports:
+    - name: http
+      port: {{ .Values.clusterAuditor.service.port }}
+      targetPort: {{ .Values.clusterAuditor.service.targetPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auditor-ingress
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  ingressClassName: {{ .Values.clusterAuditor.ingress.className }}
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: {{ .Values.clusterAuditor.ingress.path }}
+            pathType: {{ .Values.clusterAuditor.ingress.pathType }}
+            backend:
+              service:
+                name: cluster-auditor
+                port:
+                  number: {{ .Values.clusterAuditor.service.port }}

@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: indexer-svc
+  namespace: {{ .Values.namespaces.core }}
+  labels:
+    app: indexer-svc
+spec:
+  replicas: {{ .Values.indexerSvc.replicaCount }}
+  selector:
+    matchLabels:
+      app: indexer-svc
+  template:
+    metadata:
+      labels:
+        app: indexer-svc
+    spec:
+      containers:
+        - name: indexer-svc
+          image: {{ .Values.indexerSvc.image }}
+          command:
+            - python3
+            - -c
+            - |
+              import time
+              buf = bytearray(55 * 1024 * 1024)
+              for i in range(0, len(buf), 4096):
+                  buf[i] = 1
+              print("indexer-svc cache initialized (55MB)", flush=True)
+              while True:
+                  time.sleep(30)
+          resources:
+            {{- toYaml .Values.indexerSvc.resources | nindent 12 }}
