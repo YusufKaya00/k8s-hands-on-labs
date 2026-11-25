@@ -15,7 +15,7 @@ spec:
         app: telemetry-agent
     spec:
       tolerations:
-        - key: "quantum-node"
+        - key: "quantum-pool"
           operator: "Equal"
           value: "data"
           effect: "NoSchedule"
