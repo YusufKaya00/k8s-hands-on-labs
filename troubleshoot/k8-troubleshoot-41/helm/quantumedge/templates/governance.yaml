@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: core-limits
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 150m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 25m
+        memory: 64Mi
+      max:
+        cpu: 500m
+        memory: 256Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-checkout-to-payment
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app: payment-core
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              env: edge
+          podSelector:
+            matchLabels:
+              app: checkout-api
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-auditor
+  namespace: {{ .Values.namespaces.core }}
+spec:
+  podSelector:
+    matchLabels:
+      app: cluster-auditor
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.clusterAuditor.service.targetPort }}
