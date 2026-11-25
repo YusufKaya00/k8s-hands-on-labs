@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: session-keys
+  namespace: {{ .Values.namespaces.edge }}
+type: Opaque
+stringData:
+  HMAC_SECRET: "qe-hmac-2026-prod"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: session-api
+  namespace: {{ .Values.namespaces.edge }}
+  labels:
+    app: session-api
+spec:
+  replicas: {{ .Values.sessionApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: session-api
+  template:
+    metadata:
+      labels:
+        app: session-api
+    spec:
+      containers:
+        - name: session-api
+          image: {{ .Values.sessionApi.image }}
+          env:
+            - name: SESSION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: session-keys
+                  key: SIGNING_SECRET
+          command:
+            - python3
+            - -c
+            - |
+              import json, os
+              from http.server import BaseHTTPRequestHandler, HTTPServer
+              class H(BaseHTTPRequestHandler):
+                  def do_GET(self):
+                      body = json.dumps({"service": "session-api", "status": "ok", "keyLoaded": bool(os.environ.get("SESSION_KEY"))}).encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "application/json")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+                  def log_message(self, *args):
+                      pass
+              HTTPServer(("0.0.0.0", {{ .Values.sessionApi.service.targetPort }}), H).serve_forever()
+          ports:
+            - containerPort: {{ .Values.sessionApi.service.targetPort }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.sessionApi.service.targetPort }}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.sessionApi.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: session-api
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  type: {{ .Values.sessionApi.service.type }}
+  selector:
+    app: session-api
+  ports:
+    - name: http
+      port: {{ .Values.sessionApi.service.port }}
+      targetPort: {{ .Values.sessionApi.service.targetPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: session-ingress
+  namespace: {{ .Values.namespaces.edge }}
+spec:
+  ingressClassName: {{ .Values.sessionApi.ingress.className }}
+  rules:
+    - host: {{ .Values.global.ingressHost }}
+      http:
+        paths:
+          - path: {{ .Values.sessionApi.ingress.path }}
+            pathType: {{ .Values.sessionApi.ingress.pathType }}
+            backend:
+              service:
+                name: session-api
+                port:
+                  number: {{ .Values.sessionApi.service.port }}
