@@ -71,17 +71,104 @@
     # TODO [Bilet 4.1]: MinIO S3 kurulumu ve Velero Helm kurulumunu tamamla
     - name: Install MinIO (S3 Backup Target) in velero namespace
       ansible.builtin.shell: |
-        helm upgrade --install minio minio/minio \
-          --namespace velero --create-namespace \
-          --set mode=standalone \
-          --set replicas=1 \
-          --set rootUser=minioadmin \
-          --set rootPassword=minioadmin \
-          --set buckets[0].name=velero-backups \
-          --set buckets[0].policy=none \
-          --set persistence.size=5Gi \
-          --set resources.requests.memory=256Mi \
-          --wait --timeout=180s
+        kubectl apply -f - <<'EOF'
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: velero
+        ---
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: minio
+          namespace: velero
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 5Gi
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: minio
+          namespace: velero
+          labels:
+            app: minio
+        spec:
+          replicas: 1
+          strategy:
+            type: Recreate
+          selector:
+            matchLabels:
+              app: minio
+          template:
+            metadata:
+              labels:
+                app: minio
+            spec:
+              securityContext:
+                fsGroup: 1001
+              containers:
+                - name: minio
+                  image: bitnamilegacy/minio:latest
+                  env:
+                    - name: MINIO_ROOT_USER
+                      value: "minioadmin"
+                    - name: MINIO_ROOT_PASSWORD
+                      value: "minioadmin"
+                    - name: MINIO_DEFAULT_BUCKETS
+                      value: "velero-backups"
+                  ports:
+                    - name: api
+                      containerPort: 9000
+                    - name: console
+                      containerPort: 9001
+                  resources:
+                    requests:
+                      cpu: 100m
+                      memory: 256Mi
+                    limits:
+                      memory: 512Mi
+                  readinessProbe:
+                    httpGet:
+                      path: /minio/health/ready
+                      port: 9000
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                  livenessProbe:
+                    httpGet:
+                      path: /minio/health/live
+                      port: 9000
+                    initialDelaySeconds: 15
+                    periodSeconds: 10
+                  volumeMounts:
+                    - name: data
+                      mountPath: /bitnami/minio/data
+              volumes:
+                - name: data
+                  persistentVolumeClaim:
+                    claimName: minio
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: minio
+          namespace: velero
+        spec:
+          type: ClusterIP
+          selector:
+            app: minio
+          ports:
+            - name: api
+              port: 9000
+              targetPort: 9000
+            - name: console
+              port: 9001
+              targetPort: 9001
+        EOF
+        kubectl rollout status deployment/minio -n velero --timeout=180s
       tags: [backup]
       changed_when: true
 
