@@ -234,6 +234,8 @@
       ansible.builtin.shell: |
         helm upgrade --install chaos litmuschaos/litmus \
           --namespace litmus --create-namespace \
+          --set mongodb.replicaCount=1 \
+          --set mongodb.arbiter.enabled=false \
           --wait --timeout=300s
       tags: [litmus]
       changed_when: true
