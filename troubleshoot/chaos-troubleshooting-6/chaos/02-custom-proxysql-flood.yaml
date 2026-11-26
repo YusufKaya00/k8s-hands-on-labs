@@ -1,0 +1,171 @@
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: custom-proxysql-chaos
+  namespace: chaos-shop
+  labels:
+    name: custom-proxysql-chaos
+    app.kubernetes.io/part-of: litmus
+    app.kubernetes.io/component: chaosexperiment
+spec:
+  definition:
+    scope: Namespaced
+    permissions:
+      - apiGroups: [""]
+        resources: ["pods", "events", "services"]
+        verbs: ["get", "list", "watch", "create", "patch", "update"]
+      - apiGroups: ["litmuschaos.io"]
+        resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+        verbs: ["get", "list", "create", "patch", "update"]
+    image: "python:3.11-alpine"
+    imagePullPolicy: IfNotPresent
+    command:
+      - python3
+      - -c
+    args:
+      - |
+        import concurrent.futures
+        import json
+        import os
+        import socket
+        import ssl
+        import time
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        TARGET_URL = os.environ.get("TARGET_URL", "http://orders-api.chaos-shop.svc.cluster.local:8080/orders")
+        PROXYSQL_HOST = os.environ.get("PROXYSQL_HOST", "proxysql.chaos-shop.svc.cluster.local")
+        PROXYSQL_PORT = int(os.environ.get("PROXYSQL_PORT", "6033"))
+        VM_URL = os.environ.get("VM_URL", "http://victoriametrics.chaos-shop.svc.cluster.local:8428")
+        CONCURRENCY = int(os.environ.get("CONCURRENCY", "12"))
+        REQUESTS = int(os.environ.get("REQUESTS", "120"))
+        CHAOS_ENGINE = os.environ.get("CHAOS_ENGINE", "proxysql-load-chaos")
+        EXPERIMENT_NAME = os.environ.get("EXPERIMENT_NAME", "custom-proxysql-chaos")
+
+        def get_ns():
+            p = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+            if os.path.exists(p):
+                return open(p).read().strip()
+            return os.environ.get("CHAOS_NAMESPACE", "chaos-shop")
+
+        def write_chaos_result(verdict, fail_step="N/A"):
+            token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+            ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            if not os.path.exists(token_path):
+                return
+            ns = get_ns()
+            token = open(token_path).read().strip()
+            name = f"{CHAOS_ENGINE}-{EXPERIMENT_NAME}"
+            ctx = ssl.create_default_context(cafile=ca_path)
+            base = f"https://kubernetes.default.svc/apis/litmuschaos.io/v1alpha1/namespaces/{ns}/chaosresults"
+            payload = {
+                "apiVersion": "litmuschaos.io/v1alpha1",
+                "kind": "ChaosResult",
+                "metadata": {"name": name, "namespace": ns},
+                "spec": {"engine": CHAOS_ENGINE, "experiment": EXPERIMENT_NAME},
+                "status": {
+                    "experimentStatus": {
+                        "phase": "Completed",
+                        "verdict": verdict,
+                        "failStep": fail_step,
+                        "probeSuccessPercentage": "100" if verdict == "Pass" else "0",
+                    }
+                },
+            }
+            data = json.dumps(payload).encode("utf-8")
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+            req = urllib.request.Request(f"{base}/{name}", data=data, headers={**headers, "Content-Type": "application/merge-patch+json"}, method="PATCH")
+            try:
+                urllib.request.urlopen(req, context=ctx, timeout=5)
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    creq = urllib.request.Request(base, data=data, headers=headers, method="POST")
+                    urllib.request.urlopen(creq, context=ctx, timeout=5)
+
+        def hit_once(idx):
+            t0 = time.monotonic()
+            try:
+                with urllib.request.urlopen(TARGET_URL, timeout=3) as resp:
+                    resp.read()
+                    code = resp.status
+                with socket.create_connection((PROXYSQL_HOST, PROXYSQL_PORT), timeout=2) as s:
+                    banner = s.recv(128)
+                    ok = (code == 200 and len(banner) >= 6)
+                return ok, time.monotonic() - t0, None
+            except Exception as exc:
+                return False, time.monotonic() - t0, str(exc)
+
+        print(f"[custom-proxysql-chaos] Starting {REQUESTS} requests with concurrency={CONCURRENCY} -> {TARGET_URL}")
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
+            results = list(pool.map(hit_once, range(REQUESTS)))
+
+        ok_count = sum(1 for ok, _, _ in results if ok)
+        latencies = sorted(lat for _, lat, _ in results)
+        p95 = latencies[int(len(latencies) * 0.95) - 1] if latencies else 0.0
+        success_rate = (ok_count / len(results)) * 100.0
+        errors = [err for ok, _, err in results if not ok][:5]
+
+        vm_total = "unavailable"
+        try:
+            q = urllib.parse.quote("sum(orders_requests_total)")
+            with urllib.request.urlopen(f"{VM_URL}/api/v1/query?query={q}", timeout=3) as resp:
+                vm_data = json.loads(resp.read().decode("utf-8"))
+                res = vm_data.get("data", {}).get("result", [])
+                if res:
+                    vm_total = res[0]["value"][1]
+        except Exception as exc:
+            vm_total = f"err:{exc}"
+
+        print(f"[custom-proxysql-chaos] Completed: {ok_count}/{len(results)} ok ({success_rate:.1f}%), p95={p95:.3f}s, vm_orders_total={vm_total}")
+        if errors:
+            print(f"[custom-proxysql-chaos] Sample errors: {errors}")
+
+        passed = success_rate >= 95.0
+        write_chaos_result("Pass" if passed else "Fail", "N/A" if passed else f"Success rate {success_rate:.1f}% < 95%")
+        if not passed:
+            raise SystemExit(1)
+    env:
+      - name: TARGET_URL
+        value: "http://orders-api.chaos-shop.svc.cluster.local:8080/orders"
+      - name: PROXYSQL_HOST
+        value: "proxysql.chaos-shop.svc.cluster.local"
+      - name: PROXYSQL_PORT
+        value: "6033"
+      - name: VM_URL
+        value: "http://victoriametrics.chaos-shop.svc.cluster.local:8428"
+      - name: CONCURRENCY
+        value: "12"
+      - name: REQUESTS
+        value: "120"
+    labels:
+      name: custom-proxysql-chaos
+      app.kubernetes.io/part-of: litmus
+      app.kubernetes.io/component: experiment-job
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: proxysql-load-chaos
+  namespace: chaos-shop
+spec:
+  engineState: "active"
+  appinfo:
+    appns: "chaos-shop"
+    applabel: "app=orders-api"
+    appkind: "deployment"
+  chaosServiceAccount: litmus-admin
+  jobCleanUpPolicy: retain
+  experiments:
+    - name: custom-proxysql-chaos
+      spec:
+        components:
+          env:
+            - name: CONCURRENCY
+              value: "16"
+            - name: REQUESTS
+              value: "160"
