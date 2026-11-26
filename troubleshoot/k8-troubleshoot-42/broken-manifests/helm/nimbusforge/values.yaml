@@ -1,0 +1,248 @@
+global:
+  ingressHost: "forge.local.nip.io"
+  imageRegistry: "docker.io"
+  pythonImage: "python:3.11-alpine"
+
+namespaces:
+  web: "forge-web"
+  data: "forge-data"
+
+profileApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/profile"
+    pathType: "Exact"
+  probes:
+    readiness:
+      path: "/healthz"
+      port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+uploadApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/upload"
+    pathType: "Prefix"
+  probes:
+    readiness:
+      path: "/healthz"
+      port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+catalogApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/catalog"
+    pathType: "Prefix"
+  probes:
+    readiness:
+      path: "/healthz"
+      port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+billingApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/billing"
+    pathType: "Prefix"
+  probes:
+    readiness:
+      path: "/healthz"
+      port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+ledgerDb:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+searchApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/search"
+    pathType: "Prefix"
+  probes:
+    readiness:
+      path: "/healthz"
+      port: 9090
+      initialDelaySeconds: 2
+      periodSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+notifyApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/notify"
+    pathType: "Prefix"
+  probes:
+    readiness:
+      path: "/healthz"
+      port: 8080
+      initialDelaySeconds: 2
+      periodSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+reportApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/reports"
+    pathType: "Prefix"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    readOnlyRootFilesystem: true
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+cacheWarmer:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 150m
+      memory: 48Mi
+
+batchRunner:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  nodeSelector:
+    workload: batch
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+auditApi:
+  replicaCount: 1
+  image: "python:3.11-alpine"
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+  ingress:
+    enabled: true
+    className: "nginx"
+    path: "/audit"
+    pathType: "Prefix"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
