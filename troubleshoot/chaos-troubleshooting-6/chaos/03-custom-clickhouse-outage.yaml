@@ -1,0 +1,169 @@
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosExperiment
+metadata:
+  name: custom-clickhouse-outage
+  namespace: chaos-shop
+  labels:
+    name: custom-clickhouse-outage
+    app.kubernetes.io/part-of: litmus
+    app.kubernetes.io/component: chaosexperiment
+spec:
+  definition:
+    scope: Namespaced
+    permissions:
+      - apiGroups: [""]
+        resources: ["pods", "events"]
+        verbs: ["get", "list", "watch", "create", "patch", "update"]
+      - apiGroups: ["apps"]
+        resources: ["deployments", "deployments/scale"]
+        verbs: ["get", "list", "patch", "update"]
+      - apiGroups: ["litmuschaos.io"]
+        resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+        verbs: ["get", "list", "create", "patch", "update"]
+    image: "python:3.11-alpine"
+    imagePullPolicy: IfNotPresent
+    command:
+      - python3
+      - -c
+    args:
+      - |
+        import json
+        import os
+        import ssl
+        import time
+        import urllib.error
+        import urllib.parse
+        import urllib.request
+
+        ORDERS_URL = os.environ.get("ORDERS_URL", "http://orders-api.chaos-shop.svc.cluster.local:8080/orders")
+        ANALYTICS_URL = os.environ.get("ANALYTICS_URL", "http://orders-api.chaos-shop.svc.cluster.local:8080/analytics")
+        VM_URL = os.environ.get("VM_URL", "http://victoriametrics.chaos-shop.svc.cluster.local:8428")
+        OUTAGE_SECONDS = int(os.environ.get("OUTAGE_SECONDS", "15"))
+        CHAOS_ENGINE = os.environ.get("CHAOS_ENGINE", "clickhouse-outage-chaos")
+        EXPERIMENT_NAME = os.environ.get("EXPERIMENT_NAME", "custom-clickhouse-outage")
+
+        token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read().strip()
+        ns = open("/var/run/secrets/kubernetes.io/serviceaccount/namespace").read().strip()
+        ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+        def k8s_req(path, method="GET", body=None, content_type="application/json"):
+            url = f"https://kubernetes.default.svc{path}"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": content_type}
+            data = json.dumps(body).encode("utf-8") if body is not None else None
+            req = urllib.request.Request(url, data=data, headers=headers, method=method)
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        def scale_clickhouse(replicas):
+            print(f"[custom-clickhouse-outage] Scaling deploy/clickhouse -> {replicas}")
+            k8s_req(
+                f"/apis/apps/v1/namespaces/{ns}/deployments/clickhouse/scale",
+                method="PATCH",
+                body={"spec": {"replicas": replicas}},
+                content_type="application/merge-patch+json",
+            )
+
+        def http_get(url):
+            try:
+                with urllib.request.urlopen(url, timeout=3) as r:
+                    return r.status, json.loads(r.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                raw = e.read().decode("utf-8", errors="replace")
+                try:
+                    return e.code, json.loads(raw)
+                except Exception:
+                    return e.code, {"raw": raw}
+            except Exception as exc:
+                return 0, {"error": str(exc)}
+
+        def write_chaos_result(verdict, fail_step="N/A"):
+            name = f"{CHAOS_ENGINE}-{EXPERIMENT_NAME}"
+            base = f"/apis/litmuschaos.io/v1alpha1/namespaces/{ns}/chaosresults"
+            payload = {
+                "apiVersion": "litmuschaos.io/v1alpha1",
+                "kind": "ChaosResult",
+                "metadata": {"name": name, "namespace": ns},
+                "spec": {"engine": CHAOS_ENGINE, "experiment": EXPERIMENT_NAME},
+                "status": {
+                    "experimentStatus": {
+                        "phase": "Completed",
+                        "verdict": verdict,
+                        "failStep": fail_step,
+                        "probeSuccessPercentage": "100" if verdict == "Pass" else "0",
+                    }
+                },
+            }
+            try:
+                k8s_req(f"{base}/{name}", method="PATCH", body=payload, content_type="application/merge-patch+json")
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    k8s_req(base, method="POST", body=payload)
+
+        orders_ok = False
+        analytics_degraded = False
+        recovered = False
+        fail_reason = "N/A"
+
+        try:
+            scale_clickhouse(0)
+            for _ in range(15):
+                pods = k8s_req(f"/api/v1/namespaces/{ns}/pods?labelSelector=app%3Dclickhouse").get("items", [])
+                if not pods:
+                    break
+                time.sleep(2)
+
+            print(f"[custom-clickhouse-outage] Injecting {OUTAGE_SECONDS}s outage and testing graceful degradation...")
+            o_code, o_body = http_get(ORDERS_URL)
+            a_code, a_body = http_get(ANALYTICS_URL)
+            print(f"[custom-clickhouse-outage] During outage -> /orders={o_code} {o_body}")
+            print(f"[custom-clickhouse-outage] During outage -> /analytics={a_code} {a_body}")
+            orders_ok = (o_code == 200 and o_body.get("analytics_event") == "degraded-skipped")
+            analytics_degraded = (a_code == 503 and a_body.get("status") == "degraded")
+
+            time.sleep(OUTAGE_SECONDS)
+            _, vm_body = http_get(f"{VM_URL}/api/v1/query?query={urllib.parse.quote('sum(clickhouse_degraded_total)')}")
+            print(f"[custom-clickhouse-outage] VictoriaMetrics clickhouse_degraded_total={vm_body}")
+        finally:
+            scale_clickhouse(1)
+            for _ in range(30):
+                code, _ = http_get(ANALYTICS_URL)
+                if code == 200:
+                    recovered = True
+                    break
+                time.sleep(2)
+
+        print(f"[custom-clickhouse-outage] Summary: orders_ok={orders_ok}, analytics_degraded={analytics_degraded}, recovered={recovered}")
+        passed = orders_ok and analytics_degraded and recovered
+        if not passed:
+            fail_reason = f"orders_ok={orders_ok}, analytics_degraded={analytics_degraded}, recovered={recovered}"
+        write_chaos_result("Pass" if passed else "Fail", fail_reason)
+        if not passed:
+            raise SystemExit(1)
+    env:
+      - name: OUTAGE_SECONDS
+        value: "15"
+    labels:
+      name: custom-clickhouse-outage
+      app.kubernetes.io/part-of: litmus
+      app.kubernetes.io/component: experiment-job
+---
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: clickhouse-outage-chaos
+  namespace: chaos-shop
+spec:
+  engineState: "active"
+  appinfo:
+    appns: "chaos-shop"
+    applabel: "app=clickhouse"
+    appkind: "deployment"
+  chaosServiceAccount: litmus-admin
+  jobCleanUpPolicy: retain
+  experiments:
+    - name: custom-clickhouse-outage
+      spec:
+        components:
+          env:
+            - name: OUTAGE_SECONDS
+              value: "15"
