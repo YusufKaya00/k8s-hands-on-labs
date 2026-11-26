@@ -92,7 +92,7 @@ Lab izole bir **Minikube (`chaos-lab-6`)** profili üzerinde %100 lokal (`$0`) �
 | **ProxySQL** | L7 SQL Proxy & Pooler | MaxScale, HAProxy (L4) | Tam açık kaynak (GPL), SQL-farkında connection multiplexing ve şeffaf Read/Write split |
 | **ClickHouse** | Kolon Tabanlı OLAP DB | Elasticsearch, BigQuery | C++ kolon motoru ile Elasticsearch'e göre çok düşük RAM'de 10x–100x hızlı analitik agregasyon |
 | **VictoriaMetrics** | Prometheus Uyumlu TSDB | Prometheus + Thanos/Mimir | Tek binary sadelik, yüksek kardinalitede 2x–5x daha düşük RAM/disk, tam PromQL/MetricsQL uyumu |
-| **LitmusChaos (`litmus-core`)** | K8s Chaos Engine | Chaos Mesh, Manuel script | CRD + otomatik steady-state Probe + herhangi bir container imajıyla kolay Custom Experiment |
+| **LitmusChaos** | K8s Chaos Platformu | Chaos Mesh, Manuel script | ChaosCenter Web UI + CRD + otomatik steady-state Probe + herhangi bir container imajıyla kolay Custom Experiment |
 
 ---
 
