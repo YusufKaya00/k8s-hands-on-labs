@@ -55,6 +55,13 @@ spec:
             periodSeconds: 5
           resources:
             {{- toYaml .Values.reportApi.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: reports
+              mountPath: /tmp/reports
+      volumes:
+        - name: reports
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
