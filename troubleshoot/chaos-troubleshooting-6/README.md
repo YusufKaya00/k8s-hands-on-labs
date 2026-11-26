@@ -163,9 +163,15 @@ curl -s http://localhost:8080/analytics | python3 -m json.tool
    - **Apply Changes** → sağ üstten **Save** → **Run**!
    - Canlı takip: `kubectl -n chaos-shop get pods -w` ve ChaosCenter arayüzündeki **Resilience Score** ekranı.
 
-#### Bölüm 2: CLI & Custom Python Experiments (ProxySQL Load & ClickHouse Outage)
+#### Bölüm 2: Arayüze Hazır Kayıtlı Custom Deneyler (`custom-proxysql-load` & `custom-clickhouse-outage`)
+`setup.sh` çalıştırıldığında `chaos/ui-workflows/` altındaki iki özel Python testi ChaosCenter Web UI içine Argo Workflow olarak otomatik kaydedilir. **Chaos Experiments** sekmesine girdiğinizde şu iki deneyi doğrudan **Run** butonuyla arayüzden çalıştırıp grafiğini ve loglarını canlı izleyebilirsiniz:
 
-ChaosCenter UI'daki standart fault'lara ek olarak, kendi veri yığınımıza özel yazdığımız 3 deklaratif deneyi CLI üzerinden çalıştırıp karşılaştırabilirsiniz:
+- **`custom-proxysql-load`** (`chaos/ui-workflows/02-ui-proxysql-flood.yaml`): `orders-api/orders` ve `proxysql:6033` üzerine 16 eşzamanlı thread ile 160 istek yollar, 6 sn VictoriaMetrics scrape bekler ve `orders_requests_total` metriğini doğrular.
+- **`custom-clickhouse-outage`** (`chaos/ui-workflows/03-ui-clickhouse-outage.yaml`): `deploy/clickhouse` replikasını 15 sn `0`'a indirir; `/orders`'ın `200 OK` (`degraded-skipped`) kaldığını, `/analytics`'in `503 degraded` döndüğünü ve VictoriaMetrics'te `clickhouse_degraded_total` arttığını doğrulayıp `finally` içinde ClickHouse'u `1` replikaya geri çıkarır.
+
+#### Bölüm 3: CLI Üzerinden Deklaratif Çalıştırma (Opsiyonel)
+
+İsterseniz aynı testleri bağımsız `ChaosEngine` YAML'ları olarak CLI üzerinden de tetikleyebilirsiniz:
 
 ##### Deney 1 (CLI Deklaratif Probe): Standart `pod-delete` (`chaos/01-pod-delete.yaml`)
 `orders-api` podlarından birini öldürürken aynı anda her 2 saniyede bir `/healthz` endpoint'ine `httpProbe` gönderir. 2 replika + `PodDisruptionBudget (minAvailable: 1)` sayesinde kesinti yaşanmadan `Pass` vermelidir.
@@ -241,11 +247,10 @@ This hands-on lab teaches how to install and run **LitmusChaos ChaosCenter (Web 
 - **ClickHouse (`24.8-alpine`):** Columnar OLAP engine (`analytics.order_events`) on `:8123` (HTTP) and `:9000` (Native). Delivers 10x–100x faster analytical aggregations (`GROUP BY`/`SUM`) with much lower RAM/disk footprint than JVM-based Elasticsearch, while isolating heavy analytics from MariaDB OLTP and demonstrating **graceful degradation** when offline.
 - **VictoriaMetrics (`v1.106.0`):** Prometheus-compatible TSDB scraping `orders-api:8080/metrics` every `5s` (`:8428/vmui`). Chosen over vanilla Prometheus + Thanos/Mimir for 2x–5x lower RAM/disk usage under high cardinality, single-binary simplicity, built-in long-term retention, and MetricsQL/PromQL compatibility.
 - **`orders-api` (`replicas: 2` + `PodDisruptionBudget`):** Python HTTP service exposing `/healthz`, `/orders` (ProxySQL critical check + ClickHouse best-effort event), `/analytics` (ClickHouse query), and `/metrics`.
-- **LitmusChaos (`litmus` ChaosCenter + `chaos-lab-6-infra`):** CRD-driven GitOps chaos platform + Web UI (`setup.sh` auto-connects cluster-wide Chaos Infrastructure via `litmusctl`) supporting continuous steady-state probes and custom `ChaosExperiment` blueprints in Python/Bash without compiling Go:
-  1. **Web UI Walkthrough:** Create an `orders-health` HTTP Probe under **Resilience Probes** first (prevents the UI `probeRef` error), then run `pod-delete` targeting `deployment` / `chaos-shop` / `app=orders-api`.
-  2. `chaos/01-pod-delete.yaml`: Declarative CLI `pod-delete` + `Continuous` `httpProbe`.
-  3. `chaos/02-custom-proxysql-flood.yaml`: Custom Python `ChaosExperiment` stress-testing ProxySQL & `orders-api`, checking VictoriaMetrics, and writing a `ChaosResult`.
-  4. `chaos/03-custom-clickhouse-outage.yaml`: Custom Python `ChaosExperiment` scaling `deploy/clickhouse` to `0`, verifying `/orders` remains `200 OK` while `/analytics` returns `503 degraded` and `clickhouse_degraded_total` increments in VictoriaMetrics, then restoring ClickHouse.
+- **LitmusChaos (`litmus` ChaosCenter + `chaos-lab-6-infra`):** CRD-driven GitOps chaos platform + Web UI (`setup.sh` auto-connects cluster-wide Chaos Infrastructure via `litmusctl` and pre-registers both custom Argo Workflows in **Chaos Experiments** so everything can be run and inspected straight from the UI):
+  1. **Web UI `pod-delete` + Probe:** Create an `orders-health` HTTP Probe under **Resilience Probes** first (prevents the UI `probeRef` error), then run `pod-delete` targeting `deployment` / `chaos-shop` / `app=orders-api`.
+  2. **Pre-registered UI Custom Experiments (`chaos/ui-workflows/`):** Click **Run** on `custom-proxysql-load` and `custom-clickhouse-outage` directly inside **ChaosCenter UI → Chaos Experiments** to view live step graphs, logs, and pass/fail status.
+  3. **Optional CLI Declarative Equivalents:** `chaos/01-pod-delete.yaml`, `chaos/02-custom-proxysql-flood.yaml`, `chaos/03-custom-clickhouse-outage.yaml`.
 
 ---
 
