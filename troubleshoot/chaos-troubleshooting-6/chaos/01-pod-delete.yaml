@@ -1,0 +1,40 @@
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: orders-pod-delete
+  namespace: chaos-shop
+spec:
+  engineState: "active"
+  appinfo:
+    appns: "chaos-shop"
+    applabel: "app=orders-api"
+    appkind: "deployment"
+  chaosServiceAccount: litmus-admin
+  jobCleanUpPolicy: retain
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "20"
+            - name: CHAOS_INTERVAL
+              value: "7"
+            - name: FORCE
+              value: "false"
+        probe:
+          - name: orders-api-health-probe
+            type: httpProbe
+            mode: Continuous
+            httpProbe/inputs:
+              url: "http://orders-api.chaos-shop.svc.cluster.local:8080/healthz"
+              insecureSkipTLS: true
+              method:
+                get:
+                  criteria: ==
+                  responseCode: "200"
+            runProperties:
+              probeTimeout: 2s
+              interval: 2s
+              retry: 2
+              stopOnFailure: false
