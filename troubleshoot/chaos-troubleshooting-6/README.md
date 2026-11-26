@@ -74,15 +74,15 @@ Lab izole bir **Minikube (`chaos-lab-6`)** profili üzerinde %100 lokal (`$0`) �
   - **PromQL + MetricsQL Tam Uyumu:** Mevcut Prometheus `/metrics` endpoint'lerini ve Grafana dashboard'larını değiştirmeden doğrudan scrape eder; üstüne PromQL'in daha pratik genişletilmiş hali olan **MetricsQL** fonksiyonlarını sunar.
 - **Bu labda nasıl kuruldu?** [manifests/observability.yaml](./manifests/observability.yaml) içinde `vm-scrape-config` `ConfigMap`'i her 5 saniyede bir `orders-api:8080/metrics` endpoint'ini kazır. Port `8428` üzerinde `/vmui` arayüzünü sunar.
 
-#### E) LitmusChaos (`litmus-core`) ve Custom Experiment Anatomisi
+#### E) LitmusChaos (ChaosCenter Web UI + CRD Mimarisi) ve Custom Experiment Anatomisi
 - **Neden `kubectl delete pod` değil de LitmusChaos?** Manuel `kubectl delete pod` rastgele bir kesinti yaratır ama sistemin o esnada gerçekten sağlıklı kaldığını ölçmez ve tekrarlanabilir değildir. LitmusChaos kaos testini **GitOps uyumlu Kubernetes CRD'lerine** taşır: kaos öncesi/sırası/sonrasında otomatik **Probe** (`httpProbe`, `cmdProbe`, `promProbe`) koşturur ve CI/CD pipeline'larında kapı (gate) olarak kullanılabilecek `ChaosResult` (`Pass`/`Fail`) üretir.
 - **LitmusChaos vs Chaos Mesh:** Her ikisi de güçlüdür; Chaos Mesh ağ/kernel (eBPF/tc) seviyesinde çok iyidir ancak yeni bir özel deney yazmak için çoğu zaman Go kodunu derlemek gerekir. LitmusChaos ise `ChaosExperiment` içine `python:3.11-alpine` veya `bash` gibi herhangi bir standart container imajı koyup saniyeler içinde kendi **Custom ChaosExperiment** şablonunuzu yazmanıza izin verir.
-- **Bu labdaki çekirdek bileşenler (`litmus-core`):** Ağır ChaosCenter UI (MongoDB) yerine hafif operator + runner mimarisi kullanılır:
+- **Bu labda nasıl kuruldu?** Minikube üzerinde tek replikalı MongoDB + `litmuschaos/litmus` ChaosCenter Web UI kurulur ve `litmusctl` ile `chaos-lab-6-infra` ajanı **`cluster` modunda** otomatik bağlanır (böylece `chaos-shop` dahil tüm namespace'leri yönetebilir):
   1. **`ChaosExperiment` (Şablon / Blueprint):** Hangi container imajının, hangi komutun ve varsayılan env değişkenlerinin çalışacağını tanımlar.
   2. **`ChaosEngine` (Çalıştırıcı / Tetikleyici):** Hedef uygulamayı (`appinfo`), RBAC yetkisini (`chaosServiceAccount`), çalıştırılacak `ChaosExperiment` adını ve **Probe**'ları bağlar.
   3. **`ChaosResult` (Rapor / Karar):** Deney bittiğinde `Verdict` (`Pass` veya `Fail`) ve `ProbeSuccessPercentage` değerini tutar. Labdaki custom Python script'leri Kubernetes API üzerinden `ChaosResult` objesini de bizzat oluşturup günceller.
 
-> **Not — ChaosCenter UI'da `probeRef` Hatası:** ChaosCenter grafik arayüzünde bazı sürümlerde Probe ekleyince `Probe in fault run-chaos is not attached to a proper reference, please add it to annotations as probeRef` uyarısı ve label seçememe/kaydedememe yaşanabilir. Deklaratif YAML içinde doğrudan `ChaosEngine.spec.experiments[].spec.probe` tanımı (`chaos/01-pod-delete.yaml` örneğindeki gibi) kullandığınızda ChaosOperator bu probe'u ek annotation gerektirmeden doğrudan çalıştırır.
+> **Önemli — ChaosCenter UI'da `probeRef` Hatasını Önleme:** ChaosCenter arayüzünde deneyi düzenlerken içeriden doğrudan yeni Probe eklerseniz bazen `Probe in fault run-chaos is not attached to a proper reference, please add it to annotations as probeRef` hatası ve kaydetme sorunu çıkar. Bunu tamamen önlemek için **önce sol menüden `Resilience Probes` altında Probe'unuzu oluşturun**, sonra deneyi kurarken `Probes` sekmesinden hazır Probe'u seçin!
 
 #### F) Karşılaştırmalı Özet Tablosu
 
