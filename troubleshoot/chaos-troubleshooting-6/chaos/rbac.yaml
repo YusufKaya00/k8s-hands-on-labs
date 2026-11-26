@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litmus-admin
+  namespace: chaos-shop
+  labels:
+    app.kubernetes.io/part-of: litmus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: litmus-admin-role
+  namespace: chaos-shop
+  labels:
+    app.kubernetes.io/part-of: litmus
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "events", "services", "configmaps", "pods/exec", "pods/log"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update", "deletecollection"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete", "deletecollection"]
+  - apiGroups: ["litmuschaos.io"]
+    resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: litmus-admin-binding
+  namespace: chaos-shop
+  labels:
+    app.kubernetes.io/part-of: litmus
+subjects:
+  - kind: ServiceAccount
+    name: litmus-admin
+    namespace: chaos-shop
+roleRef:
+  kind: Role
+  name: litmus-admin-role
+  apiGroup: rbac.authorization.k8s.io

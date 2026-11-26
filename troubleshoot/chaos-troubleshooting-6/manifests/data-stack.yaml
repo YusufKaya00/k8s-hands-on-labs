@@ -1,0 +1,327 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chaos-shop
+  labels:
+    app.kubernetes.io/part-of: chaos-troubleshooting-6
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mariadb-init
+  namespace: chaos-shop
+data:
+  01-init.sql: |
+    CREATE DATABASE IF NOT EXISTS shop;
+    USE shop;
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      sku VARCHAR(64) NOT NULL,
+      amount DECIMAL(10, 2) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO orders (sku, amount) VALUES
+      ('KEYBOARD-MECH-01', 129.90),
+      ('MONITOR-4K-27', 449.00),
+      ('NVME-SSD-2TB', 159.50);
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mariadb
+  namespace: chaos-shop
+  labels:
+    app: mariadb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+  template:
+    metadata:
+      labels:
+        app: mariadb
+    spec:
+      containers:
+        - name: mariadb
+          image: mariadb:11.4
+          ports:
+            - containerPort: 3306
+              name: mysql
+          env:
+            - name: MARIADB_ROOT_PASSWORD
+              value: "root-pass"
+            - name: MARIADB_DATABASE
+              value: "shop"
+            - name: MARIADB_USER
+              value: "shop"
+            - name: MARIADB_PASSWORD
+              value: "shop-pass"
+          readinessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect", "--innodb_initialized"]
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["healthcheck.sh", "--connect"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          volumeMounts:
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: initdb
+          configMap:
+            name: mariadb-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb
+  namespace: chaos-shop
+  labels:
+    app: mariadb
+spec:
+  selector:
+    app: mariadb
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: proxysql-config
+  namespace: chaos-shop
+data:
+  proxysql.cnf: |
+    datadir="/var/lib/proxysql"
+
+    admin_variables=
+    {
+      admin_credentials="admin:admin;radmin:radmin"
+      mysql_ifaces="0.0.0.0:6032"
+    }
+
+    mysql_variables=
+    {
+      threads=2
+      max_connections=256
+      default_query_delay=0
+      default_query_timeout=10000
+      interfaces="0.0.0.0:6033"
+      default_schema="shop"
+      monitor_username="shop"
+      monitor_password="shop-pass"
+      monitor_history=60000
+      monitor_connect_interval=5000
+      monitor_ping_interval=3000
+    }
+
+    mysql_servers =
+    (
+      {
+        address="mariadb.chaos-shop.svc.cluster.local"
+        port=3306
+        hostgroup=10
+        max_connections=100
+      }
+    )
+
+    mysql_users:
+    (
+      {
+        username = "shop"
+        password = "shop-pass"
+        default_hostgroup = 10
+        active = 1
+      }
+    )
+
+    mysql_query_rules:
+    (
+      {
+        rule_id=1
+        active=1
+        match_pattern="^SELECT.*"
+        destination_hostgroup=10
+        apply=1
+      }
+    )
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxysql
+  namespace: chaos-shop
+  labels:
+    app: proxysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: proxysql
+  template:
+    metadata:
+      labels:
+        app: proxysql
+    spec:
+      containers:
+        - name: proxysql
+          image: proxysql/proxysql:2.7.1
+          ports:
+            - containerPort: 6033
+              name: mysql
+            - containerPort: 6032
+              name: admin
+          readinessProbe:
+            tcpSocket:
+              port: 6033
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 6032
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          volumeMounts:
+            - name: proxysql-cnf
+              mountPath: /etc/proxysql.cnf
+              subPath: proxysql.cnf
+      volumes:
+        - name: proxysql-cnf
+          configMap:
+            name: proxysql-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxysql
+  namespace: chaos-shop
+  labels:
+    app: proxysql
+spec:
+  selector:
+    app: proxysql
+  ports:
+    - name: mysql
+      port: 6033
+      targetPort: 6033
+    - name: admin
+      port: 6032
+      targetPort: 6032
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-init
+  namespace: chaos-shop
+data:
+  01-init.sql: |
+    CREATE DATABASE IF NOT EXISTS analytics;
+
+    CREATE TABLE IF NOT EXISTS analytics.order_events
+    (
+      event_time DateTime DEFAULT now(),
+      sku String,
+      status String
+    )
+    ENGINE = MergeTree
+    ORDER BY event_time;
+
+    INSERT INTO analytics.order_events (sku, status) VALUES
+      ('KEYBOARD-MECH-01', 'seeded'),
+      ('MONITOR-4K-27', 'seeded');
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse
+  namespace: chaos-shop
+  labels:
+    app: clickhouse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:24.8-alpine
+          ports:
+            - containerPort: 8123
+              name: http
+            - containerPort: 9000
+              name: native
+          env:
+            - name: CLICKHOUSE_DB
+              value: "analytics"
+            - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+              value: "1"
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8123
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 8123
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: initdb
+          configMap:
+            name: clickhouse-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: chaos-shop
+  labels:
+    app: clickhouse
+spec:
+  selector:
+    app: clickhouse
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+    - name: native
+      port: 9000
+      targetPort: 9000
