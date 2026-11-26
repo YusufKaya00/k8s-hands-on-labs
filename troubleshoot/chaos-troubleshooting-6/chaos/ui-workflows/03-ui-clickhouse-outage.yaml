@@ -8,8 +8,6 @@ metadata:
 spec:
   entrypoint: custom-clickhouse-outage
   serviceAccountName: argo-chaos
-  podGC:
-    strategy: OnWorkflowCompletion
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
