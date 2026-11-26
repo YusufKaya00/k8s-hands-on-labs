@@ -251,6 +251,19 @@ data:
       ('KEYBOARD-MECH-01', 'seeded'),
       ('MONITOR-4K-27', 'seeded');
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-low-mem
+  namespace: chaos-shop
+data:
+  low-mem.xml: |
+    <clickhouse>
+      <mark_cache_size>67108864</mark_cache_size>
+      <uncompressed_cache_size>33554432</uncompressed_cache_size>
+      <max_concurrent_queries>32</max_concurrent_queries>
+    </clickhouse>
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -296,17 +309,23 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 192Mi
+              memory: 256Mi
             limits:
               cpu: 500m
-              memory: 512Mi
+              memory: 1Gi
           volumeMounts:
             - name: initdb
               mountPath: /docker-entrypoint-initdb.d
+            - name: low-mem-cfg
+              mountPath: /etc/clickhouse-server/config.d/low-mem.xml
+              subPath: low-mem.xml
       volumes:
         - name: initdb
           configMap:
             name: clickhouse-init
+        - name: low-mem-cfg
+          configMap:
+            name: clickhouse-low-mem
 ---
 apiVersion: v1
 kind: Service
