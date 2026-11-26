@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batch-runner
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: batch-runner
+spec:
+  replicas: {{ .Values.batchRunner.replicaCount }}
+  selector:
+    matchLabels:
+      app: batch-runner
+  template:
+    metadata:
+      labels:
+        app: batch-runner
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.batchRunner.nodeSelector | nindent 8 }}
+      tolerations:
+        - key: "forge-pool"
+          operator: "Equal"
+          value: "batch"
+          effect: "NoExecute"
+      containers:
+        - name: batch-runner
+          image: {{ .Values.batchRunner.image }}
+          command:
+            - python3
+            - -c
+            - |
+              import time
+              print("batch-runner active", flush=True)
+              while True:
+                  time.sleep(30)
+          resources:
+            {{- toYaml .Values.batchRunner.resources | nindent 12 }}

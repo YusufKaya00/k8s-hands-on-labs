@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-warmer
+  namespace: {{ .Values.namespaces.data }}
+  labels:
+    app: cache-warmer
+spec:
+  replicas: {{ .Values.cacheWarmer.replicaCount }}
+  selector:
+    matchLabels:
+      app: cache-warmer
+  template:
+    metadata:
+      labels:
+        app: cache-warmer
+    spec:
+      containers:
+        - name: cache-warmer
+          image: {{ .Values.cacheWarmer.image }}
+          command:
+            - python3
+            - -c
+            - |
+              import time
+              buf = bytearray(60 * 1024 * 1024)
+              for i in range(0, len(buf), 4096):
+                  buf[i] = 1
+              print("cache-warmer buffer initialized (60MB)", flush=True)
+              while True:
+                  time.sleep(30)
+          resources:
+            {{- toYaml .Values.cacheWarmer.resources | nindent 12 }}
