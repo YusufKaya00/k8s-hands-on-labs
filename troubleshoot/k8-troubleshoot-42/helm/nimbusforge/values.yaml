@@ -212,7 +212,7 @@ cacheWarmer:
       memory: 32Mi
     limits:
       cpu: 150m
-      memory: 48Mi
+      memory: 128Mi
 
 batchRunner:
   replicaCount: 1
