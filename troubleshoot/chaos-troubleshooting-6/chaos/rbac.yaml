@@ -38,6 +38,9 @@ subjects:
   - kind: ServiceAccount
     name: litmus-admin
     namespace: chaos-shop
+  - kind: ServiceAccount
+    name: argo-chaos
+    namespace: litmus
 roleRef:
   kind: Role
   name: litmus-admin-role
