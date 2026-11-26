@@ -18,7 +18,7 @@ profileApi:
     enabled: true
     className: "nginx"
     path: "/profile"
-    pathType: "Exact"
+    pathType: "Prefix"
   probes:
     readiness:
       path: "/healthz"
