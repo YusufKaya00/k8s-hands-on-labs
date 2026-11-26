@@ -105,8 +105,11 @@ if command -v litmusctl >/dev/null 2>&1; then
       --non-interactive=true
   fi
 
-  echo "==> Waiting for Chaos Infrastructure agent pods to become Ready..."
-  sleep 8
+  echo "==> Ensuring subscriber connects to litmus-server-service and waiting for pods..."
+  kubectl -n litmus patch configmap subscriber-config --type merge \
+    -p '{"data":{"SERVER_ADDR":"http://litmus-server-service.litmus.svc.cluster.local:9002/query"}}' >/dev/null 2>&1 || true
+  kubectl -n litmus rollout restart deploy/subscriber >/dev/null 2>&1 || true
+  sleep 5
   kubectl -n litmus wait --for=condition=Ready pod --all --timeout=240s
 else
   echo "WARN: 'litmusctl' not found; connect your cluster manually from the ChaosCenter UI."
