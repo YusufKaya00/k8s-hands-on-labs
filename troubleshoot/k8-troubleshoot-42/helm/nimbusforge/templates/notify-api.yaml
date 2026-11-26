@@ -28,7 +28,7 @@ spec:
           image: {{ .Values.notifyApi.image }}
           envFrom:
             - configMapRef:
-                name: notify-settings
+                name: NOTIFY_CHANNEL
           command:
             - python3
             - -c
