@@ -1,0 +1,17 @@
+profileApi:
+  ingress:
+    pathType: "Prefix"
+
+searchApi:
+  probes:
+    readiness:
+      port: 8080
+
+cacheWarmer:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
