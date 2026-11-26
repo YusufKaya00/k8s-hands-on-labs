@@ -18,7 +18,7 @@ rules:
     resources: ["pods", "events", "services", "configmaps", "pods/exec", "pods/log"]
     verbs: ["get", "list", "watch", "create", "delete", "patch", "update", "deletecollection"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "deployments/scale", "replicasets", "statefulsets", "daemonsets"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
     verbs: ["get", "list", "watch", "patch", "update"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
