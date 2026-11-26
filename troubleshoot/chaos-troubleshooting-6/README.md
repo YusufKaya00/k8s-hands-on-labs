@@ -107,23 +107,25 @@ chmod +x setup.sh cleanup.sh
 Kurulum tamamlandığında bileşenleri tek tek doğrulayın:
 
 ```bash
-# Tüm podları gör
+# Tüm podları gör (hem chaos-shop hem litmus)
 kubectl -n chaos-shop get pods,pdb
+kubectl -n litmus get pods
 
-# 1. MariaDB ve ProxySQL üzerinden canlı bağlantı testi
+# 1. MariaDB ve ProxySQL (:6033 SQL) üzerinden canlı bağlantı testi (--skip-ssl gerekli)
 kubectl -n chaos-shop exec -it deploy/mariadb -- \
-  mariadb -h proxysql.chaos-shop.svc.cluster.local -P 6033 -u shop -pshop-pass -e "SELECT * FROM shop.orders;"
+  mariadb --skip-ssl -h proxysql.chaos-shop.svc.cluster.local -P 6033 -u shop -pshop-pass -e "SELECT * FROM shop.orders;"
 
-# 2. ProxySQL Admin arayüzünden connection pool ve hostgroup istatistiklerini oku
+# 2. ProxySQL Admin (:6032) arayüzünden connection pool ve hostgroup istatistiklerini oku (-u radmin)
 kubectl -n chaos-shop exec -it deploy/mariadb -- \
-  mariadb -h proxysql.chaos-shop.svc.cluster.local -P 6032 -u admin -padmin \
+  mariadb --skip-ssl -h proxysql.chaos-shop.svc.cluster.local -P 6032 -u radmin -pradmin \
   -e "SELECT hostgroup, srv_host, status, ConnUsed, ConnFree, Queries FROM stats_mysql_connection_pool;"
 
 # 3. ClickHouse HTTP API testi
 kubectl -n chaos-shop exec -it deploy/orders-api -- \
   python3 -c "import urllib.request; print(urllib.request.urlopen('http://clickhouse:8123/?query=SELECT%20count()%20FROM%20analytics.order_events').read().decode())"
 
-# 4. orders-api ve VictoriaMetrics'i lokale port-forward et
+# 4. LitmusChaos ChaosCenter Web UI, orders-api ve VictoriaMetrics'i lokale port-forward et
+kubectl -n litmus port-forward svc/litmus-frontend-service 9091:9091 >/tmp/litmus-pf.log 2>&1 &
 kubectl -n chaos-shop port-forward svc/orders-api 8080:8080 >/tmp/orders-pf.log 2>&1 &
 kubectl -n chaos-shop port-forward svc/victoriametrics 8428:8428 >/tmp/vm-pf.log 2>&1 &
 
@@ -131,17 +133,41 @@ curl -s http://localhost:8080/orders | python3 -m json.tool
 curl -s http://localhost:8080/analytics | python3 -m json.tool
 ```
 
-Tarayıcıdan **VictoriaMetrics VMUI** adresini açın: `http://localhost:8428/vmui`  
-Örnek MetricsQL sorguları:
-- `orders_requests_total`
-- `clickhouse_degraded_total`
-- `rate(orders_requests_total[1m])`
+- **LitmusChaos ChaosCenter UI:** `http://localhost:9091` (Kullanıcı: `admin`, Şifre: `Litmus@123`)
+- **VictoriaMetrics VMUI:** `http://localhost:8428/vmui`  
+  Örnek MetricsQL sorguları: `orders_requests_total`, `clickhouse_degraded_total`, `rate(orders_requests_total[1m])`
 
 ---
 
-### 4. Kaos Deneyleri (Standart + Custom Experiments)
+### 4. Kaos Deneyleri (Bölüm 1: Web UI + Bölüm 2: Custom Python Experiments)
 
-#### Deney 1: Standart `pod-delete` + Continuous `httpProbe` (`chaos/01-pod-delete.yaml`)
+#### Bölüm 1: ChaosCenter Web UI Üzerinden `pod-delete` + HTTP Probe (Hatasız Adım Sırası)
+
+1. `http://localhost:9091` adresine **`admin` / `Litmus@123`** ile giriş yapın.
+2. Sol menüden **Environments → `chaos-lab-6-env`** içine girin ve `chaos-lab-6-infra` altyapısının **Active** (yeşil) olduğunu doğrulayın.
+3. **Önce Resilience Probe Oluşturun (`probeRef` hatasını önlemek için):**
+   - Sol menü → **Resilience Probes** → **+ New Probe** → **HTTP Probe**
+   - **Name:** `orders-health`
+   - **Infrastructure:** `chaos-lab-6-infra`
+   - **URL:** `http://orders-api.chaos-shop.svc.cluster.local:8080/healthz`
+   - **Method:** `GET` | **Criteria:** `==` | **Response Code:** `200`
+   - **Timeout:** `2s` | **Interval:** `2s` | **Retry:** `2` → **Create Probe**
+4. **Deneyi Oluşturup Çalıştırın:**
+   - Sol menü → **Chaos Experiments** → **+ New Experiment** → **Chaos Infrastructure:** `chaos-lab-6-infra` → **Blank Canvas**
+   - **+ Add** → **Kubernetes** → **`pod-delete`** seçin.
+   - **Target Application** sekmesi:
+     - **App Kind:** `deployment`
+     - **App Namespace:** `chaos-shop`
+     - **App Label:** Listeden `app=orders-api` seçin (listede çıkmazsa kutuya `app=orders-api` yazıp `Enter`'a basın).
+   - **Probes** sekmesi → `+ Add Probe` → az önce oluşturduğunuz **`orders-health`** probe'unu seçin, **Mode:** `Continuous` yapın.
+   - **Apply Changes** → sağ üstten **Save** → **Run**!
+   - Canlı takip: `kubectl -n chaos-shop get pods -w` ve ChaosCenter arayüzündeki **Resilience Score** ekranı.
+
+#### Bölüm 2: CLI & Custom Python Experiments (ProxySQL Load & ClickHouse Outage)
+
+ChaosCenter UI'daki standart fault'lara ek olarak, kendi veri yığınımıza özel yazdığımız 3 deklaratif deneyi CLI üzerinden çalıştırıp karşılaştırabilirsiniz:
+
+##### Deney 1 (CLI Deklaratif Probe): Standart `pod-delete` (`chaos/01-pod-delete.yaml`)
 `orders-api` podlarından birini öldürürken aynı anda her 2 saniyede bir `/healthz` endpoint'ine `httpProbe` gönderir. 2 replika + `PodDisruptionBudget (minAvailable: 1)` sayesinde kesinti yaşanmadan `Pass` vermelidir.
 
 ```bash
