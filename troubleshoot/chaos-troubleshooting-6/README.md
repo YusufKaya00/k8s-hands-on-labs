@@ -43,35 +43,56 @@ Lab izole bir **Minikube (`chaos-lab-6`)** profili üzerinde %100 lokal (`$0`) �
 ### 2. Bileşenler ve Neden Kullanılırlar? (Konu Anlatımı)
 
 #### A) MariaDB (OLTP İlişkisel Veritabanı)
-- **Ne işe yarar?** İşlemsel (**OLTP** — `INSERT/UPDATE/DELETE`, sipariş, ödeme, ACID transaction) veriler için MySQL tabanlı açık kaynaklı ilişkisel veritabanıdır.
+- **Neden tercih edilir & Rakipleriyle farkı nedir?**
+  - **MariaDB vs MySQL:** MariaDB, Oracle'ın MySQL'i satın almasından sonra aynı kurucular tarafından açık kaynaklı (GPL) sürdürülen fork'tur. Üretimde en büyük farklarından biri **Thread Pool** desteğinin MariaDB'de ücretsiz ve dahili gelmesidir (MySQL tarafında gelişmiş thread pool yalnızca ücretli Enterprise Edition'dadır). Ayrıca Galera Cluster ile aktif-aktif multi-master replikasyon kutudan çıkma (built-in) gelir ve MariaDB query optimizer özellikle karmaşık join/subquery'lerde farklı optimizasyonlar sunar.
+  - **MariaDB vs PostgreSQL:** PostgreSQL karmaşık analitik sorgular, JSONB indeksleme, coğrafi veri (PostGIS) ve zengin veri tiplerinde öndeyken; MariaDB yüksek eşzamanlılıklı basit/orta OLTP okuma-yazma (e-ticaret sepet, sipariş, stok düşümü) yüklerinde düşük bellek tüketimi, hafif replikasyon kurulumu ve InnoDB performansı nedeniyle tercih edilir.
+- **Üretimdeki Kritik Darboğaz (`max_connections`):** MariaDB/MySQL mimarisinde varsayılan bağlantı modeli her istemci bağlantısı için bellek ve thread tüketir. Kubernetes üzerinde yatayda ölçeklenen 100 mikroservis podu aynı anda DB'ye direkt bağlanırsa `max_connections` sınırı hızla dolar ve `Too many connections` kesintisi yaşanır. **ProxySQL tam olarak bu sorunu çözmek için araya konur.**
 - **Bu labda nasıl kuruldu?** [manifests/data-stack.yaml](./manifests/data-stack.yaml) içinde `mariadb:11.4` imajı ve `mariadb-init` `ConfigMap`'i (`/docker-entrypoint-initdb.d/01-init.sql`) ile `shop.orders` tablosu ve örnek veriler otomatik oluşturulur. `healthcheck.sh --connect --innodb_initialized` ile gerçek readiness kontrolü yapılır.
 
 #### B) ProxySQL (Layer-7 SQL Proxy & Connection Multiplexer)
-- **Ne işe yarar?** Uygulamalar ile MariaDB/MySQL düğümleri arasında duran akıllı L7 SQL proxy'sidir.
-  - **Connection Pooling / Multiplexing:** 500 uygulama podu 500 ayrı DB bağlantısı açıp MariaDB'yi kilitlemek yerine ProxySQL'e bağlanır; ProxySQL arka tarafta çok daha az sayıda kalıcı havuz bağlantısı tutar.
-  - **Read/Write Split & Hostgroup Routing:** `mysql_query_rules` ile `^SELECT.*` sorgularını Read replica hostgroup'una, yazma sorgularını Writer hostgroup'una yönlendirebilirsiniz.
-  - **Health Monitoring:** `monitor_username` ile backend MariaDB node'larına düzenli ping atar, düşen node'u trafikten izole eder.
-- **Portlar:**
-  - `:6033` → Uygulamaların bağlandığı **SQL Frontend** portu.
-  - `:6032` → Canlı kural ve istatistikleri sorguladığımız **Admin** portu (`admin:admin`).
+- **Neden tek başına Kubernetes `Service` veya HAProxy yetmez?** HAProxy veya K8s `Service` **L4 (TCP)** seviyesinde çalışır; gelen paketin içinde `SELECT` mi `INSERT` mi yazdığını bilmez, bağlantıları tek bir backend connection havuzunda birleştiremez. ProxySQL ise **L7 (MySQL/MariaDB protokolünü anlayan)** akıllı bir SQL proxy'sidir.
+- **Neden tercih edilir & Ne kazandırır?**
+  - **Connection Multiplexing (Çoklama):** Uygulama tarafında ProxySQL'e açılan 2.000 kısa ömürlü uygulama bağlantısını arka taraftaki MariaDB sunucularına örneğin sadece 50 kalıcı bağlantıya çoklar. Böylece MariaDB'nin connection açma/kapama (TLS + auth) CPU maliyeti sıfıra yakın düşer.
+  - **Şeffaf Read/Write Split:** Uygulama kodunda "okuma için read-replica URL'ine, yazma için primary URL'ine bağlan" mantığı yazmaya gerek kalmaz. `mysql_query_rules` içinde regex ile (örneğin `^SELECT.*`) okumaları Reader hostgroup'una, geri kalanını Writer hostgroup'una otomatik yönlendirir.
+  - **Query Cache, Firewall & Failover Buffering:** Tehlikeli veya `WHERE` şartı olmayan sorguları regex ile DB'ye ulaşmadan kesebilir, sık tekrarlanan sorguları bellekten dönebilir ve kısa failover anlarında sorguları birkaç saniye bekletip hata fırlatmadan yeni primary'e iletebilir.
+  - **ProxySQL vs MariaDB MaxScale:** MaxScale güçlü bir alternatif olsa da BSL lisanslıdır (üretimde 3+ node için ticari lisans kısıtı doğar); ProxySQL tamamen açık kaynaklıdır (GPL) ve hem MySQL hem MariaDB kümelerinde endüstri standardıdır.
+- **Portlar:** `:6033` (uygulama **SQL Frontend** portu), `:6032` (canlı kural/istatistik **Admin** portu, `admin:admin`).
 - **Bu labda nasıl kuruldu?** `proxysql/proxysql:2.7.1` ve `proxysql-config` `ConfigMap` (`/etc/proxysql.cnf`) içinde `hostgroup=10` üzerinden `mariadb.chaos-shop.svc.cluster.local:3306` hedeflenmiştir.
 
 #### C) ClickHouse (Kolon Tabanlı OLAP Analitik Veritabanı)
-- **Ne işe yarar?** Milyarlarca satır log/event/metrik verisi üzerinde milisaniyeler içinde toplam (`COUNT`, `SUM`, `GROUP BY`) alan **kolon bazlı (columnar) OLAP** veritabanıdır. MariaDB gibi OLTP veritabanlarını ağır analitik sorgularla yormamak için event/telemetri verileri buraya yazılır (`MergeTree` motoru).
+- **Satır Tabanlı (MariaDB/Postgres) ile Farkı Nedir?** MariaDB **satır tabanlıdır (row-oriented)**: bir siparişin tüm sütunlarını diskte yan yana tutar, bu yüzden "id=105 olan siparişi getir/güncelle" işleminde çok hızlıdır. ClickHouse ise **kolon tabanlıdır (column-oriented / OLAP)**: her sütunu ayrı dosyada ve yüksek sıkıştırmayla (LZ4/ZSTD) saklar. "Son 30 günde SKU bazlı toplam ciroyu hesapla" gibi sadece 2 kolonu okuyan milyarlarca satırlık `GROUP BY` / `SUM` sorgularında MariaDB'ye kıyasla **10x–100x daha hızlı** çalışır ve diski 5x–10x daha az kullanır.
+- **Neden Elasticsearch / OpenSearch yerine tercih edilir?** Log, event, clickstream ve telemetri analitiğinde Elasticsearch JVM tabanlı olduğu için yüksek RAM tüketir ve büyük `GROUP BY` agregasyonlarında yavaşlar; C++ ile yazılan ClickHouse çok daha az RAM/CPU ile saniyede milyonlarca satır `INSERT` ve analitik sorgu işler.
+- **Ne zaman KULLANILMAZ?** Sık tekil satır `UPDATE`/`DELETE` ve ACID transaction gereken sipariş/ödeme tabloları için kullanılmaz; o yük MariaDB'de kalır.
+- **Mimari Desen — Graceful Degradation:** `orders-api` servisinde `/orders` isteği sipariş akışını ProxySQL/MariaDB ile kritik olarak doğrular, ardından ClickHouse'a analitik event gönderir. ClickHouse çökerse `/orders` **çökmemeli**, analitik yazımını `"degraded-skipped"` diyerek atlayıp kullanıcıya `200 OK` dönmeli, sadece `/analytics` endpoint'i `503 degraded` vermelidir.
 - **Portlar:** `:8123` (HTTP SQL API), `:9000` (Native TCP).
-- **Mimari Desen — Graceful Degradation:** `orders-api` servisinde `/orders` isteği sipariş akışını ProxySQL/MariaDB ile kritik olarak doğrular, ardından ClickHouse'a analitik event gönderir. ClickHouse çökerse `/orders` **çökmemeli**, olayı `"degraded-skipped"` diyerek atlayıp kullanıcıya `200 OK` dönmeli, sadece `/analytics` endpoint'i `503 degraded` vermelidir! 3. kaos senaryosu tam olarak bunu test eder.
 
 #### D) VictoriaMetrics (Yüksek Performanslı Prometheus Uyumlu TSDB)
-- **Ne işe yarar?** Prometheus formatındaki metrikleri (`/metrics`) kazıyan (scrape eden), PromQL/MetricsQL ile sorgulanan, ancak Prometheus'a göre çok daha az RAM ve disk tüketen tek binary zaman serisi (TSDB) veritabanıdır.
+- **Neden Vanilla Prometheus yerine tercih edilir?** Standart Prometheus harikadır ancak özellikle Kubernetes üzerinde çok sayıda pod/label oluştuğunda (**high cardinality**) bellek tüketimi hızla GB'larca şişer (OOMKilled riski). Ayrıca Prometheus tek başına yerleşik küme/uzun süreli depolama sunmaz; bunun için yanına Thanos veya Cortex/Mimir gibi karmaşık bileşenler kurmak gerekir.
+- **VictoriaMetrics'in Farkı Nedir?**
+  - **2x–5x Daha Az RAM & Disk:** Aynı metrik hacmini yüksek sıkıştırmayla çok daha düşük kaynakta (bu labda 96Mi–256Mi limitlerle rahatça) işler.
+  - **Tek Binary Sadelik + Uzun Süreli Saklama:** Thanos/Mimir karmaşıklığı olmadan günler/aylar boyu metrik tutabilir (`-retentionPeriod`).
+  - **PromQL + MetricsQL Tam Uyumu:** Mevcut Prometheus `/metrics` endpoint'lerini ve Grafana dashboard'larını değiştirmeden doğrudan scrape eder; üstüne PromQL'in daha pratik genişletilmiş hali olan **MetricsQL** fonksiyonlarını sunar.
 - **Bu labda nasıl kuruldu?** [manifests/observability.yaml](./manifests/observability.yaml) içinde `vm-scrape-config` `ConfigMap`'i her 5 saniyede bir `orders-api:8080/metrics` endpoint'ini kazır. Port `8428` üzerinde `/vmui` arayüzünü sunar.
 
 #### E) LitmusChaos (`litmus-core`) ve Custom Experiment Anatomisi
-Full ChaosCenter UI (MongoDB dahil) ağır olduğu için bu labda **`litmuschaos/litmus-core`** Helm chart'ı kullanılır. Bu chart sadece iki çekirdek bileşeni kurar:
-1. **`ChaosExperiment` (Şablon / Blueprint):** Hangi container imajının, hangi komutun ve hangi varsayılan env değişkenlerinin çalışacağını tanımlar. Custom test yazmak için Go derlemeniz gerekmez; `python:3.11-alpine` veya `bash` imajı koyup kendi test senaryonuzu yazabilirsiniz!
-2. **`ChaosEngine` (Çalıştırıcı / Tetikleyici):** Hedef uygulamayı (`appinfo`), RBAC yetkisini (`chaosServiceAccount`), çalıştırılacak `ChaosExperiment` adını ve ek **Probe**'ları (`httpProbe`, `cmdProbe`) bağlar.
-3. **`ChaosResult` (Rapor / Karar):** Deney bittiğinde `Verdict` (`Pass` veya `Fail`) ve `ProbeSuccessPercentage` değerini tutar. Custom Python script'lerimiz Kubernetes API üzerinden `ChaosResult` objesini de bizzat oluşturup günceller!
+- **Neden `kubectl delete pod` değil de LitmusChaos?** Manuel `kubectl delete pod` rastgele bir kesinti yaratır ama sistemin o esnada gerçekten sağlıklı kaldığını ölçmez ve tekrarlanabilir değildir. LitmusChaos kaos testini **GitOps uyumlu Kubernetes CRD'lerine** taşır: kaos öncesi/sırası/sonrasında otomatik **Probe** (`httpProbe`, `cmdProbe`, `promProbe`) koşturur ve CI/CD pipeline'larında kapı (gate) olarak kullanılabilecek `ChaosResult` (`Pass`/`Fail`) üretir.
+- **LitmusChaos vs Chaos Mesh:** Her ikisi de güçlüdür; Chaos Mesh ağ/kernel (eBPF/tc) seviyesinde çok iyidir ancak yeni bir özel deney yazmak için çoğu zaman Go kodunu derlemek gerekir. LitmusChaos ise `ChaosExperiment` içine `python:3.11-alpine` veya `bash` gibi herhangi bir standart container imajı koyup saniyeler içinde kendi **Custom ChaosExperiment** şablonunuzu yazmanıza izin verir.
+- **Bu labdaki çekirdek bileşenler (`litmus-core`):** Ağır ChaosCenter UI (MongoDB) yerine hafif operator + runner mimarisi kullanılır:
+  1. **`ChaosExperiment` (Şablon / Blueprint):** Hangi container imajının, hangi komutun ve varsayılan env değişkenlerinin çalışacağını tanımlar.
+  2. **`ChaosEngine` (Çalıştırıcı / Tetikleyici):** Hedef uygulamayı (`appinfo`), RBAC yetkisini (`chaosServiceAccount`), çalıştırılacak `ChaosExperiment` adını ve **Probe**'ları bağlar.
+  3. **`ChaosResult` (Rapor / Karar):** Deney bittiğinde `Verdict` (`Pass` veya `Fail`) ve `ProbeSuccessPercentage` değerini tutar. Labdaki custom Python script'leri Kubernetes API üzerinden `ChaosResult` objesini de bizzat oluşturup günceller.
 
 > **Not — ChaosCenter UI'da `probeRef` Hatası:** ChaosCenter grafik arayüzünde bazı sürümlerde Probe ekleyince `Probe in fault run-chaos is not attached to a proper reference, please add it to annotations as probeRef` uyarısı ve label seçememe/kaydedememe yaşanabilir. Deklaratif YAML içinde doğrudan `ChaosEngine.spec.experiments[].spec.probe` tanımı (`chaos/01-pod-delete.yaml` örneğindeki gibi) kullandığınızda ChaosOperator bu probe'u ek annotation gerektirmeden doğrudan çalıştırır.
+
+#### F) Karşılaştırmalı Özet Tablosu
+
+| Bileşen | Rolü | Başlıca Alternatifleri | Üretimde Neden Bu Tercih Edilir? |
+| :--- | :--- | :--- | :--- |
+| **MariaDB** | OLTP İlişkisel DB | MySQL, PostgreSQL | Açık kaynaklı dahili Thread Pool + Galera, yüksek eşzamanlılıklı standart OLTP'de düşük overhead |
+| **ProxySQL** | L7 SQL Proxy & Pooler | MaxScale, HAProxy (L4) | Tam açık kaynak (GPL), SQL-farkında connection multiplexing ve şeffaf Read/Write split |
+| **ClickHouse** | Kolon Tabanlı OLAP DB | Elasticsearch, BigQuery | C++ kolon motoru ile Elasticsearch'e göre çok düşük RAM'de 10x–100x hızlı analitik agregasyon |
+| **VictoriaMetrics** | Prometheus Uyumlu TSDB | Prometheus + Thanos/Mimir | Tek binary sadelik, yüksek kardinalitede 2x–5x daha düşük RAM/disk, tam PromQL/MetricsQL uyumu |
+| **LitmusChaos (`litmus-core`)** | K8s Chaos Engine | Chaos Mesh, Manuel script | CRD + otomatik steady-state Probe + herhangi bir container imajıyla kolay Custom Experiment |
 
 ---
 
@@ -187,14 +208,14 @@ This hands-on lab teaches how to install and run **LitmusChaos (`litmus-core`)**
 
 ---
 
-### 1. Stack Overview
+### 1. Stack Overview & Why Each Component Is Chosen
 
-- **MariaDB (`11.4`):** Primary OLTP store initialized with `shop.orders` (`manifests/data-stack.yaml`).
-- **ProxySQL (`2.7.1`):** Layer-7 SQL proxy & connection multiplexer listening on `:6033` (SQL) and `:6032` (Admin) routing hostgroup `10` to MariaDB.
-- **ClickHouse (`24.8-alpine`):** Columnar OLAP engine (`analytics.order_events`) on `:8123` (HTTP) and `:9000` (Native), demonstrating **graceful degradation** when offline.
-- **VictoriaMetrics (`v1.106.0`):** Fast, low-memory Prometheus-compatible TSDB scraping `orders-api:8080/metrics` every `5s` (`:8428/vmui`).
+- **MariaDB (`11.4`):** Primary OLTP store initialized with `shop.orders` (`manifests/data-stack.yaml`). Chosen over MySQL Community for its built-in GPL Thread Pool and Galera support, and over PostgreSQL for lightweight high-concurrency simple/medium OLTP workloads.
+- **ProxySQL (`2.7.1`):** Layer-7 SQL proxy & connection multiplexer listening on `:6033` (SQL) and `:6032` (Admin) routing hostgroup `10` to MariaDB. Prevents `max_connections` exhaustion caused by K8s pod scaling (which L4 HAProxy/K8s Services cannot solve) and provides transparent Read/Write splitting (`mysql_query_rules`) under full GPL open-source licensing (vs BSL MaxScale).
+- **ClickHouse (`24.8-alpine`):** Columnar OLAP engine (`analytics.order_events`) on `:8123` (HTTP) and `:9000` (Native). Delivers 10x–100x faster analytical aggregations (`GROUP BY`/`SUM`) with much lower RAM/disk footprint than JVM-based Elasticsearch, while isolating heavy analytics from MariaDB OLTP and demonstrating **graceful degradation** when offline.
+- **VictoriaMetrics (`v1.106.0`):** Prometheus-compatible TSDB scraping `orders-api:8080/metrics` every `5s` (`:8428/vmui`). Chosen over vanilla Prometheus + Thanos/Mimir for 2x–5x lower RAM/disk usage under high cardinality, single-binary simplicity, built-in long-term retention, and MetricsQL/PromQL compatibility.
 - **`orders-api` (`replicas: 2` + `PodDisruptionBudget`):** Python HTTP service exposing `/healthz`, `/orders` (ProxySQL critical check + ClickHouse best-effort event), `/analytics` (ClickHouse query), and `/metrics`.
-- **LitmusChaos (`litmus-core`):** Lightweight operator + runner without heavy ChaosCenter MongoDB overhead:
+- **LitmusChaos (`litmus-core`):** CRD-driven GitOps chaos operator + runner (vs ad-hoc `kubectl delete pod`) that supports continuous steady-state probes and lets you write custom `ChaosExperiment` blueprints using any container image (`python:3.11-alpine`) without compiling Go code:
   1. `chaos/01-pod-delete.yaml`: Standard `pod-delete` + declarative `Continuous` `httpProbe` (avoids the ChaosCenter UI `probeRef` annotation bug).
   2. `chaos/02-custom-proxysql-flood.yaml`: Custom Python `ChaosExperiment` stress-testing ProxySQL & `orders-api`, checking VictoriaMetrics, and writing a `ChaosResult`.
   3. `chaos/03-custom-clickhouse-outage.yaml`: Custom Python `ChaosExperiment` scaling `deploy/clickhouse` to `0`, verifying `/orders` remains `200 OK` while `/analytics` returns `503 degraded` and `clickhouse_degraded_total` increments in VictoriaMetrics, then restoring ClickHouse.
