@@ -1,0 +1,108 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: custom-clickhouse-outage
+  namespace: litmus
+  labels:
+    subject: custom-clickhouse-outage
+spec:
+  entrypoint: custom-clickhouse-outage
+  serviceAccountName: argo-chaos
+  podGC:
+    strategy: OnWorkflowCompletion
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  templates:
+    - name: custom-clickhouse-outage
+      steps:
+        - - name: run-clickhouse-outage
+            template: run-clickhouse-outage
+    - name: run-clickhouse-outage
+      container:
+        image: python:3.11-alpine
+        imagePullPolicy: IfNotPresent
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json
+            import ssl
+            import time
+            import urllib.error
+            import urllib.parse
+            import urllib.request
+
+            TARGET_NS = "chaos-shop"
+            ORDERS_URL = "http://orders-api.chaos-shop.svc.cluster.local:8080/orders"
+            ANALYTICS_URL = "http://orders-api.chaos-shop.svc.cluster.local:8080/analytics"
+            VM_URL = "http://victoriametrics.chaos-shop.svc.cluster.local:8428"
+            OUTAGE_SECONDS = 15
+
+            token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read().strip()
+            ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+            def k8s_req(path, method="GET", body=None, content_type="application/json"):
+                url = f"https://kubernetes.default.svc{path}"
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": content_type}
+                data = json.dumps(body).encode("utf-8") if body is not None else None
+                req = urllib.request.Request(url, data=data, headers=headers, method=method)
+                with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+
+            def scale_clickhouse(replicas):
+                print(f"[custom-clickhouse-outage] Scaling {TARGET_NS}/deploy/clickhouse -> {replicas}")
+                k8s_req(
+                    f"/apis/apps/v1/namespaces/{TARGET_NS}/deployments/clickhouse/scale",
+                    method="PATCH",
+                    body={"spec": {"replicas": replicas}},
+                    content_type="application/merge-patch+json",
+                )
+
+            def http_get(url):
+                try:
+                    with urllib.request.urlopen(url, timeout=3) as r:
+                        return r.status, json.loads(r.read().decode("utf-8"))
+                except urllib.error.HTTPError as e:
+                    raw = e.read().decode("utf-8", errors="replace")
+                    try:
+                        return e.code, json.loads(raw)
+                    except Exception:
+                        return e.code, {"raw": raw}
+                except Exception as exc:
+                    return 0, {"error": str(exc)}
+
+            orders_ok = False
+            analytics_degraded = False
+            recovered = False
+
+            try:
+                scale_clickhouse(0)
+                for _ in range(15):
+                    pods = k8s_req(f"/api/v1/namespaces/{TARGET_NS}/pods?labelSelector=app%3Dclickhouse").get("items", [])
+                    if not pods:
+                        break
+                    time.sleep(2)
+
+                print(f"[custom-clickhouse-outage] Testing graceful degradation during {OUTAGE_SECONDS}s ClickHouse outage...")
+                o_code, o_body = http_get(ORDERS_URL)
+                a_code, a_body = http_get(ANALYTICS_URL)
+                print(f"[custom-clickhouse-outage] /orders -> HTTP {o_code} {o_body}")
+                print(f"[custom-clickhouse-outage] /analytics -> HTTP {a_code} {a_body}")
+                orders_ok = (o_code == 200 and o_body.get("analytics_event") == "degraded-skipped")
+                analytics_degraded = (a_code == 503 and a_body.get("status") == "degraded")
+
+                time.sleep(OUTAGE_SECONDS)
+                _, vm_body = http_get(f"{VM_URL}/api/v1/query?query={urllib.parse.quote('sum(clickhouse_degraded_total)')}")
+                print(f"[custom-clickhouse-outage] VictoriaMetrics clickhouse_degraded_total={vm_body}")
+            finally:
+                scale_clickhouse(1)
+                for _ in range(30):
+                    code, _ = http_get(ANALYTICS_URL)
+                    if code == 200:
+                        recovered = True
+                        break
+                    time.sleep(2)
+
+            print(f"[custom-clickhouse-outage] Summary: orders_ok={orders_ok}, analytics_degraded={analytics_degraded}, recovered={recovered}")
+            if not (orders_ok and analytics_degraded and recovered):
+                raise SystemExit(f"Failed: orders_ok={orders_ok}, analytics_degraded={analytics_degraded}, recovered={recovered}")
