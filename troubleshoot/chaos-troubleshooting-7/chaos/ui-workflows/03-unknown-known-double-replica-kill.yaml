@@ -1,0 +1,98 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: q3-unknown-known-double-replica-kill
+  namespace: litmus
+  labels:
+    subject: q3-unknown-known-double-replica-kill
+    quadrant: unknown-knowns
+spec:
+  entrypoint: q3-unknown-known-double-replica-kill
+  serviceAccountName: argo-chaos
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  templates:
+    - name: q3-unknown-known-double-replica-kill
+      steps:
+        - - name: double-replica-outage
+            template: double-replica-outage
+    - name: double-replica-outage
+      container:
+        image: python:3.11-alpine
+        imagePullPolicy: IfNotPresent
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json
+            import ssl
+            import time
+            import urllib.parse
+            import urllib.request
+
+            TARGET_NS = "shop-chaos"
+            PROM_URL = "http://prometheus.monitoring.svc.cluster.local:9090"
+            CHECKOUT_URL = "http://checkout-api.shop-chaos.svc.cluster.local:8080/checkout"
+
+            token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read().strip()
+            ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+            def k8s_req(path, method="GET", body=None, content_type="application/json"):
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": content_type}
+                data = json.dumps(body).encode("utf-8") if body is not None else None
+                req = urllib.request.Request(f"https://kubernetes.default.svc{path}", data=data, headers=headers, method=method)
+                with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+                    return json.loads(r.read().decode("utf-8"))
+
+            def scale_replicas(count):
+                print(f"[Q3 Unknown-Knowns] Scaling {TARGET_NS}/deploy/inventory-replica -> {count}")
+                k8s_req(
+                    f"/apis/apps/v1/namespaces/{TARGET_NS}/deployments/inventory-replica/scale",
+                    method="PATCH",
+                    body={"spec": {"replicas": count}},
+                    content_type="application/merge-patch+json",
+                )
+
+            def prom_val(expr):
+                try:
+                    u = f"{PROM_URL}/api/v1/query?query={urllib.parse.quote(expr)}"
+                    with urllib.request.urlopen(u, timeout=3) as r:
+                        d = json.loads(r.read().decode("utf-8"))
+                    res = d.get("data", {}).get("result", [])
+                    return res[0]["value"][1] if res else "0"
+                except Exception as exc:
+                    return f"err:{exc}"
+
+            failover_before = prom_val("sum(primary_failover_total)")
+            primary_qps_before = prom_val("sum(rate(primary_queries_total[30s]))")
+            print(f"[Baseline] failover_total={failover_before}, primary_qps={primary_qps_before}")
+
+            try:
+                scale_replicas(0)
+                for _ in range(15):
+                    pods = k8s_req(f"/api/v1/namespaces/{TARGET_NS}/pods?labelSelector=app%3Dinventory-replica").get("items", [])
+                    if not pods:
+                        break
+                    time.sleep(2)
+
+                with urllib.request.urlopen(CHECKOUT_URL, timeout=5) as r:
+                    sample = json.loads(r.read().decode("utf-8"))
+                print(f"[During Simultaneous 2-Replica Outage] /checkout -> {sample}")
+
+                time.sleep(25)
+                failover_after = prom_val("sum(primary_failover_total)")
+                primary_qps_after = prom_val("sum(rate(primary_queries_total[30s]))")
+                p95_during = prom_val("histogram_quantile(0.95, sum(rate(checkout_latency_seconds_bucket[30s])) by (le))")
+                print(
+                    f"[Impact Observed] failover_total: {failover_before} -> {failover_after}, "
+                    f"primary_qps: {primary_qps_before} -> {primary_qps_after}, p95_sec={p95_during}"
+                )
+            finally:
+                scale_replicas(2)
+                for _ in range(20):
+                    d = k8s_req(f"/apis/apps/v1/namespaces/{TARGET_NS}/deployments/inventory-replica")
+                    if d.get("status", {}).get("readyReplicas", 0) >= 2:
+                        break
+                    time.sleep(2)
+
+            print("[Q3 Unknown-Knowns] Both replicas restored. Check Grafana Panel 4 for the primary QPS spike!")
