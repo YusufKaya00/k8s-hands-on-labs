@@ -36,7 +36,7 @@ metadata:
   name: reconcile-status
   namespace: {{ .Values.namespaces.ops }}
 data:
-  status: "pending"
+  status: "reconciled"
   lastRun: "never"
 ---
 apiVersion: batch/v1
