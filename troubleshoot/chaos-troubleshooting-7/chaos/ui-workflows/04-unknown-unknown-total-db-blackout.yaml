@@ -1,0 +1,116 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: q4-unknown-unknown-total-db-blackout
+  namespace: litmus
+  labels:
+    subject: q4-unknown-unknown-total-db-blackout
+    quadrant: unknown-unknowns
+spec:
+  entrypoint: q4-unknown-unknown-total-db-blackout
+  serviceAccountName: argo-chaos
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  templates:
+    - name: q4-unknown-unknown-total-db-blackout
+      steps:
+        - - name: total-db-blackout
+            template: total-db-blackout
+    - name: total-db-blackout
+      container:
+        image: python:3.11-alpine
+        imagePullPolicy: IfNotPresent
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json
+            import ssl
+            import time
+            import urllib.error
+            import urllib.parse
+            import urllib.request
+
+            TARGET_NS = "shop-chaos"
+            PROM_URL = "http://prometheus.monitoring.svc.cluster.local:9090"
+            CHECKOUT_URL = "http://checkout-api.shop-chaos.svc.cluster.local:8080/checkout"
+
+            token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read().strip()
+            ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+            def k8s_req(path, method="GET", body=None, content_type="application/json"):
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": content_type}
+                data = json.dumps(body).encode("utf-8") if body is not None else None
+                req = urllib.request.Request(f"https://kubernetes.default.svc{path}", data=data, headers=headers, method=method)
+                with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+                    return json.loads(r.read().decode("utf-8"))
+
+            def scale_deploy(name, count):
+                print(f"[Q4 Unknown-Unknowns] Scaling {TARGET_NS}/deploy/{name} -> {count}")
+                k8s_req(
+                    f"/apis/apps/v1/namespaces/{TARGET_NS}/deployments/{name}/scale",
+                    method="PATCH",
+                    body={"spec": {"replicas": count}},
+                    content_type="application/merge-patch+json",
+                )
+
+            def prom_val(expr):
+                try:
+                    u = f"{PROM_URL}/api/v1/query?query={urllib.parse.quote(expr)}"
+                    with urllib.request.urlopen(u, timeout=3) as r:
+                        d = json.loads(r.read().decode("utf-8"))
+                    res = d.get("data", {}).get("result", [])
+                    return float(res[0]["value"][1]) if res else 0.0
+                except Exception:
+                    return -1.0
+
+            def hit_checkout():
+                try:
+                    with urllib.request.urlopen(CHECKOUT_URL, timeout=4) as r:
+                        return r.status, json.loads(r.read().decode("utf-8"))
+                except urllib.error.HTTPError as e:
+                    return e.code, {"body": e.read().decode("utf-8", errors="replace")}
+
+            cb_tripped = False
+            fallback_served = False
+
+            try:
+                scale_deploy("inventory-replica", 0)
+                scale_deploy("inventory-primary", 0)
+                for _ in range(15):
+                    pods = k8s_req(f"/api/v1/namespaces/{TARGET_NS}/pods").get("items", [])
+                    db_pods = [p for p in pods if p["metadata"]["labels"].get("app") in ("inventory-replica", "inventory-primary")]
+                    if not db_pods:
+                        break
+                    time.sleep(2)
+
+                print("[Q4 Unknown-Unknowns] Total DB blackout active — triggering Circuit Breaker & testing Redis cache fallback...")
+                for _ in range(8):
+                    code, body = hit_checkout()
+                    print(f"  /checkout -> HTTP {code} {body}")
+                    if body.get("circuit_breaker") == "open":
+                        cb_tripped = True
+                    if body.get("status") == "degraded-cache":
+                        fallback_served = True
+                    time.sleep(1)
+
+                time.sleep(10)
+                cb_metric = prom_val("max(circuit_breaker_open)")
+                fb_total = prom_val("sum(fallback_served_total)")
+                print(f"[Prometheus] circuit_breaker_open={cb_metric}, fallback_served_total={fb_total}")
+            finally:
+                scale_deploy("inventory-primary", 1)
+                scale_deploy("inventory-replica", 2)
+                for _ in range(25):
+                    p_ready = k8s_req(f"/apis/apps/v1/namespaces/{TARGET_NS}/deployments/inventory-primary").get("status", {}).get("readyReplicas", 0)
+                    r_ready = k8s_req(f"/apis/apps/v1/namespaces/{TARGET_NS}/deployments/inventory-replica").get("status", {}).get("readyReplicas", 0)
+                    if p_ready >= 1 and r_ready >= 2:
+                        break
+                    time.sleep(2)
+
+            print("[Q4 Unknown-Unknowns] Waiting 12s for Circuit Breaker half-open -> closed auto-recovery...")
+            time.sleep(12)
+            rec_code, rec_body = hit_checkout()
+            print(f"[Recovery Check] /checkout -> HTTP {rec_code} {rec_body}")
+            if not (cb_tripped and fallback_served and rec_code == 200 and rec_body.get("status") == "ok"):
+                raise SystemExit(f"Verification failed: cb_tripped={cb_tripped}, fallback_served={fallback_served}, rec={rec_code}/{rec_body}")
