@@ -68,7 +68,7 @@ spec:
         name: ledger-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: "ultra-ssd-missing"
+        storageClassName: "managed-csi"
         resources:
           requests:
             storage: {{ .Values.ledgerDb.storageSize }}
