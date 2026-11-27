@@ -114,14 +114,15 @@ if command -v litmusctl >/dev/null 2>&1; then
 
   echo "==> Registering custom UI experiments (custom-proxysql-load & custom-clickhouse-outage) in ChaosCenter..."
   INFRA_ID=$(litmusctl get chaos-infra --project-id "$PROJECT_ID" -o json | python3 -c "import sys,json; d=json.load(sys.stdin) or {}; items=d.get('listInfras',d).get('infras',[]); m=[x for x in items if x.get('name')=='chaos-lab-6-infra']; print(m[0]['infraID'] if m else '')")
-  EXISTING_EXPS=$(litmusctl get chaos-experiments --project-id "$PROJECT_ID" -o json 2>/dev/null || echo "{}")
+  EXISTING_EXPS=$(litmusctl get chaos-experiments --project-id "$PROJECT_ID" -o json < /dev/null 2>/dev/null || echo "{}")
   for wf in "$SCRIPT_DIR"/chaos/ui-workflows/*.yaml; do
     EXP_NAME=$(python3 -c "import sys,yaml; print(yaml.safe_load(open(sys.argv[1]))['metadata']['name'])" "$wf")
     if ! echo "$EXISTING_EXPS" | grep -q "\"$EXP_NAME\""; then
       litmusctl create chaos-experiment \
         -f "$wf" \
         --project-id="$PROJECT_ID" \
-        --chaos-infra-id="$INFRA_ID" >/dev/null 2>&1 || true
+        --chaos-infra-id="$INFRA_ID" \
+        --description="Custom UI Experiment: $EXP_NAME" < /dev/null
     fi
   done
 else
