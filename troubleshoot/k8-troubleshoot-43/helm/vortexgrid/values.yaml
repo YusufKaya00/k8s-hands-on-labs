@@ -60,7 +60,7 @@ ledgerApi:
   image: python:3.11-alpine
   port: 8080
   targetPodHost: "ledger-db-0.ledger-headless.vortex-data.svc.cluster.local"
-  targetPodPort: 9000
+  targetPodPort: 8080
   resources:
     requests:
       cpu: 25m
