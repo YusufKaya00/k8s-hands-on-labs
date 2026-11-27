@@ -1,0 +1,89 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: q2-known-unknown-latency-timeout
+  namespace: litmus
+  labels:
+    subject: q2-known-unknown-latency-timeout
+    quadrant: known-unknowns
+spec:
+  entrypoint: q2-known-unknown-latency-timeout
+  serviceAccountName: argo-chaos
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  templates:
+    - name: q2-known-unknown-latency-timeout
+      steps:
+        - - name: inject-latency-ladder
+            template: inject-latency-ladder
+    - name: inject-latency-ladder
+      container:
+        image: python:3.11-alpine
+        imagePullPolicy: IfNotPresent
+        command: ["python3", "-c"]
+        args:
+          - |
+            import json
+            import ssl
+            import time
+            import urllib.parse
+            import urllib.request
+
+            TARGET_NS = "shop-chaos"
+            PROM_URL = "http://prometheus.monitoring.svc.cluster.local:9090"
+
+            token = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read().strip()
+            ctx = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+
+            def get_replica_ips():
+                req = urllib.request.Request(
+                    f"https://kubernetes.default.svc/api/v1/namespaces/{TARGET_NS}/pods?labelSelector=app%3Dinventory-replica",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                return [p["status"]["podIP"] for p in data.get("items", []) if p.get("status", {}).get("podIP")]
+
+            def set_delay(ips, ms):
+                for ip in ips:
+                    url = f"http://{ip}:8080/admin/delay?ms={ms}"
+                    with urllib.request.urlopen(url, timeout=3) as r:
+                        print(f"[Q2 Known-Unknowns] {ip} -> {r.read().decode().strip()}")
+
+            def prom_val(expr):
+                try:
+                    u = f"{PROM_URL}/api/v1/query?query={urllib.parse.quote(expr)}"
+                    with urllib.request.urlopen(u, timeout=3) as r:
+                        d = json.loads(r.read().decode("utf-8"))
+                    res = d.get("data", {}).get("result", [])
+                    return res[0]["value"][1] if res else "0"
+                except Exception as exc:
+                    return f"err:{exc}"
+
+            ips = get_replica_ips()
+            if not ips:
+                raise SystemExit("No inventory-replica pods found")
+
+            try:
+                print("=== Phase 1: Inject 800ms delay for 20s (below 1.5s timeout -> should stay OK) ===")
+                set_delay(ips, 800)
+                time.sleep(20)
+                print(
+                    f"[Phase 1 Prometheus] p95_sec={prom_val('histogram_quantile(0.95, sum(rate(checkout_latency_seconds_bucket[30s])) by (le))')} "
+                    f"retries_total={prom_val('sum(db_retries_total)')}"
+                )
+
+                print("=== Phase 2: Ramp to 2500ms delay for 20s (exceeds 1.5s timeout -> triggers Retry Storm & Primary Failover) ===")
+                set_delay(ips, 2500)
+                time.sleep(20)
+                print(
+                    f"[Phase 2 Prometheus] p95_sec={prom_val('histogram_quantile(0.95, sum(rate(checkout_latency_seconds_bucket[30s])) by (le))')} "
+                    f"retries_total={prom_val('sum(db_retries_total)')} "
+                    f"failover_total={prom_val('sum(primary_failover_total)')}"
+                )
+            finally:
+                print("=== Rollback: Resetting replica delay back to 0ms ===")
+                set_delay(get_replica_ips() or ips, 0)
+
+            print("[Q2 Known-Unknowns] Experiment complete. Inspect Grafana panels 2, 4, and 5 for the threshold inflection point!")
