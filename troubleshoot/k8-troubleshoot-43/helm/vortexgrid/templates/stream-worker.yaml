@@ -4,7 +4,7 @@ metadata:
   name: stream-config
   namespace: {{ .Values.namespaces.app }}
 data:
-  STREAM_MODE: "paused"
+  STREAM_MODE: "active"
   CONSUMER_GROUP: {{ .Values.streamWorker.consumerGroup | quote }}
 ---
 apiVersion: apps/v1
