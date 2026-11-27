@@ -85,7 +85,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              team: ops
+              app: metrics-collector
       ports:
         - protocol: TCP
           port: 8080
