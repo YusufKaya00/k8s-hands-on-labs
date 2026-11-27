@@ -46,7 +46,7 @@ metadata:
   namespace: {{ .Values.namespaces.ops }}
 spec:
   schedule: {{ .Values.reconciler.schedule | quote }}
-  suspend: true
+  suspend: false
   successfulJobsHistoryLimit: {{ .Values.reconciler.successfulJobsHistoryLimit }}
   failedJobsHistoryLimit: {{ .Values.reconciler.failedJobsHistoryLimit }}
   jobTemplate:
