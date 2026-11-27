@@ -72,8 +72,8 @@ ledgerApi:
 reconciler:
   schedule: "*/1 * * * *"
   image: python:3.11-alpine
-  successfulJobsHistoryLimit: 2
-  failedJobsHistoryLimit: 2
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
   resources:
     requests:
       cpu: 20m
