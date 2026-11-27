@@ -26,13 +26,13 @@ spec:
     spec:
       affinity:
         podAntiAffinity:
-          PreferredDuringSchedulingIgnoredDuringExecution:
+          preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
-
-            - labelSelector:
-                matchLabels:
-                  app: stream-worker
-              topologyKey: kubernetes.io/hostname
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: stream-worker
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: stream-worker
           image: {{ .Values.streamWorker.image }}
