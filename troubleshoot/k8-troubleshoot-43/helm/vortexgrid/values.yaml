@@ -105,3 +105,6 @@ metricsCollector:
     requests:
       cpu: 20m
       memory: 48Mi
+    limits:
+      cpu: 120m
+      memory: 128Mi
