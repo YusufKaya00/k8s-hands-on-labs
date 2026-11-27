@@ -1,0 +1,614 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop-chaos
+  labels:
+    app.kubernetes.io/part-of: chaos-troubleshooting-7
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-redis
+  namespace: shop-chaos
+  labels:
+    app: cache-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-redis
+  template:
+    metadata:
+      labels:
+        app: cache-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          readinessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cache-redis
+  namespace: shop-chaos
+  labels:
+    app: cache-redis
+spec:
+  selector:
+    app: cache-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inventory-code
+  namespace: shop-chaos
+data:
+  server.py: |
+    import json
+    import os
+    import socket
+    import threading
+    import time
+    import urllib.parse
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    ROLE = os.environ.get("DB_ROLE", "replica")
+    lock = threading.Lock()
+    state = {"queries_total": 0, "delay_ms": 0}
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send_json(self, code: int, payload: dict) -> None:
+            raw = json.dumps(payload).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path == "/healthz":
+                self._send_json(200, {"status": "ok", "role": ROLE, "pod": socket.gethostname()})
+                return
+
+            if parsed.path == "/admin/delay":
+                qs = urllib.parse.parse_qs(parsed.query)
+                if "ms" in qs:
+                    try:
+                        ms = max(0, min(10000, int(qs["ms"][0])))
+                    except ValueError:
+                        self._send_json(400, {"error": "invalid ms"})
+                        return
+                    with lock:
+                        state["delay_ms"] = ms
+                with lock:
+                    cur = state["delay_ms"]
+                self._send_json(200, {"role": ROLE, "pod": socket.gethostname(), "delay_ms": cur})
+                return
+
+            if parsed.path == "/stock":
+                with lock:
+                    state["queries_total"] += 1
+                    delay_ms = state["delay_ms"]
+                if delay_ms > 0:
+                    time.sleep(delay_ms / 1000.0)
+                self._send_json(200, {
+                    "role": ROLE,
+                    "pod": socket.gethostname(),
+                    "sku": "GPU-4090-CLUSTER",
+                    "in_stock": 42,
+                    "delay_ms": delay_ms,
+                })
+                return
+
+            if parsed.path == "/metrics":
+                with lock:
+                    q = state["queries_total"]
+                    delay_s = state["delay_ms"] / 1000.0
+                metric_name = "primary_queries_total" if ROLE == "primary" else "replica_queries_total"
+                lines = [
+                    f"# HELP {metric_name} Total inventory queries handled by {ROLE}",
+                    f"# TYPE {metric_name} counter",
+                    f"{metric_name} {q}",
+                    "# HELP injected_delay_seconds Configured artificial latency in seconds",
+                    "# TYPE injected_delay_seconds gauge",
+                    f"injected_delay_seconds {delay_s}",
+                ]
+                raw = ("\n".join(lines) + "\n").encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; version=0.0.4")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+
+            self._send_json(404, {"error": "not found"})
+
+        def do_POST(self) -> None:
+            self.do_GET()
+
+        def log_message(self, format: str, *args) -> None:
+            return
+
+
+    if __name__ == "__main__":
+        ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-primary
+  namespace: shop-chaos
+  labels:
+    app: inventory-primary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-primary
+  template:
+    metadata:
+      labels:
+        app: inventory-primary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: inventory-primary
+          image: python:3.11-alpine
+          command: ["python3", "/app/server.py"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_ROLE
+              value: "primary"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 4
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi
+          volumeMounts:
+            - name: code
+              mountPath: /app
+      volumes:
+        - name: code
+          configMap:
+            name: inventory-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-primary
+  namespace: shop-chaos
+  labels:
+    app: inventory-primary
+spec:
+  selector:
+    app: inventory-primary
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-replica
+  namespace: shop-chaos
+  labels:
+    app: inventory-replica
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory-replica
+  template:
+    metadata:
+      labels:
+        app: inventory-replica
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: inventory-replica
+          image: python:3.11-alpine
+          command: ["python3", "/app/server.py"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_ROLE
+              value: "replica"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 4
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi
+          volumeMounts:
+            - name: code
+              mountPath: /app
+      volumes:
+        - name: code
+          configMap:
+            name: inventory-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-replica
+  namespace: shop-chaos
+  labels:
+    app: inventory-replica
+spec:
+  selector:
+    app: inventory-replica
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkout-code
+  namespace: shop-chaos
+data:
+  server.py: |
+    import json
+    import os
+    import socket
+    import threading
+    import time
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    REPLICA_URL = os.environ.get("REPLICA_URL", "http://inventory-replica.shop-chaos.svc.cluster.local:8080/stock")
+    PRIMARY_URL = os.environ.get("PRIMARY_URL", "http://inventory-primary.shop-chaos.svc.cluster.local:8080/stock")
+    REDIS_HOST = os.environ.get("REDIS_HOST", "cache-redis.shop-chaos.svc.cluster.local")
+    REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+    DB_TIMEOUT = float(os.environ.get("DB_TIMEOUT", "1.5"))
+    CB_THRESHOLD = int(os.environ.get("CB_THRESHOLD", "4"))
+    CB_COOLDOWN = float(os.environ.get("CB_COOLDOWN", "10.0"))
+
+    BUCKETS = [0.05, 0.1, 0.25, 0.5, 1.0, 1.5, 2.5]
+
+    lock = threading.Lock()
+    stats = {
+        "req_ok": 0,
+        "req_degraded": 0,
+        "req_error": 0,
+        "db_retries_total": 0,
+        "primary_failover_total": 0,
+        "fallback_served_total": 0,
+        "consecutive_failures": 0,
+        "circuit_open_until": 0.0,
+        "circuit_breaker_open": 0,
+        "lat_buckets": {str(b): 0 for b in BUCKETS},
+        "lat_inf": 0,
+        "lat_sum": 0.0,
+        "lat_count": 0,
+    }
+
+
+    def record_latency(elapsed: float) -> None:
+        with lock:
+            stats["lat_sum"] += elapsed
+            stats["lat_count"] += 1
+            for b in BUCKETS:
+                if elapsed <= b:
+                    stats["lat_buckets"][str(b)] += 1
+            stats["lat_inf"] += 1
+
+
+    def http_get_json(url: str, timeout: float) -> dict:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+
+
+    def redis_cmd(*parts: str) -> str:
+        chunks = [f"*{len(parts)}\r\n".encode("utf-8")]
+        for p in parts:
+            b = p.encode("utf-8")
+            chunks.append(f"${len(b)}\r\n".encode("utf-8") + b + b"\r\n")
+        payload = b"".join(chunks)
+        with socket.create_connection((REDIS_HOST, REDIS_PORT), timeout=1.0) as s:
+            s.settimeout(1.0)
+            s.sendall(payload)
+            return s.recv(512).decode("utf-8", errors="replace")
+
+
+    def warm_cache_async() -> None:
+        try:
+            redis_cmd("SET", "stock:cache", "in_stock:42(cached)", "EX", "300")
+        except Exception:
+            pass
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send_json(self, code: int, payload: dict) -> None:
+            raw = json.dumps(payload).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:
+            if self.path == "/healthz":
+                self._send_json(200, {"status": "ok", "pod": socket.gethostname()})
+                return
+
+            if self.path == "/checkout":
+                t0 = time.monotonic()
+                now = time.monotonic()
+                with lock:
+                    cb_open = now < stats["circuit_open_until"]
+                    stats["circuit_breaker_open"] = 1 if cb_open else 0
+
+                if cb_open:
+                    try:
+                        cached = redis_cmd("GET", "stock:cache")
+                    except Exception:
+                        cached = "stale-in-memory"
+                    with lock:
+                        stats["req_degraded"] += 1
+                        stats["fallback_served_total"] += 1
+                    record_latency(time.monotonic() - t0)
+                    self._send_json(200, {
+                        "status": "degraded-cache",
+                        "circuit_breaker": "open",
+                        "cache": cached.strip(),
+                    })
+                    return
+
+                # 1. Try inventory-replica (with 1 retry on failure/timeout)
+                stock_data = None
+                try:
+                    stock_data = http_get_json(REPLICA_URL, DB_TIMEOUT)
+                except Exception:
+                    with lock:
+                        stats["db_retries_total"] += 1
+                    try:
+                        stock_data = http_get_json(REPLICA_URL, DB_TIMEOUT)
+                    except Exception:
+                        stock_data = None
+
+                if stock_data is not None:
+                    with lock:
+                        stats["consecutive_failures"] = 0
+                        stats["circuit_breaker_open"] = 0
+                        stats["req_ok"] += 1
+                    warm_cache_async()
+                    record_latency(time.monotonic() - t0)
+                    self._send_json(200, {"status": "ok", "source": "replica", "stock": stock_data})
+                    return
+
+                # 2. Failover to inventory-primary
+                with lock:
+                    stats["primary_failover_total"] += 1
+                try:
+                    stock_data = http_get_json(PRIMARY_URL, DB_TIMEOUT)
+                    with lock:
+                        stats["consecutive_failures"] = 0
+                        stats["circuit_breaker_open"] = 0
+                        stats["req_ok"] += 1
+                    warm_cache_async()
+                    record_latency(time.monotonic() - t0)
+                    self._send_json(200, {"status": "ok", "source": "primary-failover", "stock": stock_data})
+                    return
+                except Exception as exc:
+                    with lock:
+                        stats["consecutive_failures"] += 1
+                        if stats["consecutive_failures"] >= CB_THRESHOLD:
+                            stats["circuit_open_until"] = time.monotonic() + CB_COOLDOWN
+                            stats["circuit_breaker_open"] = 1
+                        stats["req_error"] += 1
+                    record_latency(time.monotonic() - t0)
+                    self._send_json(503, {
+                        "status": "error",
+                        "detail": str(exc),
+                        "circuit_breaker": "tripped" if stats["circuit_breaker_open"] else "closed",
+                    })
+                    return
+
+            if self.path == "/metrics":
+                with lock:
+                    if stats["circuit_breaker_open"] == 1 and time.monotonic() >= stats["circuit_open_until"]:
+                        stats["circuit_breaker_open"] = 0
+                    snap = dict(stats)
+                    buckets = dict(stats["lat_buckets"])
+                lines = [
+                    "# HELP checkout_requests_total Total checkout requests by outcome status",
+                    "# TYPE checkout_requests_total counter",
+                    f'checkout_requests_total{{status="ok"}} {snap["req_ok"]}',
+                    f'checkout_requests_total{{status="degraded"}} {snap["req_degraded"]}',
+                    f'checkout_requests_total{{status="error"}} {snap["req_error"]}',
+                    "# HELP db_retries_total Total retries against inventory-replica",
+                    "# TYPE db_retries_total counter",
+                    f'db_retries_total {snap["db_retries_total"]}',
+                    "# HELP primary_failover_total Total requests routed to inventory-primary fallback",
+                    "# TYPE primary_failover_total counter",
+                    f'primary_failover_total {snap["primary_failover_total"]}',
+                    "# HELP fallback_served_total Total requests served from Redis cache fallback",
+                    "# TYPE fallback_served_total counter",
+                    f'fallback_served_total {snap["fallback_served_total"]}',
+                    "# HELP circuit_breaker_open Whether checkout circuit breaker is currently open (1) or closed (0)",
+                    "# TYPE circuit_breaker_open gauge",
+                    f'circuit_breaker_open {snap["circuit_breaker_open"]}',
+                    "# HELP checkout_latency_seconds Checkout endpoint latency histogram",
+                    "# TYPE checkout_latency_seconds histogram",
+                ]
+                for b in BUCKETS:
+                    lines.append(f'checkout_latency_seconds_bucket{{le="{b}"}} {buckets[str(b)]}')
+                lines.append(f'checkout_latency_seconds_bucket{{le="+Inf"}} {snap["lat_inf"]}')
+                lines.append(f'checkout_latency_seconds_sum {snap["lat_sum"]:.6f}')
+                lines.append(f'checkout_latency_seconds_count {snap["lat_count"]}')
+                raw = ("\n".join(lines) + "\n").encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; version=0.0.4")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+
+            self._send_json(404, {"error": "not found"})
+
+        def log_message(self, format: str, *args) -> None:
+            return
+
+
+    if __name__ == "__main__":
+        ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout-api
+  namespace: shop-chaos
+  labels:
+    app: checkout-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: checkout-api
+  template:
+    metadata:
+      labels:
+        app: checkout-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: checkout-api
+          image: python:3.11-alpine
+          command: ["python3", "/app/server.py"]
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 4
+          resources:
+            requests:
+              cpu: 25m
+              memory: 48Mi
+            limits:
+              cpu: 150m
+              memory: 128Mi
+          volumeMounts:
+            - name: code
+              mountPath: /app
+      volumes:
+        - name: code
+          configMap:
+            name: checkout-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout-api
+  namespace: shop-chaos
+  labels:
+    app: checkout-api
+spec:
+  selector:
+    app: checkout-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: checkout-pdb
+  namespace: shop-chaos
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: checkout-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: shop-chaos
+  labels:
+    app: loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: python:3.11-alpine
+          command: ["python3", "-c"]
+          args:
+            - |
+              import time, urllib.request
+              URL = "http://checkout-api.shop-chaos.svc.cluster.local:8080/checkout"
+              while True:
+                  try:
+                      with urllib.request.urlopen(URL, timeout=4) as r:
+                          r.read()
+                  except Exception:
+                      pass
+                  time.sleep(0.2)
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
