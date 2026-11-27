@@ -1,0 +1,107 @@
+global:
+  ingressHost: vortex.local
+  ingressClassName: nginx
+  registry: docker.io
+
+namespaces:
+  app: vortex-app
+  data: vortex-data
+  ops: vortex-ops
+
+gatewayApi:
+  replicaCount: 2
+  image: python:3.11-alpine
+  port: 8080
+  pricingUrl: "http://pricing-svc.vortex-app.svc.cluster.local:8080"
+  resources:
+    requests:
+      cpu: 25m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+  readinessProbe:
+    path: /healthz
+    initialDelaySeconds: 3
+    periodSeconds: 5
+  livenessProbe:
+    path: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+pricingSvc:
+  replicaCount: 1
+  image: python:3.11-alpine
+  port: 8080
+  marginBps: 15
+  resources:
+    requests:
+      cpu: 25m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+ledgerDb:
+  replicaCount: 2
+  image: python:3.11-alpine
+  port: 9000
+  storageSize: 1Gi
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+ledgerApi:
+  replicaCount: 1
+  image: python:3.11-alpine
+  port: 8080
+  targetPodHost: "ledger-db-0.ledger-headless.vortex-data.svc.cluster.local"
+  targetPodPort: 9000
+  resources:
+    requests:
+      cpu: 25m
+      memory: 48Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+reconciler:
+  schedule: "*/1 * * * *"
+  image: python:3.11-alpine
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+streamWorker:
+  replicaCount: 3
+  image: python:3.11-alpine
+  port: 8080
+  consumerGroup: "vortex-stream-v1"
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 120m
+      memory: 128Mi
+
+metricsCollector:
+  replicaCount: 1
+  image: python:3.11-alpine
+  port: 8081
+  scrapeUrl: "http://gateway-api.vortex-app.svc.cluster.local:8080/metrics"
+  scrapeIntervalSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
