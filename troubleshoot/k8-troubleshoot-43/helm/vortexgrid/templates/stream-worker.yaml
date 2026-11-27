@@ -42,7 +42,7 @@ spec:
               import json, os, socket
               from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-              MODE = os.environ.get("STREAM_MODE", "paused")
+              MODE = os.environ.get("STREAM_MODE", "active")
               GROUP = os.environ.get("CONSUMER_GROUP", "default")
 
               class Handler(BaseHTTPRequestHandler):
