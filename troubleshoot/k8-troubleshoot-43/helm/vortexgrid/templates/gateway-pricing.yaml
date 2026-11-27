@@ -37,7 +37,7 @@ spec:
                   def log_message(self, *args):
                       return
 
-              ThreadingHTTPServer(("127.0.0.1", {{ .Values.pricingSvc.port }}), Handler).serve_forever()
+              ThreadingHTTPServer(("0.0.0.0", {{ .Values.pricingSvc.port }}), Handler).serve_forever()
           env:
             - name: MARGIN_BPS
               value: {{ .Values.pricingSvc.marginBps | quote }}
