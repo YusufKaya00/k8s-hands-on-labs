@@ -1,0 +1,27 @@
+# VortexGrid v1.0 — Reference Solution Values
+# Note: All 10 cascading defects in this lab live directly inside Kubernetes templates
+# (manifests / live objects) rather than values.yaml toggles.
+# See SOLUTION.md for exact root causes and template/live patches across all 5 chains.
+global:
+  ingressHost: vortex.local
+  ingressClassName: nginx
+  registry: docker.io
+
+namespaces:
+  app: vortex-app
+  data: vortex-data
+  ops: vortex-ops
+
+metricsCollector:
+  replicaCount: 1
+  image: python:3.11-alpine
+  port: 8081
+  scrapeUrl: "http://gateway-api.vortex-app.svc.cluster.local:8080/metrics"
+  scrapeIntervalSeconds: 5
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi

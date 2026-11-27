@@ -1,0 +1,4 @@
+global:
+  ingressHost: vortex.local
+  ingressClassName: nginx
+  registry: docker.io
