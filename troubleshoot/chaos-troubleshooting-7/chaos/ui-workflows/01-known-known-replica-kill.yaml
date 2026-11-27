@@ -1,0 +1,164 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  name: q1-known-known-replica-kill
+  namespace: litmus
+  labels:
+    subject: q1-known-known-replica-kill
+    quadrant: known-knowns
+spec:
+  entrypoint: q1-known-known-replica-kill
+  arguments:
+    parameters:
+      - name: adminModeNamespace
+        value: litmus
+  serviceAccountName: argo-chaos
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  templates:
+    - name: q1-known-known-replica-kill
+      steps:
+        - - name: install-chaos-faults
+            template: install-chaos-faults
+        - - name: pod-delete-replica
+            template: pod-delete-replica
+        - - name: cleanup-chaos-resources
+            template: cleanup-chaos-resources
+    - name: install-chaos-faults
+      inputs:
+        artifacts:
+          - name: pod-delete-experiment
+            path: /tmp/pod-delete-experiment.yaml
+            raw:
+              data: |
+                apiVersion: litmuschaos.io/v1alpha1
+                description:
+                  message: Deletes a single inventory-replica pod (Known-Knowns)
+                kind: ChaosExperiment
+                metadata:
+                  name: pod-delete
+                  labels:
+                    name: pod-delete
+                    app.kubernetes.io/part-of: litmus
+                    app.kubernetes.io/component: chaosexperiment
+                    app.kubernetes.io/version: 3.30.0
+                spec:
+                  definition:
+                    scope: Namespaced
+                    permissions:
+                      - apiGroups: [""]
+                        resources: ["pods"]
+                        verbs: ["create", "delete", "get", "list", "patch", "update", "deletecollection"]
+                      - apiGroups: [""]
+                        resources: ["events", "pods/exec", "pods/log"]
+                        verbs: ["create", "get", "list", "patch", "update", "watch"]
+                      - apiGroups: [""]
+                        resources: ["configmaps"]
+                        verbs: ["get", "list"]
+                      - apiGroups: ["apps"]
+                        resources: ["deployments", "statefulsets", "replicasets", "daemonsets"]
+                        verbs: ["list", "get"]
+                      - apiGroups: ["batch"]
+                        resources: ["jobs"]
+                        verbs: ["create", "list", "get", "delete", "deletecollection"]
+                      - apiGroups: ["litmuschaos.io"]
+                        resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+                        verbs: ["create", "list", "get", "patch", "update", "delete"]
+                    image: "litmuschaos.docker.scarf.sh/litmuschaos/go-runner:3.30.0"
+                    imagePullPolicy: IfNotPresent
+                    args:
+                      - -c
+                      - ./experiments -name pod-delete
+                    command:
+                      - /bin/bash
+                    env:
+                      - name: TOTAL_CHAOS_DURATION
+                        value: "20"
+                      - name: CHAOS_INTERVAL
+                        value: "7"
+                      - name: FORCE
+                        value: "true"
+                      - name: PODS_AFFECTED_PERC
+                        value: "50"
+                      - name: DEFAULT_HEALTH_CHECK
+                        value: "false"
+                      - name: SEQUENCE
+                        value: "parallel"
+                    labels:
+                      name: pod-delete
+                      app.kubernetes.io/part-of: litmus
+                      app.kubernetes.io/component: experiment-job
+                      app.kubernetes.io/version: 3.30.0
+      container:
+        image: litmuschaos/k8s:2.11.0
+        command: ["sh", "-c"]
+        args:
+          - kubectl apply -f /tmp/pod-delete-experiment.yaml -n {{workflow.parameters.adminModeNamespace}}
+    - name: pod-delete-replica
+      metadata:
+        labels:
+          weight: "10"
+      inputs:
+        artifacts:
+          - name: pod-delete-engine
+            path: /tmp/chaosengine-replica.yaml
+            raw:
+              data: |
+                apiVersion: litmuschaos.io/v1alpha1
+                kind: ChaosEngine
+                metadata:
+                  namespace: "{{workflow.parameters.adminModeNamespace}}"
+                  labels:
+                    workflow_run_id: "{{ workflow.uid }}"
+                    workflow_name: q1-known-known-replica-kill
+                  generateName: q1-replica-kill
+                spec:
+                  appinfo:
+                    appns: shop-chaos
+                    applabel: app=inventory-replica
+                    appkind: deployment
+                  engineState: active
+                  chaosServiceAccount: litmus-admin
+                  experiments:
+                    - name: pod-delete
+                      spec:
+                        components:
+                          env:
+                            - name: TOTAL_CHAOS_DURATION
+                              value: "20"
+                            - name: CHAOS_INTERVAL
+                              value: "7"
+                            - name: FORCE
+                              value: "true"
+                            - name: PODS_AFFECTED_PERC
+                              value: "50"
+                            - name: SEQUENCE
+                              value: "parallel"
+                        probe:
+                          - name: checkout-steady-state
+                            type: httpProbe
+                            mode: Continuous
+                            httpProbe/inputs:
+                              url: "http://checkout-api.shop-chaos.svc.cluster.local:8080/healthz"
+                              insecureSkipTLS: true
+                              method:
+                                get:
+                                  criteria: ==
+                                  responseCode: "200"
+                            runProperties:
+                              probeTimeout: 2s
+                              interval: 2s
+                              retry: 2
+                              stopOnFailure: false
+      container:
+        image: litmuschaos/litmus-checker:2.11.0
+        args:
+          - -file=/tmp/chaosengine-replica.yaml
+          - -saveName=/tmp/engine-name
+    - name: cleanup-chaos-resources
+      container:
+        image: litmuschaos/k8s:2.11.0
+        command: ["sh", "-c"]
+        args:
+          - kubectl delete chaosengine -l workflow_run_id={{workflow.uid}} -n {{workflow.parameters.adminModeNamespace}} --ignore-not-found=true
