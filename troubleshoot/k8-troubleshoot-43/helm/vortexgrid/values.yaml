@@ -12,7 +12,7 @@ gatewayApi:
   replicaCount: 2
   image: python:3.11-alpine
   port: 8080
-  pricingUrl: "http://pricing-svc.vortex-app.svc.cluster.local"
+  pricingUrl: "http://pricing-svc.vortex-app.svc.cluster.local:8080"
   resources:
     requests:
       cpu: 25m
