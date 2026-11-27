@@ -28,7 +28,7 @@ spec:
         podAntiAffinity:
           PreferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
-              podAffinityTerm:
+
             - labelSelector:
                 matchLabels:
                   app: stream-worker
