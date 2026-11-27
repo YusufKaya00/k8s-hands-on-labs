@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vortexgrid
+description: VortexGrid v1.0 multi-layer Kubernetes troubleshooting chart
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

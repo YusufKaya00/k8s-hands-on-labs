@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reconciler-sa
+  namespace: {{ .Values.namespaces.ops }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: reconciler-role
+  namespace: {{ .Values.namespaces.ops }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["reconcile-status"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reconciler-binding
+  namespace: {{ .Values.namespaces.ops }}
+subjects:
+  - kind: ServiceAccount
+    name: reconciler-sa
+    namespace: {{ .Values.namespaces.ops }}
+roleRef:
+  kind: Role
+  name: reconciler-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reconcile-status
+  namespace: {{ .Values.namespaces.ops }}
+data:
+  status: "pending"
+  lastRun: "never"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: batch-reconciler
+  namespace: {{ .Values.namespaces.ops }}
+spec:
+  schedule: {{ .Values.reconciler.schedule | quote }}
+  suspend: true
+  successfulJobsHistoryLimit: {{ .Values.reconciler.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.reconciler.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: reconciler-sa
+          restartPolicy: Never
+          containers:
+            - name: reconciler
+              image: {{ .Values.reconciler.image }}
+              command: ["python3", "-c"]
+              args:
+                - |
+                  import datetime, json, ssl, urllib.request
+
+                  token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                  ca_path = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                  token = open(token_path).read().strip()
+                  ns = "{{ .Values.namespaces.ops }}"
+                  ctx = ssl.create_default_context(cafile=ca_path)
+                  url = f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/configmaps/reconcile-status"
+                  body = json.dumps({
+                      "data": {
+                          "status": "reconciled",
+                          "lastRun": datetime.datetime.utcnow().isoformat() + "Z"
+                      }
+                  }).encode()
+                  req = urllib.request.Request(
+                      url,
+                      data=body,
+                      headers={
+                          "Authorization": f"Bearer {token}",
+                          "Content-Type": "application/merge-patch+json"
+                      },
+                      method="PATCH",
+                  )
+                  with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+                      print("PATCH OK:", resp.status)
+              resources:
+                {{- toYaml .Values.reconciler.resources | nindent 16 }}
