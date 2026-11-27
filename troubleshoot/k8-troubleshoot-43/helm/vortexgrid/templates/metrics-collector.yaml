@@ -80,3 +80,6 @@ spec:
             requests:
               cpu: {{ .Values.metricsCollector.resources.requests.cpu | quote }}
               memory: {{ .Values.metricsCollector.resources.requests.memory | quote }}
+            limits:
+              cpu: {{ .Values.metricsCollector.resources.limits.cpu | quote }}
+              memory: {{ .Values.metricsCollector.resources.limits.memory | quote }}
